@@ -16,33 +16,56 @@ os.environ['XLA_FLAGS'] = (
 randomization_params = {
     "prosthesis_side": "left_side",
 
-    "randomize_prosthesis_dof_damping": True,
-    "randomization_dof_names": ['ankle_angle', 'subtalar_angle', 'mtp_angle'],
-    "prosthesis_dof_damping_range": [0, 10],
+    "randomize_prosthesis_dof_damping": False,
+    # "randomization_dof_names": ['ankle_angle', 'subtalar_angle', 'mtp_angle'],
+    # "prosthesis_dof_damping_range": {'ankle_angle': [0, 0.1], 'subtalar_angle': [0,0.01],'mtp_angle': [0,0.01]}, #[0, 10],
+    "prosthesis_dof_damping_range": {'ankle_angle': [0.09, 0.1], 'subtalar_angle': [0,0.01],'mtp_angle': [0.02,0.03]}, #[0, 10],
 
     "randomize_prosthesis_joint_stiffness": False, #True,
-    "randomization_joint_names": ['ankle_angle', 'subtalar_angle', 'mtp_angle'],
-    "prosthesis_joint_stiffness_range":[], # [0, 100],
+    # "randomization_joint_names": ['ankle_angle', 'subtalar_angle', 'mtp_angle'],
+    "prosthesis_joint_stiffness_range":{'ankle_angle': [10, 100], 'subtalar_angle': [10,50],'mtp_angle': [10,50]}, # [0, 100],
 
-    "randomize_prosthesis_body_position": True,
-    "randomization_body_position_names": ['calcn'],
+
+    # "randomize_prosthesis_dof_damping": True,
+    # "randomization_dof_names": ['ankle_angle', 'subtalar_angle', 'mtp_angle'],
+    # "prosthesis_dof_damping_range": [0, 10],
+
+    # "randomize_prosthesis_joint_stiffness": False, #True,
+    # "randomization_joint_names": ['ankle_angle', 'subtalar_angle', 'mtp_angle'],
+    # "prosthesis_joint_stiffness_range":[], # [0, 100],
+
+    "randomize_prosthesis_body_position": False, #False, #True,
+    # "randomization_body_position_names": ['calcn'],
     "prosthesis_body_position_range": {
-        # 'x': [0.4, 0.5],
+        'talus': {'x': [-0.5, -0.51]},
+        #'pylon_socket': {'x': [0.5,0.7]}, #,'y': [0.4, 0.5]}
         # 'y': [0.0, 0.1],
         # 'z': [0.5, 0.9]
+        # 'x': [-0.5, -0.51]
     },
-    "randomize_prosthesis_body_orientation": True, #True, #False, #True,
-    "randomization_body_orientation_names": ['calcn'], #['toe'], #['calcn'], #['foot_box'], #['calcn'],
+    "randomize_prosthesis_body_orientation": False, #True, #False, #True,
+    # "randomization_body_orientation_names": ['calcn'], #['toe'], #['calcn'], #['foot_box'], #['calcn'],
     "prosthesis_body_orientation_range": {
+        'calcn': {'y': [1.1, 1.11], 'x': [-1.4, -1.41]},
+        # 'pylon_socket': {'x': [0.5,0.51], 'y': [0.6,0.61]},
         # 'x': [0.1, 0.2],
-        'y': [0.8, 0.9],
+        # 'y': [0.8, 0.9],
         # 'z': [0.1, 0.2]
         #'x': [-0.01, 0.01],
         # 'y': [0.8, 0.9]#, #[0.15, 0.3], #(9-17°) #[0.8, 0.9],
         #'z': [-0.01, 0.01]
-    }
+    },
+    "randomize_prosthesis_socket_joint": False, #True, #True, #False, #True, #False, 
+    "socket_joint_range": {
+        # 'socket_flexion': [],
+        # 'socket_adduction': [],
+        # 'socket_rotation': [],
+        # 'socket_tx': [1,1.1], 
+        'socket_ty': [0.3,0.31],  # in negative cannot be bigger than talus pos
+        # 'socket_tz': []
+    },
+    "adapt_tibia_socket_parameters": False, # True TO ADAPT MASS, INERTIA & CENTER OF MASS dependig on socket_ty
 }
-
 
 
 
@@ -143,11 +166,13 @@ randomization_params = {
 # create env
 env = ImitationFactory.make(
     "MjxSkeletonMuscleProsthesis",
-    prosthesis_side="left_side",
-    prosthesis_type="transtibial",
-    delete_joints = False,
-    joint_stiffness = 50,
-    joint_damping = 1,
+    prosthesis_side = "left_side", prosthesis_type= "transtibial", prosthesis_subtype= "SACH",
+    delete_joints=False, remove_joint_names=['subtalar_angle', 'ankle_angle'],
+    tibia_socket_offset_z = 0, tibia_socket_offset_x = 0, tibia_socket_overlap= 0.2, amputated_tibia_length= 0.2,
+    joint_stiffness = {'ankle_angle': 50, 'mtp_angle': 10}, joint_damping = {'ankle_angle': 0.1, 'mtp_angle': 0.01},
+    use_2_box_per_foot = True,
+    reattach_muscle= True,
+    reattach_muscles_offset= {'med_gas': [0,0,0]},
     default_dataset_conf=dict(task="walk"),
     domain_randomization_type="ProsthesisRandomizer", #"DefaultRandomizer", #"ProsthesisRandomizer",
     domain_randomization_params=randomization_params
@@ -155,7 +180,7 @@ env = ImitationFactory.make(
 
 # create keys
 key = jax.random.key(0)
-n_envs = 1
+n_envs = 1 #5
 keys = jax.random.split(key, n_envs + 1)
 key, env_keys = keys[0], keys[1:]
 
@@ -172,7 +197,7 @@ step = 0
 previous_time = time.time()
 LOGGING_FREQUENCY = 100000
 i = 0
-while i < 100000:
+while i < 100:
 
     # step
     keys = jax.random.split(key, n_envs + 1)
@@ -180,13 +205,23 @@ while i < 100000:
     action = rng_sample_uni_action(action_keys)
     state, sys = rng_step(state, action)
 
-    print(f"sys.jnt_stiffness: {sys.jnt_stiffness}")
-    print(f"sys.dof_damping: {sys.dof_damping}")
-    print(f"sys.body_pos: {sys.body_pos}")
-    print(f"sys.body_quat: {sys.body_quat}")
+    # print(f"sys.jnt_stiffness: {sys.jnt_stiffness}")
+    # print(f"sys.dof_damping: {sys.dof_damping}")
+    # print(f"sys.body_pos: {sys.body_pos}")
+    # print(f"sys.body_quat: {sys.body_quat}")
+    # print(f"sys.qpos: {state.data.qpos}" )
+    # print(f"sys.qpos0: {sys.qpos0}")
+    # print(f"sys.qpos_spring: {sys.qpos_spring}")
+    # print(f"sys.mass: {sys.body_mass}")
+    # print(f"sys.mass: {sys.body_mass}")
+    # print(f"sys.body_inertia: {sys.body_inertia}")
+    # print(f"sys.body_ipos: {sys.body_ipos}")
+    # print("len observation", len(state.observation))
+
 
     # parallel render
-    env.mjx_render_domain_randomization(state)
+    #env.mjx_render_domain_randomization(state,record=True)
+    env.mjx_render(state,record=True)
 
     step += n_envs
 

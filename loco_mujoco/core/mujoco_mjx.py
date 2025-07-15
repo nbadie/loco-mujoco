@@ -72,6 +72,7 @@ class Mjx(Mujoco):
         self.sys = mjx.put_model(self._model)
         data = mjx.put_data(self._model, self._data)
         self._first_data = mjx.forward(self.sys, data)
+        self.init_talus_pos = 0
 
     def mjx_reset(self, key: jax.random.PRNGKey) -> MjxState:
         """
@@ -518,6 +519,8 @@ class Mjx(Mujoco):
         if self._viewer is None:
             if "default_camera_mode" not in self._viewer_params.keys():
                 self._viewer_params["default_camera_mode"] = "static"
+            if 'ignore_modify_mjx_contact' in self._viewer_params.keys():
+                del self._viewer_params['ignore_modify_mjx_contact']
             self._viewer = MujocoViewer(self._model, self.dt, record=record, **self._viewer_params)
 
         if self._terrain.is_dynamic:
@@ -546,6 +549,8 @@ class Mjx(Mujoco):
         if self._viewer is None:
             if "default_camera_mode" not in self._viewer_params.keys():
                 self._viewer_params["default_camera_mode"] = "static"
+            if 'ignore_modify_mjx_contact' in self._viewer_params.keys():
+                del self._viewer_params['ignore_modify_mjx_contact']
             self._viewer = MujocoViewer(model, self.dt, record=record, **self._viewer_params)
 
         if self._terrain.is_dynamic:
@@ -631,39 +636,193 @@ class Mjx(Mujoco):
         # body_quat_indices = list(self._domain_randomizer._body_quat_indices.values())   
         # print("Stiffness before update:", model.jnt_stiffness)
         if self._domain_randomizer.rand_conf["randomize_prosthesis_joint_stiffness"]:
-            jnt_indices = list(self._domain_randomizer._joint_indices.values()) 
-        # if hasattr(domain_randomizer_state, "prosthesis_joint_stiffness"):
-            model.jnt_stiffness[jnt_indices]= np.array(
-                domain_randomizer_state.prosthesis_joint_stiffness, dtype=np.float64
-            ).squeeze()
+            jnt_indices_map = self._domain_randomizer._joint_indices  # joint_name -> index
+            sampled_stiffness_dict = domain_randomizer_state.prosthesis_joint_stiffness  # joint_name -> value
+
+            # Make a copy of current stiffness values
+            jnt_stiffness = model.jnt_stiffness.copy()
+
+            for joint_name, stiffness_value in sampled_stiffness_dict.items():
+                if joint_name not in jnt_indices_map:
+                    raise KeyError(f"Joint '{joint_name}' not found in joint index mapping.")
+                index = jnt_indices_map[joint_name]
+                jnt_stiffness[index] = np.asarray(stiffness_value, dtype=np.float64).item()
+
+            model.jnt_stiffness = jnt_stiffness
             # print('Stiffness updated:',  model.jnt_stiffness)
 
         # print("Damping before update:", model.dof_damping)
         if self._domain_randomizer.rand_conf["randomize_prosthesis_dof_damping"]:
-            dof_indices = list(self._domain_randomizer._dof_indices.values())
-        # if hasattr(domain_randomizer_state, "prosthesis_dof_damping"):
-            model.dof_damping[dof_indices] = np.array(
-                domain_randomizer_state.prosthesis_dof_damping, dtype=np.float64
-            ).squeeze()
-            # print('Damping updated:', model.dof_damping)
+            dof_indices_map = self._domain_randomizer._dof_indices  # dof_name -> index
+            sampled_damping_dict = domain_randomizer_state.prosthesis_dof_damping  # dof_name -> value
+
+            # Make a copy of current damping values
+            dof_damping = model.dof_damping.copy()
+
+            for dof_name, damping_value in sampled_damping_dict.items():
+                if dof_name not in dof_indices_map:
+                    raise KeyError(f"DOF '{dof_name}' not found in dof index mapping.")
+                index = dof_indices_map[dof_name]
+                dof_damping[index] = np.asarray(damping_value, dtype=np.float64).item()
+
+            model.dof_damping = dof_damping
+        #     dof_indices = list(self._domain_randomizer._dof_indices.values())
+        # # if hasattr(domain_randomizer_state, "prosthesis_dof_damping"):
+        #     model.dof_damping[dof_indices] = np.array(
+        #         domain_randomizer_state.prosthesis_dof_damping, dtype=np.float64
+        #     ).squeeze()
+        #     # print('Damping updated:', model.dof_damping)
 
         # print("Position before update:", model.body_pos)
+        # if self._domain_randomizer.rand_conf["randomize_prosthesis_body_position"]:
+        #     body_pos_indices = list(self._domain_randomizer._body_pos_indices.values())
+        # #if hasattr(domain_randomizer_state, "prosthesis_body_position"):
+        #     model.body_pos[body_pos_indices] = np.array(
+        #         domain_randomizer_state.prosthesis_body_position, dtype=np.float64
+        #     ).squeeze()
+        #     # print('Position updated:', model.body_pos)
+
         if self._domain_randomizer.rand_conf["randomize_prosthesis_body_position"]:
-            body_pos_indices = list(self._domain_randomizer._body_pos_indices.values())
-        #if hasattr(domain_randomizer_state, "prosthesis_body_position"):
-            model.body_pos[body_pos_indices] = np.array(
-                domain_randomizer_state.prosthesis_body_position, dtype=np.float64
-            ).squeeze()
+            # The sampled_position_dict holds {body_name: [x,y,z] array}
+            sampled_position_dict = domain_randomizer_state.prosthesis_body_position 
+
+            # Make a *mutable* copy of the current model's body positions.
+            # This is crucial for NumPy, as model.body_pos might be read-only or we want to modify a copy.
+            current_model_body_pos = model.body_pos.copy()
+
+            #jax.debug.print("current_model_body_pos_shape: {shape}", shape=current_model_body_pos.shape)
+
+            for body_name_str, position_value_array in sampled_position_dict.items():
+                prefix = ""
+                if self._domain_randomizer.rand_conf["prosthesis_side"] == "left_side":
+                    prefix = "_l"
+                elif self._domain_randomizer.rand_conf["prosthesis_side"] == "right_side":
+                    prefix = "_r"
+
+                full_mujoco_body_name = body_name_str + prefix
+
+                body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, full_mujoco_body_name)
+
+                if body_id == -1:
+                    print(f"Warning: MuJoCo body '{full_mujoco_body_name}' (from semantic name '{body_name_str}') not found in model. Skipping position update for this body.")
+                    continue
+                
+                # Update the position for this specific body ID in our mutable copy
+
+                # jax.debug.print("position_value_array_shape: {shape}", shape = position_value_array.shape)
+
+                
+                current_model_body_pos[body_id] = np.array(position_value_array[0], dtype=np.float64).squeeze()
+
+            if 'socket_ty'+self._domain_randomizer.prosthesis_side_str in self._domain_randomizer._socket_joint_indices:
+                talus_offset_y = domain_randomizer_state.prosthesis_socket_joint_value[f"socket_ty"+self._domain_randomizer.prosthesis_side_str]
+                talus_offset_array = np.array([0,talus_offset_y[0], 0])
+                # jax.debug.print("pos_y view: {pos_y}", pos_y = pos_y)
+                # if not np.any(self.init_talus_pos):
+                #     jax.debug.print("IN LOOOOOOPPPPP")
+                #     self.init_talus_pos = model.body_pos[self._domain_randomizer._talus_idx].copy()
+                # # jax.debug.print("talus_pos view: {talus_pos}", talus_pos = self.init_talus_pos)
+                # new_talus_pos = self.init_talus_pos - np.array([0,pos_y[0],0])
+
+                # current_model_body_pos = model.body_pos.copy()
+                current_model_body_pos[self._domain_randomizer._talus_idx] -= np.array(talus_offset_array, dtype=np.float64).squeeze()
+
+                # Assign the modified copy back to the model's body_pos
+                model.body_pos = current_model_body_pos
+
+            # Assign the modified copy back to the model's body_pos
+            model.body_pos = current_model_body_pos
+
             # print('Position updated:', model.body_pos)
 
         # print("Orientation before update:", model.body_quat)
         if self._domain_randomizer.rand_conf["randomize_prosthesis_body_orientation"]:
-            body_quat_indices = list(self._domain_randomizer._body_quat_indices.values())   
-        #if hasattr(domain_randomizer_state, "prosthesis_body_orientation"):
-            model.body_quat[body_quat_indices] = np.array(
-                domain_randomizer_state.prosthesis_body_orientation, dtype=np.float64
-            ).squeeze()
-            # print('Orientation updated:', model.body_quat)
+            sampled_quat_dict = domain_randomizer_state.prosthesis_body_orientation
+             
+            current_model_body_quat = model.body_quat.copy()
+            for body_name_str, quat_value_array in sampled_quat_dict.items():
+                prefix = ""
+                if self._domain_randomizer.rand_conf["prosthesis_side"] == "left_side":
+                    prefix = "_l"
+                elif self._domain_randomizer.rand_conf["prosthesis_side"] == "right_side":
+                    prefix = "_r"
+
+                full_mujoco_body_name = body_name_str + prefix
+
+                body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, full_mujoco_body_name)
+
+                if body_id == -1:
+                    print(f"Warning: MuJoCo body '{full_mujoco_body_name}' (from semantic name '{body_name_str}') not found in model. Skipping position update for this body.")
+                    continue
+
+                current_model_body_quat[body_id] = np.array(quat_value_array[0], dtype=np.float64).squeeze()
+
+            # Assign the modified copy back to the model's body_pos
+            model.body_quat = current_model_body_quat
+
+        if self._domain_randomizer.rand_conf["randomize_prosthesis_socket_joint"] and not self._domain_randomizer.rand_conf["randomize_prosthesis_body_position"]:
+            
+            if 'socket_ty'+self._domain_randomizer.prosthesis_side_str in self._domain_randomizer._socket_joint_indices:
+                
+                pos_y = domain_randomizer_state.prosthesis_socket_joint_value[f"socket_ty"+self._domain_randomizer.prosthesis_side_str]
+                # jax.debug.print("pos_y view: {pos_y}", pos_y = pos_y)
+                if not np.any(self.init_talus_pos):
+                    jax.debug.print("IN LOOOOOOPPPPP")
+                    self.init_talus_pos = model.body_pos[self._domain_randomizer._talus_idx].copy()
+                # jax.debug.print("talus_pos view: {talus_pos}", talus_pos = self.init_talus_pos)
+                new_talus_pos = self.init_talus_pos - np.array([0,pos_y[0],0])
+
+                current_model_body_pos = model.body_pos.copy()
+                current_model_body_pos[self._domain_randomizer._talus_idx] = np.array(new_talus_pos, dtype=np.float64).squeeze()
+
+                # Assign the modified copy back to the model's body_pos
+                model.body_pos = current_model_body_pos
+                # jax.debug.print('current_model_body_pos view: {current_model_body_pos}', current_model_body_pos=current_model_body_pos)
+                
+            
+            # # The sampled_position_dict holds {body_name: [x,y,z] array}
+            # sampled_position_dict = domain_randomizer_state.prosthesis_body_position 
+
+            # # Make a *mutable* copy of the current model's body positions.
+            # # This is crucial for NumPy, as model.body_pos might be read-only or we want to modify a copy.
+            # current_model_body_pos = model.body_pos.copy()
+
+            # #jax.debug.print("current_model_body_pos_shape: {shape}", shape=current_model_body_pos.shape)
+
+            # for body_name_str, position_value_array in sampled_position_dict.items():
+            #     prefix = ""
+            #     if self._domain_randomizer.rand_conf["prosthesis_side"] == "left_side":
+            #         prefix = "_l"
+            #     elif self._domain_randomizer.rand_conf["prosthesis_side"] == "right_side":
+            #         prefix = "_r"
+
+            #     full_mujoco_body_name = body_name_str + prefix
+
+            #     body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, full_mujoco_body_name)
+
+            #     if body_id == -1:
+            #         print(f"Warning: MuJoCo body '{full_mujoco_body_name}' (from semantic name '{body_name_str}') not found in model. Skipping position update for this body.")
+            #         continue
+                
+            #     # Update the position for this specific body ID in our mutable copy
+
+            #     # jax.debug.print("position_value_array_shape: {shape}", shape = position_value_array.shape)
+
+                
+            #     current_model_body_pos[body_id] = np.array(position_value_array[0], dtype=np.float64).squeeze()
+
+            # # Assign the modified copy back to the model's body_pos
+            # model.body_pos = current_model_body_pos
+        
+        
+        
+        
+        #    body_quat_indices = list(self._domain_randomizer._body_quat_indices.values())   
+        # #if hasattr(domain_randomizer_state, "prosthesis_body_orientation"):
+        #     model.body_quat[body_quat_indices] = np.array(
+        #         domain_randomizer_state.prosthesis_body_orientation, dtype=np.float64
+        #     ).squeeze()
+        #     # print('Orientation updated:', model.body_quat)
 
         return model 
 
@@ -740,11 +899,12 @@ class Mjx(Mujoco):
         state = state.replace(data=data, observation=cur_obs, reward=reward,
                               absorbing=absorbing, done=done, info=cur_info, additional_carry=carry)
 
-        def print_identity(x):
-            jax.debug.print("Identity function called")
-            return x
+        # def print_identity(x):
+        #     jax.debug.print("Identity function called")
+        #     return x
 
         # reset state if done
-        state = jax.lax.cond(state.done, self._mjx_reset_in_step, print_identity, state)
+        # state = jax.lax.cond(state.done, self._mjx_reset_in_step, print_identity, state)
+        state = jax.lax.cond(state.done, self._mjx_reset_in_step, lambda x: x, state)
 
         return state, sys

@@ -58,11 +58,11 @@ randomization_params_eval = {
         # 'y': [0.0, 0.1],
         #'z': [0.6, 0.9]
     },
-    "randomize_prosthesis_body_orientation": True, #True, #False, #True,
+    "randomize_prosthesis_body_orientation": False, #True, #True, #False, #True,
     "randomization_body_orientation_names": ['calcn'], #['toe'], #['calcn'], #['foot_box'], #['calcn'],
     "prosthesis_body_orientation_range": {
         # 'x': [0.1, 0.2],
-        'y': [0.8, 1.0],
+        'y': [0, 0.1], #0.5],
         # 'z': [0.1, 0.2]
         #'x': [-0.01, 0.01],
         # 'y': [0.8, 0.9]#, #[0.15, 0.3], #(9-17°) #[0.8, 0.9],
@@ -114,7 +114,7 @@ factory = TaskFactory.get_factory_cls(config.experiment.task_factory.name)
 
 # create env
 OmegaConf.set_struct(config, False)  # Allow modifications
-config.experiment.env_params["headless"] = False
+config.experiment.env_params["headless"] = True #False
 config.experiment.env_params["goal_type"] = "GoalTrajMimicv2"   # nicer looking than GoalTrajMimic
 config.experiment.env_params["add_sensors"] = True
 env = factory.make(domain_randomization_type=randomization_type, domain_randomization_params=randomization_params,
@@ -297,6 +297,7 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
 
     # Body name with possible contact to ground 
     foot_name = "toes"  # name of the foot box in the model
+    calcn_name = "calcn"
     all_grf_l = []
     all_grf_r = []
 
@@ -319,13 +320,13 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
         env_state, sys = jit_step(env_state, action)  #env.step(env_state, action)
         obs = env_state.observation
 
-        # if i == 0:
-        print(f"sys.jnt_stiffness: {sys.jnt_stiffness}")
-        print(f"sys.dof_damping: {sys.dof_damping}")
-        print(f"sys.body_pos: {sys.body_pos}")
-        print(f"sys.body_quat: {sys.body_quat}")
-        print(f"Step {i}")
-        env.mjx_render_domain_randomization(env_state, record=True)
+        if i == 0:
+            print(f"sys.jnt_stiffness: {sys.jnt_stiffness}")
+            print(f"sys.dof_damping: {sys.dof_damping}")
+            print(f"sys.body_pos: {sys.body_pos}")
+            print(f"sys.body_quat: {sys.body_quat}")
+            print(f"Step {i}")
+        # env.mjx_render_domain_randomization(env_state)#, record=True)
 
         # if step_total % 100 == 0:
         #     print(f"Step {step_total}")
@@ -343,8 +344,15 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
         all_foot_ground_contact_right.append(contact_right)
 
         # GRF 
-        grf_l = prosthesis_metrics_handler.get_grf(env_state.data, f"{foot_name}_l")
-        grf_r = prosthesis_metrics_handler.get_grf(env_state.data, f"{foot_name}_r")
+        grf_foot_l = prosthesis_metrics_handler.get_grf(env_state.data, f"{foot_name}_l")
+        grf_foot_r = prosthesis_metrics_handler.get_grf(env_state.data, f"{foot_name}_r")
+    
+        grf_calcn_l = prosthesis_metrics_handler.get_grf(env_state.data, f"{calcn_name}_l")
+        grf_calcn_r = prosthesis_metrics_handler.get_grf(env_state.data, f"{calcn_name}_r")
+        
+        grf_l = grf_foot_l + grf_calcn_l
+        grf_r = grf_foot_r + grf_calcn_r
+
         all_grf_l.append(grf_l)
         all_grf_r.append(grf_r)
 
@@ -413,7 +421,7 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
 
         step_total += n_envs 
 
-        # env.mjx_render(env_state, record=True)
+        env.mjx_render_domain_randomization(env_state, record=True)
 
     time_all.append(timeit.default_timer())  # End timer
 

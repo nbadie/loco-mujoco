@@ -368,7 +368,7 @@
             <inertial pos="       0        0        0" mass="0.11524999800438" fullinertia="0.00143714 0.00143714 0.00143714        0        0        0"></inertial>
             <joint name="ankle_angle_l"  stiffness="10" damping="1" type="hinge" pos="0 0 0" axis="0.105014 0.174022 0.979126" limited="true" range=" -1.0472   1.0472" ref="0"></joint>
             <body name="calcn_l" pos="-0.0544606 -0.0468448 -0.00884412" quat="1.0 0.0 0.0 0.0">
-              <site name="left_foot_mimic" class="mimic" pos="0.10 0.03 0.0"/>
+              <site name="left_foot_mimic" class="mimic" pos="0.10 0.03 0.0" rgba="0 0 1 1" size="0.2"/>
               <geom name="l_foot" type="mesh" mesh="l_foot" condim="3"></geom>
               <inertial pos="0.106552 0.0319656        0" mass="1.44062497505475" fullinertia="0.00183186 0.00510303 0.00536472        0        0        0"></inertial>
               <site name="med_gas_l-P3" pos="0 0.0330311 0.00564725"></site>
@@ -416,7 +416,7 @@
       </body>
       <body name="torso" pos="-0.10282 0.0832155        0" quat="1.0 0.0 0.0 0.0">
         <site name="upper_body_mimic" class="mimic" pos="0.13 0.155 0.0"/>
-        <site name="head_mimic" class="mimic" pos="0.0 0.6 0.0"/>
+        <site name="head_mimic" class="mimic" pos="0.0 0.6 0.0" rgba="0 0 1 1" size="0.2"/>
         <geom name="hat_spine" type="mesh" mesh="hat_spine"></geom>
         <geom name="hat_jaw" type="mesh" mesh="hat_jaw"></geom>
         <geom name="hat_skull" type="mesh" mesh="hat_skull"></geom>

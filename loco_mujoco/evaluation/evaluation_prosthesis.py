@@ -1882,7 +1882,8 @@ class PostProcessMetricsHandler():
                         axes[0].plot(x, mean_right, label=f"{run_key} {right_joint} mean")
                         axes[0].fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.15)
                     if plot_baseline and parameter_name in ["angle", "velocity"] and baseline_data is not None:
-                        axes[0].plot(x, baseline_data[right_joint][parameter_name], label=f"Baseline {right_joint} mean", color='black')
+                        if right_joint in baseline_data and parameter_name in baseline_data[right_joint]:#if np.any(baseline_data[right_joint][parameter_name]):
+                            axes[0].plot(x, baseline_data[right_joint][parameter_name], label=f"Baseline {right_joint} mean", color='black')
                     axes[0].set_title(f"{right_joint} mean (all runs)")
                     axes[0].set_xlabel("Interpolated Step (%)")
                     axes[0].set_ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
@@ -1893,7 +1894,8 @@ class PostProcessMetricsHandler():
                         axes[1].plot(x, mean_left, label=f"{run_key} {left_joint} mean")
                         axes[1].fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.15)
                     if plot_baseline and parameter_name in ["angle", "velocity"] and baseline_data is not None:
-                        axes[1].plot(x, baseline_data[right_joint][parameter_name], label=f"Baseline {left_joint} mean", color='black')
+                        if left_joint in baseline_data and parameter_name in baseline_data[left_joint]:
+                            axes[1].plot(x, baseline_data[left_joint][parameter_name], label=f"Baseline {left_joint} mean", color='black')
                     axes[1].set_title(f"{left_joint} mean (all runs)")
                     axes[1].set_xlabel("Interpolated Step (%)")
                     axes[1].set_ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")

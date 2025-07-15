@@ -5,7 +5,7 @@ defaults:
 
 wandb:
   project: "deepmimic"
-  run_name: "SACHFoot_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri" #"MjxSkeletonPros_AdaptSigmd5_NoMotorTanh_stiff50_damp1"
+  run_name: "MjxSkeletonPros_RandStiffDampRotY_solrefTime003_solimpWidth0002" #"MjxSkeletonPros_AdaptSigmd5_NoMotorTanh_stiff50_damp1"
 
 experiment:
   task_factory:
@@ -20,19 +20,16 @@ experiment:
     env_name: MjxSkeletonMuscleProsthesis #SkeletonMuscle #MjxMyoSkeleton
     prosthesis_side : 'left_side' # 'left_side' or 'right_side'
     prosthesis_type: 'transtibial'
-    prosthesis_subtype: 'SACH'
     #joint_stiffness: 100 #100
     #joint_damping: 1 #10
     delete_joints: False
-    remove_joint_names: ['subtalar_angle','ankle_angle']
+    remove_joint_names: ['subtalar_angle']
     tibia_socket_offset_z : 0
     tibia_socket_offset_x : 0 
-    tibia_socket_overlap: 0.2 
+    tibia_socket_overlap: 0.1 
     amputated_tibia_length: 0.2
-    # joint_stiffness: {'ankle_angle': 50} #, 'mtp_angle': 10}
-    # joint_damping: {'ankle_angle': 0.1} #, 'mtp_angle': 0.01}
-    reattach_muscle: True
-    reattach_muscles_offset: {'med_gas': [0,0,0]}
+    joint_stiffness: {'ankle_angle': 50, 'mtp_angle': 10}
+    joint_damping: {'ankle_angle': 0.1, 'mtp_angle': 0.01}
     use_2_box_per_foot: True
     headless: True
     disable_arms: false
@@ -57,19 +54,19 @@ experiment:
         ##- left_elbow_mimic
         #- left_shoulder_mimic
         #- left_hip_mimic
-        - left_knee_mimic
+        # - left_knee_mimic
         - left_foot_mimic
         - right_hand_mimic
         #- right_elbow_mimic
         #- right_shoulder_mimic
         #- right_hip_mimic
-        - right_knee_mimic
+        #- right_knee_mimic
         - right_foot_mimic
   hidden_layers: [512, 256]
   lr: 1e-4
   num_envs: 2048
   num_steps: 200
-  total_timesteps: 1300e6 #900e6 #300e6
+  total_timesteps: 900e6 #300e6
   update_epochs: 4
   proportion_env_reward: 0.0
   num_minibatches: 32
@@ -107,10 +104,9 @@ experiment:
     rel_site_names:
       - upper_body_mimic
       - left_hand_mimic
-      - left_knee_mimic
+      # - left_knee_mimic
       - left_foot_mimic
       - right_hand_mimic
-      - right_knee_mimic
       - right_foot_mimic
     # joints_to_ignore:
     #   - lumbar5
@@ -128,15 +124,13 @@ control_config:
 randomization_config:
     randomization_type: ProsthesisRandomizer
     randomization_params:
-      randomize_prosthesis_dof_damping: False #True #True #True
+      randomize_prosthesis_dof_damping: False #True #True
       # randomization_dof_names: ['ankle_angle', 'subtalar_angle', 'mtp_angle' ]
-      #'subtalar_angle': [0,0.01]
-      prosthesis_dof_damping_range: {'ankle_angle': [2, 10]} #,'mtp_angle': [0,0.1]} #[1,5]
+      prosthesis_dof_damping_range: {'ankle_angle': [0.09, 0.1], 'subtalar_angle': [0,0.01],'mtp_angle': [0.02,0.03]} #[1,5]
 
-      randomize_prosthesis_joint_stiffness: False #True #True #True
+      randomize_prosthesis_joint_stiffness: False #True #True
       #randomization_joint_names: ['ankle_angle', 'subtalar_angle', 'mtp_angle' ]
-      #, 'subtalar_angle': [10,50]
-      prosthesis_joint_stiffness_range: {'ankle_angle': [50, 100]} #,'mtp_angle': [5,50]}
+      prosthesis_joint_stiffness_range: {'ankle_angle': [10, 100], 'subtalar_angle': [10,50],'mtp_angle': [10,50]}
       #[50,100]
 
       # randomization_body_position_names: ['calcn']
@@ -149,22 +143,21 @@ randomization_config:
       randomize_prosthesis_body_position: False
       prosthesis_body_position_range: {'calcn': {'x': [0.3, 0.4],'y': [0.4, 0.5]}}
 
-      randomize_prosthesis_body_orientation: True #True
-      # randomization_body_orientation_names: ['calcn']
+      randomize_prosthesis_body_orientation: False #True
+      randomization_body_orientation_names: ['calcn']
       # prosthesis_body_orientation_range: {'y': [-0.09, 0.09]} #[-0.1, 0.1]
-      prosthesis_body_orientation_range: {'pylon_socket': {'y': [-0.3,0.3]},'talus': {'y': [-0.3,0.3]}}
-      #[-0.1, 0.1]
+      prosthesis_body_orientation_range: {'y': [-0.3, 0.3]} #[-0.1, 0.1]
       # prosthesis_body_orientation_range: {'x': [0.1, 0.2], 'y': [0.15, 0.3], 'z': [0.1, 0.2]} #[-0.1, 0.1]
+
       # randomize_feet_geom_solref: True
       # feet_geom_solref_range: {'other_side': [0.02, 0.1], 'prosthesis_side': [0.02, 0.1]}
       # randomization_feet_geom_names: ['foot_box']
-      randomize_prosthesis_socket_joint: False #True #False, 
+      randomize_prosthesis_socket_joint: True #False, 
       socket_joint_range: {
           # 'socket_flexion': [],
           # 'socket_adduction': [],
           # 'socket_rotation': [],
-          # 'socket_tx': [1,1.1], 
-          'socket_ty': [-0.25,0.025]  # if negative cannot be bigger than talus pos
+          'socket_tx': [1,1.1], 
+          'socket_ty': [1.1,1.2],  
           # 'socket_tz': []
       }
-      adapt_tibia_socket_parameters: False

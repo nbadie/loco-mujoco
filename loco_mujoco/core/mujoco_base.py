@@ -293,6 +293,8 @@ class Mujoco:
         """
 
         if self._viewer is None:
+            if 'ignore_modify_mjx_contact' in self._viewer_params.keys():
+                del self._viewer_params['ignore_modify_mjx_contact']
             self._viewer = MujocoViewer(self._model, self.dt, record=record, **self._viewer_params)
 
             headless = self._viewer_params.get("headless", False)

@@ -164,6 +164,7 @@ for muscle_group, muscle_names in evaluation_muscle_names.items():
 
 # Body name with possible contact to ground 
 foot_name = "toes"  # name of the foot box in the model
+calcn_name = "calcn"
 all_grf_l = []
 all_grf_r = []
 
@@ -207,8 +208,16 @@ for i in range(n_steps):
     all_foot_ground_contact_right.append(contact_right)
 
     # GRF 
-    grf_l = prosthesis_metrics_handler.get_grf(env_state.data, f"{foot_name}_l")
-    grf_r = prosthesis_metrics_handler.get_grf(env_state.data, f"{foot_name}_r")
+    grf_foot_l = prosthesis_metrics_handler.get_grf(env_state.data, f"{foot_name}_l")
+    grf_foot_r = prosthesis_metrics_handler.get_grf(env_state.data, f"{foot_name}_r")
+    
+    grf_calcn_l = prosthesis_metrics_handler.get_grf(env_state.data, f"{calcn_name}_l")
+    grf_calcn_r = prosthesis_metrics_handler.get_grf(env_state.data, f"{calcn_name}_r")
+
+    grf_l = grf_foot_l + grf_calcn_l
+    grf_r = grf_foot_r + grf_calcn_r
+        
+
     all_grf_l.append(grf_l)
     all_grf_r.append(grf_r)
 
@@ -277,7 +286,7 @@ for i in range(n_steps):
 
     step_total += n_envs 
 
-    # env.mjx_render(env_state, record=True)
+    env.mjx_render(env_state, record=True)
 
 time_all.append(timeit.default_timer())  # End timer
 
