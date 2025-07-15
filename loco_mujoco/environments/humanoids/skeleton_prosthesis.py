@@ -734,7 +734,7 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             rgba=[1, 0, 0, 1]
         )
         socket_joint_damping_tz = 40 #100 #100 #400 #200 # ty/2
-        socket_joint_stiffness_tz = 20  #43500 #30000 #43500 #21750
+        socket_joint_stiffness_tz = 20000 #43500 #30000 #43500 #21750
         socket_joint_damping_tx = 40 #100 #400 #200 # ty/2
         socket_joint_stiffness_tx = 43500 #43500 #10000 #21750 # ty/2
         socket_joint_stiffness_ty= 43500 #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
