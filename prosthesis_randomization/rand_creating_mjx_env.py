@@ -174,13 +174,16 @@ env = ImitationFactory.make(
     reattach_muscle= True,
     reattach_muscles_offset= {'med_gas': [0,0,0]},
     default_dataset_conf=dict(task="walk"),
-    domain_randomization_type="ProsthesisRandomizer", #"DefaultRandomizer", #"ProsthesisRandomizer",
-    domain_randomization_params=randomization_params
+    goal_type = 'GoalRootWalk',
+    goal_params = {'x_vel': 1.2, 'y_vel': 0, 'yaw_vel': 0},
+    reward_type = 'TargetVelocityGoalReward',
+    # domain_randomization_type="ProsthesisRandomizer", #"DefaultRandomizer", #"ProsthesisRandomizer",
+    # domain_randomization_params=randomization_params
 )
 
 # create keys
 key = jax.random.key(0)
-n_envs = 1 #5
+n_envs = 5
 keys = jax.random.split(key, n_envs + 1)
 key, env_keys = keys[0], keys[1:]
 
@@ -216,12 +219,13 @@ while i < 100:
     # print(f"sys.mass: {sys.body_mass}")
     # print(f"sys.body_inertia: {sys.body_inertia}")
     # print(f"sys.body_ipos: {sys.body_ipos}")
-    # print("len observation", len(state.observation))
+    # print("observation", state.observation)
+    # print("reward", state.reward)
 
 
     # parallel render
-    #env.mjx_render_domain_randomization(state,record=True)
-    env.mjx_render(state,record=True)
+    # env.mjx_render_domain_randomization(state,record=True)
+    # env.mjx_render(state,record=True)
 
     step += n_envs
 

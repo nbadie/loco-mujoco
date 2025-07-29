@@ -1,6 +1,9 @@
 import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "" 
+# os.environ["JAX_PLATFORMS"] = "cpu"
 import sys
 import jax
+# jax.config.update('jax_platform_name', 'cpu')
 import wandb
 import jax.numpy as jnp
 import traceback

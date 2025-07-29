@@ -523,3 +523,289 @@ class PPOJax(JaxRLAlgorithmBase):
         if config.normalize_env:
             env = NormalizeVecReward(env, config.gamma)
         return env
+    
+
+    @classmethod
+    def _train_fn_continue(cls, rng, env,
+                  agent_conf: PPOAgentConf,
+                  agent_state: PPOAgentState = None,
+                  mh: MetricsHandler = None):
+
+        # extract static agent info
+        config, network, tx =\
+            (agent_conf.config.experiment, agent_conf.network, agent_conf.tx)
+
+        env = cls._wrap_env(env, config)
+
+        # extract current agent state
+        if agent_state is not None:
+            train_state = agent_state.train_state
+        else:
+            train_state = None
+
+        # if train_state is None:
+
+        rng, _rng1, _rng2 = jax.random.split(rng, 3)
+        init_x = jnp.zeros(env.info.observation_space.shape)
+        network_params = network.init(_rng1, init_x)
+
+        # else:
+        #     raise NotImplementedError("Loading of train state not implemented yet.")
+
+        # init new train states from old params
+        train_state = TrainState.create(
+            apply_fn=network.apply,
+            params=network_params["params"] if train_state is None else train_state.params,
+            run_stats=network_params["run_stats"] if train_state is None else train_state.run_stats,
+            tx=tx,
+        )
+
+        # INIT ENV
+        rng, _rng = jax.random.split(rng)
+        reset_rng = jax.random.split(_rng, config.num_envs)
+        obsv, env_state = env.reset(reset_rng)
+
+        train_state_buffer = TrainStateBuffer.create(train_state, config.validation.num)
+
+        # TRAIN LOOP
+        def _update_step(runner_state, unused):
+            # COLLECT TRAJECTORIES
+            def _env_step(runner_state, unused):
+                train_state, env_state, last_obs, train_state_buffer, rng = runner_state
+
+                # SELECT ACTION
+                rng, _rng = jax.random.split(rng)
+                y, updates = network.apply({'params': train_state.params,
+                                                  'run_stats': train_state.run_stats},
+                                                 last_obs, mutable=["run_stats"])
+                pi, value = y
+                train_state = train_state.replace(run_stats=updates['run_stats'])   # update stats
+                action = pi.sample(seed=_rng)
+                log_prob = pi.log_prob(action)
+
+                # STEP ENV
+                obsv, reward, absorbing, done, info, env_state = env.step(env_state, action)
+
+                # GET METRICS
+                log_env_state = env_state.find(LogEnvState)
+                logged_metrics = log_env_state.metrics
+
+                transition = Transition(
+                    done, absorbing, action, value, reward, log_prob, last_obs, info, env_state.additional_carry.traj_state,
+                    logged_metrics
+                )
+                runner_state = (train_state, env_state, obsv, train_state_buffer, rng)
+                return runner_state, transition
+
+            runner_state, traj_batch = jax.lax.scan(
+                _env_step, runner_state, None, config.num_steps
+            )
+
+            # CALCULATE ADVANTAGE
+            train_state, env_state, last_obs, train_state_buffer, rng = runner_state
+            y, _ = network.apply({'params': train_state.params,
+                                              'run_stats': train_state.run_stats},
+                                             last_obs, mutable=["run_stats"])
+            pi, last_val = y
+
+            def _calculate_gae(traj_batch, last_val):
+                def _get_advantages(gae_and_next_value, transition):
+                    gae, next_value = gae_and_next_value
+                    done, absorbing, value, reward, obs = (
+                        transition.done,
+                        transition.absorbing,
+                        transition.value,
+                        transition.reward,
+                        transition.obs
+                    )
+
+                    delta = reward + config.gamma * next_value * (1 - absorbing) - value
+                    gae = (
+                        delta
+                        + config.gamma * config.gae_lambda * (1 - done) * gae
+                    )
+                    return (gae, value), gae
+
+                _, advantages = jax.lax.scan(
+                    _get_advantages,
+                    (jnp.zeros_like(last_val), last_val),
+                    traj_batch,
+                    reverse=True,
+                    unroll=16,
+                )
+                return advantages, advantages + traj_batch.value
+
+            advantages, targets = _calculate_gae(traj_batch, last_val)
+
+            # UPDATE ACTOR & CRITIC NETWORK
+            def _update_epoch(update_state, unused):
+                def _update_minbatch(train_state, batch_info):
+                    traj_batch, advantages, targets = batch_info
+
+                    def _loss_fn(params, traj_batch, gae, targets):
+                        # RERUN NETWORK
+                        y, _ = network.apply({'params': params, 'run_stats': train_state.run_stats},
+                                             traj_batch.obs, mutable=["run_stats"])
+                        pi, value = y
+                        log_prob = pi.log_prob(traj_batch.action)
+
+                        # CALCULATE VALUE LOSS
+                        value_pred_clipped = traj_batch.value + (
+                            value - traj_batch.value
+                        ).clip(-config.clip_eps, config.clip_eps)
+                        value_losses = jnp.square(value - targets)
+                        value_losses_clipped = jnp.square(value_pred_clipped - targets)
+                        value_loss = (
+                            0.5 * jnp.maximum(value_losses, value_losses_clipped).mean()
+                        )
+
+                        # CALCULATE PPO ACTOR LOSS
+                        ratio = jnp.exp(log_prob - traj_batch.log_prob)
+                        gae = (gae - gae.mean()) / (gae.std() + 1e-8)
+                        loss_actor1 = ratio * gae
+                        loss_actor2 = (
+                                jnp.clip(
+                                    ratio,
+                                    1.0 - config.clip_eps,
+                                    1.0 + config.clip_eps,
+                                )
+                                * gae
+                        )
+                        loss_actor = -jnp.minimum(loss_actor1, loss_actor2)
+                        loss_actor = loss_actor.mean()
+                        entropy = pi.entropy().mean()
+
+                        total_loss = (
+                            loss_actor
+                            + config.vf_coef * value_loss
+                            - config.ent_coef * entropy
+                        )
+                        return total_loss, (value_loss, loss_actor, entropy)
+
+                    grad_fn = jax.value_and_grad(_loss_fn, has_aux=True)
+                    total_loss, grads = grad_fn(
+                        train_state.params, traj_batch, advantages, targets
+                    )
+                    train_state = train_state.apply_gradients(grads=grads)
+                    return train_state, total_loss
+
+                train_state, traj_batch, advantages, targets, rng = update_state
+                rng, _rng = jax.random.split(rng)
+                batch_size = config.minibatch_size * config.num_minibatches
+                assert (
+                    batch_size == config.num_steps * config.num_envs
+                ), "batch size must be equal to number of steps * number of envs"
+                permutation = jax.random.permutation(_rng, batch_size)
+                batch = (traj_batch, advantages, targets)
+                batch = jax.tree.map(
+                    lambda x: x.reshape((batch_size,) + x.shape[2:]), batch
+                )
+                shuffled_batch = jax.tree.map(
+                    lambda x: jnp.take(x, permutation, axis=0), batch
+                )
+                minibatches = jax.tree.map(
+                    lambda x: jnp.reshape(
+                        x, [config.num_minibatches, -1] + list(x.shape[1:])
+                    ),
+                    shuffled_batch,
+                )
+                train_state, total_loss = jax.lax.scan(
+                    _update_minbatch, train_state, minibatches
+                )
+                update_state = (train_state, traj_batch, advantages, targets, rng)
+                return update_state, total_loss
+
+            update_state = (train_state, traj_batch, advantages, targets, rng)
+            update_state, loss_info = jax.lax.scan(
+                _update_epoch, update_state, None, config.update_epochs
+            )
+            train_state = update_state[0]
+            rng = update_state[-1]
+
+            counter = ((train_state.step + 1) // config.num_minibatches) // config.update_epochs
+
+            logged_metrics = traj_batch.metrics
+
+            metric = SummaryMetrics(
+                mean_episode_return=jnp.sum(jnp.where(logged_metrics.done, logged_metrics.returned_episode_returns, 0.0)) / jnp.sum(logged_metrics.done),
+                mean_episode_length=jnp.sum(jnp.where(logged_metrics.done, logged_metrics.returned_episode_lengths, 0.0)) / jnp.sum(logged_metrics.done),
+                max_timestep=jnp.max(logged_metrics.timestep * config.num_envs),
+            )
+
+            def _evaluation_step():
+
+                def _eval_env(runner_state, unused):
+                    train_state, env_state, last_obs, train_state_buffer, rng = runner_state
+
+                    # SELECT ACTION
+                    rng, _rng = jax.random.split(rng)
+                    y, updates = train_state.apply_fn({'params': train_state.params,
+                                                       'run_stats': train_state.run_stats},
+                                                      last_obs, mutable=["run_stats"])
+                    pi, value = y
+                    train_state = train_state.replace(run_stats=updates['run_stats'])  # update stats
+                    action = pi.sample(seed=_rng)
+
+                    # STEP ENV
+                    obsv, reward, absorbing, done, info, env_state = env.step(env_state, action)
+
+                    # GET METRICS
+                    log_env_state = env_state.find(LogEnvState)
+                    logged_metrics = log_env_state.metrics
+
+                    transition = MetricHandlerTransition(env_state, logged_metrics)
+
+                    runner_state = (train_state, env_state, obsv, train_state_buffer, rng)
+                    return runner_state, transition
+
+                rng = runner_state[-1]
+                reset_rng = jax.random.split(rng, config.validation.num_envs)
+                obsv, env_state = env.reset(reset_rng)
+                runner_state_eval = (train_state, env_state, obsv, train_state_buffer, rng)
+
+                # do evaluation runs
+                _, traj_batch_eval = jax.lax.scan(
+                    _eval_env, runner_state_eval, None, config.validation.num_steps
+                )
+
+                env_states = traj_batch_eval.env_state
+
+                validation_metrics = mh(env_states)
+
+                return validation_metrics
+
+            if mh is None:
+                validation_metrics = ValidationSummary()
+            else:
+                validation_metrics = jax.lax.cond(counter % config.validation_interval == 0, _evaluation_step,
+                                                   mh.get_zero_container)
+
+            if config.debug:
+                def callback(metrics):
+                    return_values = metrics.returned_episode_returns[metrics.done]
+                    timesteps = metrics.timestep[metrics.done] * config.num_envs
+
+                    for t in range(len(timesteps)):
+                        print(f"global step={timesteps[t]}, episodic return={return_values[t]}")
+
+                jax.debug.callback(callback, env_state.metrics)
+
+            # add train state to buffer if needed
+            train_state_buffer = jax.lax.cond(counter % config.validation_interval == 0,
+                                              lambda x, y: TrainStateBuffer.add(x, y),
+                                              lambda x, y: x, train_state_buffer, train_state)
+
+            runner_state = (train_state, env_state, last_obs, train_state_buffer, rng)
+            return runner_state, (metric, validation_metrics)
+
+        rng, _rng = jax.random.split(rng)
+        runner_state = (train_state, env_state, obsv, train_state_buffer, _rng)
+        runner_state, metrics = jax.lax.scan(
+            _update_step, runner_state, None, config.num_updates
+        )
+
+        agent_state = cls._agent_state(train_state=runner_state[0])
+
+        return {"agent_state": agent_state,
+                "training_metrics": metrics[0],
+                "validation_metrics": metrics[1]}

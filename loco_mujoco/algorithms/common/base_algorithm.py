@@ -139,3 +139,10 @@ class JaxRLAlgorithmBase:
                 / num_updates
         )
         return lr * frac
+
+
+    @classmethod
+    # Nadine implemented
+    def build_train_fn_continue(cls, env, agent_conf: AgentConfBase, mh: MetricsHandler = None, agent_state: AgentStateBase = None):
+        """ Returns the main train function of an RL algorithm used to train an agent from scratch. """
+        return lambda rng_key: cls._train_fn_continue(rng_key, env, agent_conf, agent_state=agent_state,mh=mh)

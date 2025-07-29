@@ -609,6 +609,8 @@ class Mjx(Mujoco):
         carry = super()._init_additional_carry(key, model, data, backend)
         return MjxAdditionalCarry(final_observation=backend.zeros(self.info.observation_space.shape),
                                   final_info={},
+                                  prev_foot_contact_left_flag = jnp.array(False, dtype=bool), # Added for reward grf
+                                  prev_foot_contact_right_flag=jnp.array(False, dtype=bool), # Added for reward_grf
                                   **vars(carry))
 
     @property

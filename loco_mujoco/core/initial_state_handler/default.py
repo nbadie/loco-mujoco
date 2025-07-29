@@ -83,7 +83,7 @@ class DefaultInitialStateHandler(InitialStateHandler):
             data.qpos[:] = qpos
         else:
             data = data.replace(qpos=data.qpos.at[:].set(qpos))
-
+        jax.debug.print('qpos init', qpos)
         return data
 
     @staticmethod
@@ -105,5 +105,5 @@ class DefaultInitialStateHandler(InitialStateHandler):
             data.qvel[:] = qvel
         else:
             data = data.replace(qvel=data.qvel.at[:].set(qvel))
-
+        jax.debug.print('qvel init', qvel)
         return data

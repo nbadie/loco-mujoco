@@ -234,6 +234,60 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
 
         return jnp.array(extracted_actions)
     
+
+    def get_relevant_ctrl_batched(self, muscle_indices, side, processed_action):
+        """
+        Fixed version that takes pre-computed indices instead of muscle names and side strings
+        """
+        return processed_action[muscle_indices]
+
+
+    def setup_muscle_indices(self, model, evaluation_muscle_groups, evaluation_muscle_names):
+        """
+        Call this ONCE before JIT compilation to pre-compute muscle indices
+        Add this method to your ProsthesisMetricsHandler class
+        """
+        if not hasattr(self, '_muscle_indices_cache'):
+            self._muscle_indices_cache = {}
+            
+            # Build actuator name to index mapping
+            name_to_idx = {}
+            for i in range(model.nu):
+                name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
+                name_to_idx[name] = i
+            
+            # Convert muscle names to indices for each group
+            for muscle_group in evaluation_muscle_groups:
+                muscle_names = evaluation_muscle_names[muscle_group]
+                
+                left_indices = []
+                right_indices = []
+                
+                for muscle_name in muscle_names:
+                    if muscle_name in name_to_idx:
+                        idx = name_to_idx[muscle_name]
+                        # Determine left/right based on naming convention
+                        if "_l" in muscle_name or "left" in muscle_name.lower():
+                            left_indices.append(idx)
+                        else:
+                            right_indices.append(idx)
+                
+                self._muscle_indices_cache[f"{muscle_group}_left"] = jnp.array(left_indices) if left_indices else jnp.array([])
+                self._muscle_indices_cache[f"{muscle_group}_right"] = jnp.array(right_indices) if right_indices else jnp.array([])
+    
+    def get_muscle_activations_by_indices(self, processed_action, muscle_group, side):
+        """
+        JAX-compatible muscle activation extraction using pre-computed indices
+        Add this method to your ProsthesisMetricsHandler class
+        """
+        key = f"{muscle_group}_{side}"
+        if hasattr(self, '_muscle_indices_cache') and key in self._muscle_indices_cache:
+            indices = self._muscle_indices_cache[key]
+            return processed_action[indices] if len(indices) > 0 else jnp.array([])
+        else:
+            return jnp.array([])
+
+
     def calc_mean_grf(self, data):
         f_contact_frame_r = np.zeros(3)
         f_contact_frame_l = np.zeros(3)
@@ -355,6 +409,155 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
                     contact_index_l = step
 
         return contact_index_l, contact_index_r 
+    
+
+
+    def get_contact_steps_batched(self, data, step):
+        """JAX-compatible contact detection"""
+        # Pre-compute IDs
+        if not hasattr(self, '_floor_id'):
+            self._floor_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'floor')
+            self._foot_box_r_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'foot_box_r') 
+            self._foot_box_l_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'foot_box_l')
+        
+        geom_distance = data.contact.dist
+        geom1_id = data.contact.geom1
+        geom2_id = data.contact.geom2
+        
+        geom1_id_is_floor = geom1_id == self._floor_id
+        all_floor = jnp.all(geom1_id_is_floor)
+        
+        # Initialize contact indices
+        contact_index_r = -1  # Default value when no contact
+        contact_index_l = -1  # Default value when no contact
+        
+        # Only process if all geom1 are floor
+        def process_contacts():
+            penetration = geom_distance <= 0.0
+            valid_contacts = penetration  # Since we know all are floor
+            
+            left_contact = jnp.any(valid_contacts & (geom2_id == self._foot_box_l_id))
+            right_contact = jnp.any(valid_contacts & (geom2_id == self._foot_box_r_id))
+            
+            contact_l = jnp.where(left_contact, step, -1)
+            contact_r = jnp.where(right_contact, step, -1)
+            
+            return contact_l, contact_r
+        
+        def no_contacts():
+            return -1, -1
+        
+        # Use jax.lax.cond for conditional execution
+        contact_index_l, contact_index_r = jax.lax.cond(
+            all_floor,
+            process_contacts,
+            no_contacts
+        )
+        
+        return contact_index_l, contact_index_r
+        
+        # # Pre-compute IDs once (store as class attributes)
+        # if not hasattr(self, '_floor_id'):
+        #     self._floor_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'floor')
+        #     self._foot_box_r_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'foot_box_r') 
+        #     self._foot_box_l_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'foot_box_l')
+        
+        # # Vectorized contact detection
+        # dist = data.contact.dist
+        # geom1 = data.contact.geom1
+        # geom2 = data.contact.geom2
+        
+        # floor_contacts = (geom1 == self._floor_id)
+        # penetrations = (dist <= 0.0)
+        # valid_contacts = floor_contacts & penetrations
+        
+        # left_contact = jnp.any(valid_contacts & (geom2 == self._foot_box_l_id))
+        # right_contact = jnp.any(valid_contacts & (geom2 == self._foot_box_r_id))
+        
+        # return left_contact, right_contact
+
+
+    # def get_contact_steps_batched(self, data, step):
+    #     contact_index_r = []  # List to store steps where left foot contacts the ground
+    #     contact_index_l = []  # List to store steps where right foot contacts the ground
+       
+    #     geom_distance = data.contact.dist
+    #     geom1_id = data.contact.geom1
+    #     geom2_id = data.contact.geom2
+
+    #     # check that geom1_index is all 0 and geom_name is floor 
+    #     # get from geom name to index 
+    #     floor_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'floor')
+    #     foot_box_r_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'foot_box_r')
+    #     foot_box_l_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'foot_box_l')
+
+    #     geom1_id_is_floor = geom1_id == floor_id
+    #     # if all geom1_id_is lfoor true: get indices wheren dist is smaller= 0 
+
+    #     def true_fn():
+    #         penetration = geom_distance <= 0
+    #         # get indices where geom_distance is smaller than 0
+    #         penetration_indices_geom = jnp.where(jnp.atleast_1d(penetration).nonzero()) #penetration[0])[0]
+    #         # check which floot_box_r_id or floot_box_l_id are at penetraction_indices_geom 
+    #         for n in penetration_indices_geom:
+    #             if geom2_id[...,n] == foot_box_r_id: 
+    #                 contact_index_r = step
+    #             elif geom2_id[...,n] == foot_box_l_id: 
+    #                 contact_index_l = step
+
+    #         return contact_index_l, contact_index_r
+
+    #     def false_fn():
+    #         return -1, -1
+
+    #     contact_index_l, contact_index_r = jax.lax.cond(jnp.all(geom1_id_is_floor),true_fn, false_fn) 
+    #     # contact_index_r = -1  # Placeholder for "no contact"
+    #     # contact_index_l = -1
+
+    #     # geom_distance = data.contact.dist
+    #     # geom1_id = data.contact.geom1
+    #     # geom2_id = data.contact.geom2
+
+    #     # floor_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'floor')
+    #     # foot_box_r_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'foot_box_r')
+    #     # foot_box_l_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'foot_box_l')
+
+    #     # geom1_id_is_floor = geom1_id == floor_id
+    #     # pred = jnp.all(geom1_id_is_floor)  # Scalar boolean (shape ())
+
+    #     # def true_branch(_):
+    #     #     penetration = geom_distance <= 0
+    #     #     penetration_indices_geom = jnp.where(penetration)[0]
+
+    #     #     def body_fn(i, carry):
+    #     #         contact_index_l, contact_index_r = carry
+    #     #         geom2_id_i = geom2_id[..., i]
+
+    #     #         contact_index_r = jnp.where(geom2_id_i == foot_box_r_id, step, contact_index_r)
+    #     #         contact_index_l = jnp.where(geom2_id_i == foot_box_l_id, step, contact_index_l)
+
+    #     #         return contact_index_l, contact_index_r
+
+    #     #     contact_index_l, contact_index_r = jax.lax.fori_loop(
+    #     #         0,
+    #     #         penetration_indices_geom.shape[0],
+    #     #         body_fn,
+    #     #         (contact_index_l, contact_index_r)
+    #     #     )
+
+    #     #     return contact_index_l, contact_index_r
+
+    #     # def false_branch(_):
+    #     #     return contact_index_l, contact_index_r
+
+    #     # contact_index_l, contact_index_r = jax.lax.cond(
+    #     #     pred,
+    #     #     true_branch,
+    #     #     false_branch,
+    #     #     operand=None
+    #     # )
+
+    #     return contact_index_l, contact_index_r
 
     
 
@@ -480,6 +683,126 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
         return sensor_data, sensor_names
                 # print(f"Sensor {sensor_name} data: {sensor_data}")
                 # No specific sensor data is saved!!!! FIX!!!!!!!!!!!!!!!!
+
+
+    # def get_sensor_data_batched(self, mjx_data):
+        # """
+        # JAX-JIT compatible version with consistent output structure for jax.lax.cond
+        # """
+        
+        # # Cache sensor information
+        # if not hasattr(self, '_sensor_names') or not hasattr(self, '_nsensor'):
+        #     self._nsensor = self.model.nsensor
+        #     self._sensor_names = []
+        #     for sensor_id in range(self._nsensor):
+        #         sensor_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_SENSOR, sensor_id)
+        #         self._sensor_names.append(sensor_name)
+        
+        # nsensor = self._nsensor
+        # sensor_names = self._sensor_names
+        
+        # def single_sensor_case():
+        #     """Handle case with only one sensor - return dict for consistency"""
+        #     sensor_data = {sensor_names[0]: mjx_data.sensordata}
+        #     return sensor_data
+        
+        # def multiple_sensor_case():
+        #     """Handle case with multiple sensors"""
+        #     sensor_data = {}
+            
+        #     # Ensure consistent 2D shape
+        #     sensordata_2d = jnp.atleast_2d(mjx_data.sensordata)
+            
+        #     for sensor_id in range(nsensor):
+        #         sensor_name = sensor_names[sensor_id]
+        #         start_idx = sensor_id * 3
+        #         end_idx = start_idx + 3
+        #         sensor_data[sensor_name] = sensordata_2d[0, start_idx:end_idx]
+            
+        #     return sensor_data
+        
+        # # Both branches now return dictionaries - consistent pytree structure
+        # sensor_data = jax.lax.cond(
+        #     nsensor == 1,
+        #     single_sensor_case,
+        #     multiple_sensor_case
+        # )
+        
+        # return sensor_data, sensor_names
+
+    def get_sensor_data_batched(self, mjx_data):
+        # Get sensor count and names (cached)
+        if not hasattr(self, '_simple_sensor_cache'):
+            self._simple_nsensor = self.model.nsensor
+            self._simple_sensor_names = []
+            for i in range(self._simple_nsensor):
+                name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_SENSOR, i)
+                self._simple_sensor_names.append(name)
+            self._simple_sensor_cache = True
+        
+        # Extract data - always return dict
+        sensor_data = {}
+        data = jnp.atleast_1d(mjx_data.sensordata)
+        
+        if self._simple_nsensor == 1:
+            sensor_data[self._simple_sensor_names[0]] = data
+        else:
+            # Multiple sensors: 3 values each
+            for i in range(self._simple_nsensor):
+                start = i * 3
+                end = start + 3
+                sensor_data[self._simple_sensor_names[i]] = data[start:end]
+        
+        return sensor_data, self._simple_sensor_names
+    # # Most robust version that handles edge cases
+    # def get_sensor_data_batched(self, mjx_data):
+    #     """
+    #     Most robust JAX-JIT compatible implementation
+    #     """
+        
+    #     # Initialize cached sensor info
+    #     # if not hasattr(self, '_jax_sensor_cache'):
+    #     self._jax_nsensor = self.model.nsensor
+    #     self._jax_sensor_names = []
+    #     for sensor_id in range(self._jax_nsensor):
+    #         sensor_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_SENSOR, sensor_id)
+    #         self._jax_sensor_names.append(sensor_name)
+    #     self._jax_sensor_cache = True
+        
+    #     nsensor = self._jax_nsensor
+    #     sensor_names = self._jax_sensor_names
+        
+    #     def process_sensors():
+    #         """Process sensor data based on number of sensors"""
+            
+    #         def single_sensor():
+    #             return mjx_data.sensordata
+            
+    #         def multiple_sensors():
+    #             sensor_data = {}
+                
+    #             # Ensure sensordata is at least 2D for consistent indexing
+    #             sensordata_shaped = jnp.reshape(mjx_data.sensordata, (1, -1)) if len(mjx_data.sensordata.shape) == 1 else mjx_data.sensordata
+                
+    #             # Extract data for each sensor (3 values per sensor)
+    #             for sensor_id in range(nsensor):
+    #                 sensor_name = sensor_names[sensor_id]
+    #                 start_idx = sensor_id * 3
+    #                 end_idx = start_idx + 3
+    #                 sensor_data[sensor_name] = sensordata_shaped[0, start_idx:end_idx]
+                
+    #             return sensor_data
+            
+    #         # Choose processing method based on sensor count
+    #         return jax.lax.cond(
+    #             nsensor == 1,
+    #             single_sensor,
+    #             multiple_sensors
+    #         )
+        
+    #     sensor_data = process_sensors()
+    #     return sensor_data, sensor_names
+
 
 
     
@@ -1795,6 +2118,8 @@ class PostProcessMetricsHandler():
     #             plt.close()
 
 
+    
+
     @staticmethod
     def plot_joint_angle_symmetry_all_runs(
         joint_names_list,
@@ -1894,8 +2219,8 @@ class PostProcessMetricsHandler():
                         axes[1].plot(x, mean_left, label=f"{run_key} {left_joint} mean")
                         axes[1].fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.15)
                     if plot_baseline and parameter_name in ["angle", "velocity"] and baseline_data is not None:
-                        if left_joint in baseline_data and parameter_name in baseline_data[left_joint]:
-                            axes[1].plot(x, baseline_data[left_joint][parameter_name], label=f"Baseline {left_joint} mean", color='black')
+                        if right_joint in baseline_data and parameter_name in baseline_data[right_joint]:
+                            axes[1].plot(x, baseline_data[right_joint][parameter_name], label=f"Baseline {left_joint} mean", color='black')
                     axes[1].set_title(f"{left_joint} mean (all runs)")
                     axes[1].set_xlabel("Interpolated Step (%)")
                     axes[1].set_ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
@@ -1913,6 +2238,94 @@ class PostProcessMetricsHandler():
                 plt.show()
                 plt.close()
 
+
+    @staticmethod 
+    def plot_joint_angle_single_side_all_runs(
+        joint_names_list,
+        all_loaded_data,
+        run_step_data,
+        parameter_name="angle",
+        convert_to_deg=False,
+        interp_mode="interp",
+        interp_len=100,
+        plot_baseline=False, 
+        baseline_data=None,
+        side="left"  # could be "left" or "right"
+        ):
+        """
+        Plot mean joint data for the specified side over all runs.
+        Only includes runs where data for the joint is available.
+        """
+        side_suffix = "_l" if side == "left" else "_r"
+        joint_names = [name + side_suffix for name in joint_names_list]
+        color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        color_iter = itertools.cycle(color_cycle)
+
+        for joint in joint_names:
+            run_keys = list(all_loaded_data.keys())
+            mean_all = []
+            std_all = []
+
+            for run_key in run_keys:
+                run_dict = all_loaded_data[run_key]
+                joint_data = {}
+                evaluation_joint_names = run_dict.get("evaluation_joint_names", [])
+                joint_parameters = ["angle", "velocity", "forces_constraint", "forces_smooth", "torques", "energy_exp"]
+
+                for joint_name in evaluation_joint_names:
+                    joint_data[joint_name] = {}
+                    for key in joint_parameters:
+                        param = run_dict.get(f"{joint_name}_{key}")
+                        if param is not None:
+                            joint_data[joint_name][key] = param
+
+                step_indices = run_step_data[run_key].get(f"step_start_{side}", [])
+                data = joint_data.get(joint, {}).get(parameter_name, None)
+                if data is None:
+                    continue
+
+                def collect_steps(data, indices):
+                    steps = []
+                    if indices and len(indices) > 1:
+                        for j in range(len(indices) - 1):
+                            start, end = indices[j], indices[j + 1]
+                            y = [float(np.array(a).squeeze()) for a in data[start:end]]
+                            if len(y) < 2:
+                                continue
+                            if interp_mode == "interp":
+                                x_old = np.linspace(0, 1, len(y))
+                                x_new = np.linspace(0, 1, interp_len)
+                                y = np.interp(x_new, x_old, y)
+                            if convert_to_deg and parameter_name in ("angle", "velocity"):
+                                features = ['angle', 'flexion', 'adduction', 'rotation']
+                                if any(feature in joint for feature in features):
+                                    y = np.rad2deg(y)
+                            steps.append(y)
+                    return steps
+
+                steps = collect_steps(data, step_indices)
+
+                if steps:
+                    mean_val = np.mean(steps, axis=0)
+                    std_val = np.std(steps, axis=0)
+                    mean_all.append((run_key, mean_val, std_val))
+
+            x = np.linspace(0, 100, interp_len)
+            if mean_all:
+                plt.figure(figsize=(8, 5))
+                for run_key, mean_val, std_val in mean_all:
+                    plt.plot(x, mean_val, label=f"{run_key} {joint} mean")
+                    plt.fill_between(x, mean_val - std_val, mean_val + std_val, alpha=0.15)
+                if plot_baseline and parameter_name in ["angle", "velocity"] and baseline_data is not None:
+                    if joint in baseline_data and parameter_name in baseline_data[joint]:
+                        plt.plot(x, baseline_data[joint][parameter_name], label=f"Baseline {joint}", color='black')
+                plt.title(f"{joint} mean (all runs)")
+                plt.xlabel("Interpolated Step (%)")
+                plt.ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
+                plt.legend()
+                plt.tight_layout()
+                plt.show()
+                plt.close()
 
     #@staticmethod 
     # def plot_sensor_force_symmetry_all_runs(all_loaded_data, run_step_data, interp_len=100, sensor_force_names=None):

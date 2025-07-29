@@ -83,7 +83,9 @@ env = ImitationFactory.make(
     # reattach_gas_muscle = True, reattach_muscles_offset = {'med_gas': [0,0.05,0], 'lat_gas':[0,0.05,0]},# relative position above amputation
     use_2_box_per_foot = True,
     default_dataset_conf=dict(task="walk"),
-    # reward_type = 'LocomotionReward'
+    goal_type = 'GoalRootWalk', #'GoalRandomRootVelocity',# 'GoalRootWalk',
+    goal_params = {'x_vel': 1.2, 'y_vel': 0, 'yaw_vel': 0},
+    reward_type = 'TargetVelocityGoalReward' #'LocomotionReward'
     #domain_randomization_type="ProsthesisRandomizer",
     #domain_randomization_params=randomization_params
 )

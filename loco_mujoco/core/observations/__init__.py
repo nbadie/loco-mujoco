@@ -7,3 +7,5 @@ GoalRandomRootVelocity.register()
 GoalTrajRootVelocity.register()
 GoalTrajMimic.register()
 GoalTrajMimicv2.register()
+
+GoalRootWalk.register()

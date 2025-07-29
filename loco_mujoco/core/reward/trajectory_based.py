@@ -1,6 +1,6 @@
 from types import ModuleType
 from typing import Any, Dict, Tuple, Union
-
+import jax
 import mujoco
 from mujoco import MjData, MjModel
 from mujoco.mjx import Data, Model
@@ -349,7 +349,7 @@ class MimicReward(TrajectoryBasedReward):
                                                              upper_bound=env.mdp_info.action_space.high, backend=backend)
         else:
             out_of_bound_reward = 0.0
-
+        # jax.debug.print("out_of_bound_reward: {out_of_bound_reward}", out_of_bound_reward=out_of_bound_reward)
         # joint acceleration reward
         if self._joint_acc_coeff > 0.0:
             last_joint_vel = reward_state.last_qvel[~self._free_joint_qvel_mask]
@@ -363,9 +363,10 @@ class MimicReward(TrajectoryBasedReward):
         if self._joint_torque_coeff > 0.0:
             torque_norm = backend.sum(backend.square(data.qfrc_actuator[~self._free_joint_qvel_mask]))
             torque_reward = self._joint_torque_coeff * -torque_norm
+            # jax.debug.print('torque_norm: {torque_norm}', torque_norm=torque_norm)  
         else:
             torque_reward = 0.0
-
+        # jax.debug.print('Torque_reward: {torque_reward}', torque_reward=torque_reward)
         # action rate reward
         if self._action_rate_coeff > 0.0:
             action_rate_norm = backend.sum(backend.square(action - reward_state.last_action))
@@ -379,6 +380,7 @@ class MimicReward(TrajectoryBasedReward):
                             + self._joint_torque_coeff * torque_reward
                             + self._action_rate_coeff * action_rate_reward)
         total_penalities = backend.maximum(total_penalities, -1.0)
+        # jax.debug.print('total_penalities: {total_penalities}', total_penalities=total_penalities)
 
         # calculate total reward
         total_reward = (self._qpos_w_sum * qpos_reward + self._qvel_w_sum * qvel_reward)
@@ -386,9 +388,10 @@ class MimicReward(TrajectoryBasedReward):
             total_reward = (total_reward
                         + self._rpos_w_sum * rpos_reward + self._rquat_w_sum * rangles_reward
                         + self._rvel_w_sum * rvel_rot_reward + self._rvel_w_sum * rvel_lin_reward)
+        # jax.debug.print('total_reward: {total_reward}', total_reward=total_reward)
 
         total_reward = total_reward + total_penalities
-
+        
         # clip to positive values
         total_reward = backend.maximum(total_reward, 0.0)
 

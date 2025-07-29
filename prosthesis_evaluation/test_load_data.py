@@ -100,7 +100,7 @@ import matplotlib.pyplot as plt
 
 def load_pickle(file_path):
     with open(file_path, "rb") as f:
-        return pickle.load(f)
+        return pickle.load(f) #, encoding='latin1')
 
 def plot_from_loaded_data(data_list, labels, variable_name, save_folder="plots"):
     """
@@ -130,53 +130,145 @@ def plot_from_loaded_data(data_list, labels, variable_name, save_folder="plots")
 
 
 file_paths = [
-    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-11/04-13-27/20250711_163756_evaluation_results_1000steps.pkl",
-    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-11/15-40-47/20250711_225012_evaluation_results_1000steps.pkl",
-    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-12/01-00-33/20250712_132758_evaluation_results_1000steps.pkl",
-    # # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-12/01-00-33/20250712_132758_evaluation_results_1000steps.pkl",
-    # # # #"/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-12/01-00-33/20250712_140420_evaluation_results_1000steps.pkl",
-    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/12-30-23/20250713_224320_evaluation_results_1000steps.pkl",
-    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250714_102933_evaluation_results_1000steps.pkl",
-    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_090024_evaluation_results_1000steps.pkl",
+    # # # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-11/04-13-27/20250711_163756_evaluation_results_1000steps.pkl",
+    # # # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-11/15-40-47/20250711_225012_evaluation_results_1000steps.pkl",
+    # # # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-12/01-00-33/20250712_132758_evaluation_results_1000steps.pkl",
+    # # # # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-12/01-00-33/20250712_132758_evaluation_results_1000steps.pkl",
+    # # # # # #"/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-12/01-00-33/20250712_140420_evaluation_results_1000steps.pkl",
+    # # # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/12-30-23/20250713_224320_evaluation_results_1000steps.pkl",
+    # # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250714_102933_evaluation_results_1000steps.pkl",
+    # # # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_090024_evaluation_results_1000steps.pkl",
     
-    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_092202_evaluation_results_1000steps.pkl",
-    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_092319_evaluation_results_1000steps.pkl",
-    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_093639_evaluation_results_1000steps.pkl",
-    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_093719_evaluation_results_1000steps.pkl",
-    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_105317_evaluation_results_1000steps.pkl",
-    # #"/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_105413_evaluation_results_1000steps.pkl"
-    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_120650_evaluation_results_1000steps.pkl",
-    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_120729_evaluation_results_1000steps.pkl",
-    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_123233_evaluation_results_1000steps.pkl",
-    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_123401_evaluation_results_1000steps.pkl"
-    "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_130842_evaluation_results_1000steps.pkl",
-    "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_133516_evaluation_results_1000steps.pkl", 
-    "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_133609_evaluation_results_1000steps.pkl",
-    "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_140255_evaluation_results_1000steps.pkl"
+    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_092202_evaluation_results_1000steps.pkl",
+    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_092319_evaluation_results_1000steps.pkl",
+    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_093639_evaluation_results_1000steps.pkl",
+    # # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_093719_evaluation_results_1000steps.pkl",
+    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_105317_evaluation_results_1000steps.pkl",
+    # # # #"/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_105413_evaluation_results_1000steps.pkl"
+    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_120650_evaluation_results_1000steps.pkl",
+    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_120729_evaluation_results_1000steps.pkl",
+    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_123233_evaluation_results_1000steps.pkl",
+    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_123401_evaluation_results_1000steps.pkl"
+    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_130842_evaluation_results_1000steps.pkl",
+    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_133516_evaluation_results_1000steps.pkl", 
+    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_133609_evaluation_results_1000steps.pkl",
+   
+   
+   
+    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-13/22-55-54/20250715_140255_evaluation_results_1000steps.pkl",
+    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/20250716_001754_evaluation_results_1000steps.pkl",
+    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-16/01-07-33/20250716_090607_evaluation_results_1000steps.pkl",
+    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-16/01-07-33/20250716_121606_evaluation_results_1000steps.pkl",
+    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-16/01-07-33/20250716_124352_evaluation_results_1000steps.pkl",
+    # # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/20250716_125436_evaluation_results_1000steps.pkl"
+    
+    
+    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/20250716_164439_evaluation_results_1000steps.pkl",
+    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/20250716_170058_evaluation_results_1000steps.pkl",
+    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/20250716_170224_evaluation_results_1000steps.pkl",
+    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/20250716_172237_evaluation_results_1000steps.pkl",
+    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/20250716_172308_evaluation_results_1000steps.pkl",
+    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/20250716_180002_evaluation_results_1000steps.pkl",
+    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/20250716_182613_evaluation_results_1000steps.pkl",
+    
+    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/20250716_184409_evaluation_results_1000steps.pkl",
+    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/20250716_184450_evaluation_results_1000steps.pkl",
+    # # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/20250716_185042_evaluation_results_1000steps.pkl",
+
+    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/20250716_190212_evaluation_results_1000steps.pkl",
+    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/20250716_190609_evaluation_results_1000steps.pkl",
+
+
+    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-17/02-11-17/20250717_125329_evaluation_results_1000steps.pkl",
+    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-17/02-11-17/20250717_163622_evaluation_results_1000steps.pkl",
+    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-17/02-11-17/20250717_163700_evaluation_results_1000steps.pkl",
+    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-17/02-11-17/20250717_163727_evaluation_results_1000steps.pkl",
+
+
+    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-17/02-11-17/20250717_165510_evaluation_results_1000steps.pkl",
+    "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-17/02-11-17/20250717_165934_evaluation_results_1000steps.pkl",
+    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-17/02-11-17/20250717_165957_evaluation_results_1000steps.pkl",
+
+
+    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-17/02-11-17/20250717_171827_evaluation_results_1000steps.pkl",
+    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-17/02-11-17/20250717_171853_evaluation_results_1000steps.pkl",
+    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-17/02-11-17/20250717_172047_evaluation_results_1000steps.pkl",
+    # "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-17/02-11-17/20250717_172135_evaluation_results_1000steps.pkl",
+
+
+    # "",
+    "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-17/02-11-17/20250717_173931_evaluation_results_1000steps.pkl",
+    "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-17/02-11-17/20250717_174122_evaluation_results_1000steps.pkl",
+    "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-17/02-11-17/20250717_174144_evaluation_results_1000steps.pkl",
+
 ]
 
 labels = [
-    # # # "baseline",
-    # # # "med_gas",
-    # # # "med_gas_TalusStiffDampSame",
-    # # # # "med_gas_TalusStiffDampSame_stiffSocket",
-    # # # "med_gas_KneeMimic_TalusStiffDampSame_stiffSocket",
-    # # "med_gas_KneeMimic_TalusStiffDampSame_stiffSocket_NoAnkle", 
-    # "med_gas_KneeMimic_TalusStiffDampSame_damp10_NoAnkle",
-    # "med_gas_KneeMimic_TalusStiffDampSame_damp10all_NoAnkle",
-    # "med_gas_KneeMimic_TalusStiffDampSame_damp100_NoAnkle",
-    # # "med_gas_KneeMimic_TalusStiffDampSame_damp100stiff10000_NoAnkle",
-    # "med_gas_KneeMimic_TalusStiffDampSame_damp100stiff40000_NoAnkle",
-    # #"med_gas_KneeMimic_TalusStiffDampSame_damp400stiff40000_NoAnkle",
-    # "med_gas_KneeMimic_TalusStiffDampSame_txdamp100stiff40000_tz21st100damp_NoAnkle",
-    # "med_gas_KneeMimic_TalusStiffDampSame_damp100stiff40000_tz10st100dampNoAnkle",
-    # "med_gas_KneeMimic_TalusStiffDampSame_damp100stiff40000_tz30st100dampNoAnkle",
-    # "med_gas_KneeMimic_TalusStiffDampSame_damp100stiff40000_tz30st50dampNoAnkle",
-    # "med_gas_KneeMimic_TalusStiffDampSame_damp100stiff40000_tz43st50dampNoAnkle",
-    "tzstif30damp100_tystif43damp400",
-    "tzstif43damp100_tystif43damp400",
-    "tzstif43damp100_tystif43damp100",
-    "tzstif43damp40_tystif43damp40",
+    # # # # "baseline",
+    # # # # "med_gas",
+    # # # # "med_gas_TalusStiffDampSame",
+    # # # # # "med_gas_TalusStiffDampSame_stiffSocket",
+    # # # # "med_gas_KneeMimic_TalusStiffDampSame_stiffSocket",
+    # # # "med_gas_KneeMimic_TalusStiffDampSame_stiffSocket_NoAnkle", 
+    # # "med_gas_KneeMimic_TalusStiffDampSame_damp10_NoAnkle",
+    # # "med_gas_KneeMimic_TalusStiffDampSame_damp10all_NoAnkle",
+    # # "med_gas_KneeMimic_TalusStiffDampSame_damp100_NoAnkle",
+    # # # "med_gas_KneeMimic_TalusStiffDampSame_damp100stiff10000_NoAnkle",
+    # # "med_gas_KneeMimic_TalusStiffDampSame_damp100stiff40000_NoAnkle",
+    # # #"med_gas_KneeMimic_TalusStiffDampSame_damp400stiff40000_NoAnkle",
+    # # "med_gas_KneeMimic_TalusStiffDampSame_txdamp100stiff40000_tz21st100damp_NoAnkle",
+    # # "med_gas_KneeMimic_TalusStiffDampSame_damp100stiff40000_tz10st100dampNoAnkle",
+    # # "med_gas_KneeMimic_TalusStiffDampSame_damp100stiff40000_tz30st100dampNoAnkle",
+    # # "med_gas_KneeMimic_TalusStiffDampSame_damp100stiff40000_tz30st50dampNoAnkle",
+    # # "med_gas_KneeMimic_TalusStiffDampSame_damp100stiff40000_tz43st50dampNoAnkle",
+    # "tzstif30damp100_tystif43damp400",
+    # "tzstif43damp100_tystif43damp400",
+    # "tzstif43damp100_tystif43damp100",
+    # "tzstif43damp40_tystif43damp40",
+    
+    # "walking",
+    
+    # # # "walking_noRand",
+    # # # "walking_noRand_Knee0",
+    # # # "walking_noRand_meanStiff",
+    # # # "walking_meanStiff",
+    
+    # # "walking_solimp",
+    # # "walking_solimp_20",
+    # # "walking_solimp_30",
+    # # "walking_solimp_10",
+    # # "walking_solimp_8",
+    # # "walking_solimp_0",
+    # "walking_solimp_0_halfRange_halfWidth",
+    
+    # # "walking_solimp_0_halfRange_018Width",
+    # # "walking_solimp_0_halfRange_02Width",
+    # # "walking_solimp_0_018Range_018Width",
+
+    # "walking_solimp_0_0020-0015Range_001Width",
+    # "walking_solimp_0_0019-001Range_0015Width"
+
+    # "085solimp0018_Rrange_mar0018",
+    # "085solimp0018_Rrange_mar003",
+    # "085solimp0018_Rrange_mar005",
+    # "085solimp0018_Rrange_mar007",
+
+    # "085solimp001_Rrange_mar005",
+    "096solimp0008_Rrange_mar0008",
+    # "088solimp0004_Rrange_mar0004",
+
+    # "096solimp0007_Rrange_mar0007",
+    # "096solimp0006_Rrange_mar0006",
+    # "094solimp0006_Rrange_mar0006",
+    # "092solimp0002_Rrange_mar001",
+
+
+    "096solimp0008_Rrange_mar0008",    
+    "092solimp0008_Rrange_mar008",    
+    "092solimp0008_Rrange_mar005",    
+
+
+
 
 
     

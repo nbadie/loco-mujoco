@@ -5,7 +5,19 @@ defaults:
 
 wandb:
   project: "deepmimic"
-  run_name: "SACHFoot_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri" #"MjxSkeletonPros_AdaptSigmd5_NoMotorTanh_stiff50_damp1"
+  run_name: "SACHFoot_GPU800CurrTorsoMimTorque003Checkpoints_GPU600Same_NoRand_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri"
+  #"SACHFoot_GPU300_CurrTorsoMimTorque0003JointAcc002_GPU600Same_NoRand_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri"
+  
+  #"SACHFoot_RewardTestCross_NoRand_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri"
+  
+  #"SACHFoot_GPU300Curr_GPU300_CurrTorsoMimTorque0003_GPU600Same_NoRand_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri"
+  #"SACHFoot_RewardTestCross_NoRand_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri"
+  #"SACHFoot_GPU300Curr_GPU300_CurrTorsoMimTorque0003_GPU600Same_NoRand_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri"
+  #"TT_REW"
+  #SACHFoot_GPU600Same_NoRand_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri"
+  #"TT"
+  #"SACHFoot_GPU300_CurrHeadTorsoMimTorque0003_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri"
+  #"SACHFoot_NoRand_KneeMimic_LaPreStiffDampSolimpMarginTy_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri" #"MjxSkeletonPros_AdaptSigmd5_NoMotorTanh_stiff50_damp1"
 
 experiment:
   task_factory:
@@ -37,39 +49,49 @@ experiment:
     headless: True
     disable_arms: false
     horizon: 1000
-    goal_type: GoalTrajMimic
+    goal_type: GoalTrajMimic #GoalRootWalk #GoalTrajMimic #GoalRootWalk #GoalTrajMimic #GoalRootWalk #GoalTrajMimic
     goal_params:
       visualize_goal: true
     control_type: ${control_config.torque_control.control_type}
     control_params: ${control_config.torque_control.control_params}
-    reward_type: MimicReward
+    reward_type: MimicRewardVel #MimicReward  #MimicRewardCross #TargetVelocityGoalRewardCross #MimicReward #TargetVelocityGoalRewardCross #MimicReward #TargetVelocityGoalReward #MimicReward
     reward_params:
       qpos_w_sum: 0.4
       qvel_w_sum: 0.2
       rpos_w_sum: 0.5
       rquat_w_sum: 0.3
       rvel_w_sum: 0.1
+      # foot_cross_coeff: 0.05
+      # joint_acc_coeff: 0.002
+      # joint_torque_coeff: 0.003
+      joint_torque_vel_coeff: 0.003
+      # action_out_of_bounds_coeff: 0.01
+      # joint_torque_coeff: 0.003 #4
       sites_for_mimic:
         - upper_body_mimic
-        # - head_mimic
-        # - pelvis_mimic
-        - left_hand_mimic
-        ##- left_elbow_mimic
-        #- left_shoulder_mimic
-        #- left_hip_mimic
-        - left_knee_mimic
-        - left_foot_mimic
-        - right_hand_mimic
-        #- right_elbow_mimic
-        #- right_shoulder_mimic
-        #- right_hip_mimic
-        - right_knee_mimic
-        - right_foot_mimic
+        # # - head_mimic
+        # # # - pelvis_mimic
+        # - left_hand_mimic
+        # # ##- left_elbow_mimic
+        # # #- left_shoulder_mimic
+        # # #- left_hip_mimic
+        # # - left_knee_mimic
+        # - left_foot_mimic
+        # - right_hand_mimic
+        # # #- right_elbow_mimic
+        # # #- right_shoulder_mimic
+        # # #- right_hip_mimic
+        # # - right_knee_mimic
+        # - right_foot_mimic
   hidden_layers: [512, 256]
   lr: 1e-4
   num_envs: 2048
   num_steps: 200
-  total_timesteps: 1300e6 #900e6 #300e6
+  total_timesteps: 800e6 #800e6 #600e6 #10e6 #60e6 #900e6 #1000e6 #1100e6 #900e6 #300e6
+  checkpoint_num: 8
+  # checkpoint_interval: 2e6
+  result_dir: None
+  # checkpoint_global_steps_interval: 2e6 #20e6
   update_epochs: 4
   proportion_env_reward: 0.0
   num_minibatches: 32
@@ -106,18 +128,19 @@ experiment:
       - DiscreteFrechetDistance
     rel_site_names:
       - upper_body_mimic
+      # - head_mimic
       - left_hand_mimic
-      - left_knee_mimic
+    #   - left_knee_mimic
       - left_foot_mimic
       - right_hand_mimic
-      - right_knee_mimic
+    #   - right_knee_mimic
       - right_foot_mimic
-    # joints_to_ignore:
-    #   - lumbar5
-    #   - lumbar4
-    #   - lumbar3
-    #   - lumbar2
-    #   - lumbar1
+    # # joints_to_ignore:
+    # #   - lumbar5
+    # #   - lumbar4
+    # #   - lumbar3
+    # #   - lumbar2
+    # #   - lumbar1
 
 # Define control subconfigs
 control_config:
@@ -149,7 +172,7 @@ randomization_config:
       randomize_prosthesis_body_position: False
       prosthesis_body_position_range: {'calcn': {'x': [0.3, 0.4],'y': [0.4, 0.5]}}
 
-      randomize_prosthesis_body_orientation: True #True
+      randomize_prosthesis_body_orientation: False #True #False #True #True
       # randomization_body_orientation_names: ['calcn']
       # prosthesis_body_orientation_range: {'y': [-0.09, 0.09]} #[-0.1, 0.1]
       prosthesis_body_orientation_range: {'pylon_socket': {'y': [-0.3,0.3]},'talus': {'y': [-0.3,0.3]}}
@@ -168,3 +191,16 @@ randomization_config:
           # 'socket_tz': []
       }
       adapt_tibia_socket_parameters: False
+
+
+checkpoint_path: "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-22/01-50-59/PPOJax_saved.pkl"
+
+#/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-22/01-50-59/PPOJax_saved.pkl # GPU600Same
+
+#/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-22/23-00-42/PPOJax_saved.pkl # After GPU300Curr_GPU600Same
+
+# /home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-22/01-50-59/PPOJax_saved.pkl
+
+#/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-16/01-07-33/PPOJax_saved.pkl 
+# /home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-15/15-13-07/PPOJax_saved.pkl
+#/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-16/01-07-33/PPOJax_saved.pkl 

@@ -57,3 +57,13 @@ prosthesis_evaluation/all_trajs_walk_SkeletonMuscle.pkl
 
 *.png
 plots/
+
+prosthesis_rand_save/outputs
+prosthesis_rand_save/LocoMuJoCo_recordings
+prosthesis_rand_save/wandb
+
+loco_mujoco/algorithms/ppo_jax_save_copy.py
+loco_mujoco/algorithms/ppo_jax_save_____new.py
+loco_mujoco/algorithms/ppo_jax_save___.py
+loco_mujoco/algorithms/ppo_jax_save_.py
+

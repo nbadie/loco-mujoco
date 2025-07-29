@@ -428,7 +428,7 @@ class ProsthesisRandomizer(DomainRandomizer):
 
 
         ###### Indices for tibia, socket, talus for initialization and parameter adaption for different socket_ty 
-        if 'socket_ty'+self.prosthesis_side_str in self._socket_joint_indices:
+        if 'socket_ty'+self.prosthesis_side_str in self._socket_joint_indices and "randomize_prosthesis_socket_joint" in self.rand_conf and self.rand_conf["randomize_prosthesis_socket_joint"]:
             tibia_name = 'tibia' + self.prosthesis_side_str
             socket_name = 'pylon_socket' + self.prosthesis_side_str
             talus_name = 'talus' + self.prosthesis_side_str
@@ -771,10 +771,10 @@ class ProsthesisRandomizer(DomainRandomizer):
             #     mjx.forward(model, data)
             if 'socket_ty'+self.prosthesis_side_str in self._socket_joint_indices:
 
-                if not np.any(self.init_talus_pos):
-                    # jax.debug.print("IN LOOOOOOPPPPP")
-                    self.init_talus_pos = model.body_pos[self._talus_idx].copy()
-                print(f"init_talus_pos:", self.init_talus_pos)
+                # if not np.any(self.init_talus_pos):
+                    # jax.debug.print("IN LOOOOOOPPPPP")    
+                self.init_talus_pos = model.body_pos[self._talus_idx].copy()
+                # print(f"init_talus_pos:", self.init_talus_pos)
                 
                 talus_offset_y = domrand_state.prosthesis_socket_joint_value[f"socket_ty"+self.prosthesis_side_str]
                 # jax.debug.print("pos_y: {pos_y}", pos_y = pos_y)
@@ -828,6 +828,7 @@ class ProsthesisRandomizer(DomainRandomizer):
 
             # If talus height needs to be adapted depending on socket_ty (so if socket_ty in randomize_prosthesis_socket_joint)
             if hasattr(self, '_talus_idx'):
+                talus_offset_y = domrand_state.prosthesis_socket_joint_value[f"socket_ty"+self.prosthesis_side_str]
                 # jax.debug.print("new talus pos: {new_talus_pos}", new_talus_pos=new_talus_pos) 
                 talus_offset_array = backend.array([0,talus_offset_y,0])
                 if backend == np: 
@@ -836,7 +837,7 @@ class ProsthesisRandomizer(DomainRandomizer):
                     body_pos = body_pos.at[jnp.array(self._talus_idx)].set(body_pos.at[jnp.array(self._talus_idx)].get() - talus_offset_array)
 
             model = self._set_attribute_in_model(model, "body_pos", body_pos, backend)
-            print('model.body_pos after: ', model.body_pos)
+            # print('model.body_pos after: ', model.body_pos)
 
 
 

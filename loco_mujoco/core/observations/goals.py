@@ -1112,3 +1112,184 @@ class GoalTrajMimicv2(GoalTrajMimic):
         carry = carry.replace(user_scene=new_user_scene)
 
         return carry
+    
+
+
+
+@struct.dataclass
+class GoalRootWalkState:
+    """
+    State class for random root velocity goal.
+
+    Attributes:
+        goal_vel_x (float): Goal velocity in the x direction.
+        goal_vel_y (float): Goal velocity in the y direction.
+        goal_vel_yaw (float): Goal yaw velocity.
+    """
+    goal_vel_x: float
+    goal_vel_y: float
+    goal_vel_yaw: float
+
+
+class GoalRootWalk(Goal, RootVelocityArrowVisualizer):
+    """
+    A class representing a random root velocity goal.
+
+    This class defines a goal that specifies random velocities for the root body in
+    the x, y, and yaw directions.
+
+    Args:
+        info_props (Dict): Information properties required for initialization.
+        max_x_vel (float): Maximum velocity in the x direction.
+        max_y_vel (float): Maximum velocity in the y direction.
+        max_yaw_vel (float): Maximum yaw velocity.
+        **kwargs: Additional keyword arguments.
+    """
+
+    def __init__(self,
+                 info_props: Dict,
+                 x_vel: float = 1.0,
+                 y_vel: float = 1.0,
+                 yaw_vel: float = 1.0, **kwargs):
+
+        self._traj_goal_ind = None
+        self.x_vel = x_vel
+        self.y_vel = y_vel
+        self.yaw_vel = yaw_vel
+        self.upper_body_xml_name = info_props["upper_body_xml_name"]
+        self.free_jnt_name = info_props["root_free_joint_xml_name"]
+
+        # To be initialized from Mujoco
+        self._root_body_id = None
+        self._root_jnt_qpos_start_id = None
+
+        # call visualizer init
+        RootVelocityArrowVisualizer.__init__(self, info_props)
+
+        # call goal init
+        n_visual_geoms = self._arrow_n_visual_geoms \
+            if "visualize_goal" in kwargs.keys() and kwargs["visualize_goal"] else 0
+        super().__init__(info_props, n_visual_geoms=n_visual_geoms, **kwargs)
+
+    def _init_from_mj(self,
+                      env: Any,
+                      model: Union[MjModel, Model],
+                      data: Union[MjData, Data],
+                      current_obs_size: int):
+        """
+        Initialize the goal from Mujoco model and data.
+
+        Args:
+            env (Any): The environment instance.
+            model (Union[MjModel, Model]): The Mujoco model.
+            data (Union[MjData, Data]): The Mujoco data.
+            current_obs_size (int): Current observation size.
+        """
+        self.min = [-np.inf] * self.dim
+        self.max = [np.inf] * self.dim
+        self.obs_ind = np.array([j for j in range(current_obs_size, current_obs_size + self.dim)])
+        self._root_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, self.upper_body_xml_name)
+        self._free_jnt_qpos_id = np.array(mj_jntname2qposid(self.free_jnt_name, model))
+        self._initialized_from_mj = True
+
+    @property
+    def has_visual(self) -> bool:
+        """Check if the goal supports visualization."""
+        return True
+
+    def init_state(self,
+                   env: Any,
+                   key: jax.random.PRNGKey,
+                   model: Union[MjModel, Model],
+                   data: Union[MjData, Data],
+                   backend: ModuleType) -> GoalRandomRootVelocityState:
+        """
+        Initialize the goal state.
+
+        Args:
+            env (Any): The environment instance.
+            key (jax.random.PRNGKey): Random key for sampling.
+            model (Union[MjModel, Any]): The Mujoco model.
+            data (Union[MjData, Any]): The Mujoco data.
+            backend (ModuleType): The backend (numpy or jax).
+
+        Returns:
+            GoalRandomRootVelocityState: Initialized state.
+        """
+        return GoalRootWalkState(self.x_vel, self.y_vel, self.yaw_vel)
+
+    def reset_state(self,
+                    env: Any,
+                    model: Union[MjModel, Model],
+                    data: Union[MjData, Data],
+                    carry: Any,
+                    backend: ModuleType) -> Tuple[Union[MjData, Any], Any]:
+        """
+        Reset the goal state with random velocities.
+
+        Args:
+            env (Any): The environment instance.
+            model (Union[MjModel, Any]): The Mujoco model.
+            data (Union[MjData, Any]): The Mujoco data.
+            carry (Any): Carry object.
+            backend (ModuleType): The backend (numpy or jax).
+
+        Returns:
+            Tuple[Union[MjData, Any], Any]: Updated data and carry.
+        """
+        # key = carry.key
+        # if backend == np:
+        #     goal_vel = np.random.uniform(
+        #         [-self.max_x_vel, -self.max_y_vel, -self.max_yaw_vel],
+        #         [self.max_x_vel, self.max_y_vel, self.max_yaw_vel]
+        #     )
+        # else:
+        #     key, subkey = jax.random.split(key)
+        #     goal_vel = jax.random.uniform(
+        #         subkey,
+        #         shape=(3,),
+        #         minval=jnp.array([-self.max_x_vel, -self.max_y_vel, -self.max_yaw_vel]),
+        #         maxval=jnp.array([self.max_x_vel, self.max_y_vel, self.max_yaw_vel])
+        #     )
+
+        # goal_state = GoalRootWalkState(1.2,0,0) #goal_vel[0], goal_vel[1], goal_vel[2])
+        # observation_states = carry.observation_states.replace(**{self.name: goal_state})
+        return data, carry #.replace(key=key, observation_states=observation_states)
+
+    def get_obs_and_update_state(self,
+                                 env: Any,
+                                 model: Union[MjModel, Model],
+                                 data: Union[MjData, Data],
+                                 carry: Any,
+                                 backend: ModuleType) -> Tuple[Union[np.ndarray, jnp.ndarray], Any]:
+        """
+        Get the current goal observation and update the state.
+
+        Args:
+            env (Any): The environment instance.
+            model (Union[MjModel, Model]): The Mujoco model.
+            data (Union[MjData, Data]): The Mujoco data.
+            carry (Any): Carry object.
+            backend (ModuleType): The backend (numpy or jax).
+
+        Returns:
+            Tuple[Union[np.ndarray, jnp.ndarray], Any]: Goal observation and updated carry.
+        """
+        goal_vel_x = getattr(carry.observation_states, self.name).goal_vel_x
+        goal_vel_y = getattr(carry.observation_states, self.name).goal_vel_y
+        goal_vel_yaw = getattr(carry.observation_states, self.name).goal_vel_yaw
+        goal = backend.array([goal_vel_x, goal_vel_y, goal_vel_yaw])
+        goal_visual = backend.array([goal_vel_x, goal_vel_y, 0.0, 0.0, 0.0, goal_vel_yaw])
+
+        if self.visualize_goal:
+            carry = self.set_visuals(
+                goal_visual, env, model, data, carry, self._root_body_id,
+                self._free_jnt_qpos_id, self.visual_geoms_idx, backend
+            )
+
+        return goal, carry
+
+    @property
+    def dim(self) -> int:
+        """Get the dimension of the goal."""
+        return 3

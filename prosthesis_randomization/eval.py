@@ -28,7 +28,15 @@ args = parser.parse_args()
 path = args.path
 agent_conf, agent_state = PPOJax.load_agent(path)
 config = agent_conf.config
+# JOINT TORQUE TEST 
+# config.experiment.env_params.reward_params.joint_torque_coeff=0.003 #5 #2 #0.001 #0.01
+config.experiment.env_params.reward_params.sites_for_mimic = "upper_body_mimic"
 
+# config.experiment.env_params.reward_type="MimicRewardCross"
+# config.experiment.env_params.reward_params.foot_cross_coeff=0.002
+
+config.experiment.env_params.reward_type="MimicRewardVel" 
+config.experiment.env_params.reward_params.joint_torque_vel_coeff=0.003 #0.002
 # get task factory
 factory = TaskFactory.get_factory_cls(config.experiment.task_factory.name)
 
