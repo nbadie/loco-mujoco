@@ -5,7 +5,10 @@ defaults:
 
 wandb:
   project: "deepmimic"
-  run_name: "SACHFoot_RandPosSocketTalus_RandOriPylonSocket_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas" 
+  run_name: "SACHFoot_800TorqueVelArm002Rest001_GPU600_900_NoRand_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri"
+  
+  
+  #"SACHFoot_800e6Same_1600e6_RandPosSocketTalus_RandOriPylonSocket_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas" 
   #"800CurrMimTorsoJointTorque003_800Curr_test_checkpoint_saving_withoutRand"
   #"TT_REW"
   #SACHFoot_GPU600Same_NoRand_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri"
@@ -48,38 +51,42 @@ experiment:
       visualize_goal: true
     control_type: ${control_config.torque_control.control_type}
     control_params: ${control_config.torque_control.control_params}
-    reward_type: MimicReward #TargetVelocityGoalRewardCross #MimicReward #TargetVelocityGoalReward #MimicReward
+    reward_type: MimicRewardVelArm #TargetVelocityGoalRewardCross #MimicReward #TargetVelocityGoalReward #MimicReward
     reward_params:
       qpos_w_sum: 0.4
       qvel_w_sum: 0.2
       rpos_w_sum: 0.5
       rquat_w_sum: 0.3
       rvel_w_sum: 0.1
+      # action_coeff: 0.02
+      joint_torque_vel_arm_coeff: 0.002
+      joint_torque_vel_nonarm_coeff: 0.001
+      # joint_torque_vel_coeff: 0.003
       # # leg_cross_coeff: 0.1
       # joint_torque_coeff: 0.003 #0.002 #0.003
       # # action_out_of_bounds_coeff: 0.01
       # # joint_torque_coeff: 0.003 #4
       sites_for_mimic:
         - upper_body_mimic
-        # - head_mimic
-        # - pelvis_mimic
-        - left_hand_mimic
-        # ##- left_elbow_mimic
-        # #- left_shoulder_mimic
-        # #- left_hip_mimic
-        - left_knee_mimic
-        - left_foot_mimic
-        - right_hand_mimic
-        # #- right_elbow_mimic
-        # #- right_shoulder_mimic
-        # #- right_hip_mimic
-        - right_knee_mimic
-        - right_foot_mimic
+        # # - head_mimic
+        # # - pelvis_mimic
+        # - left_hand_mimic
+        # # ##- left_elbow_mimic
+        # # #- left_shoulder_mimic
+        # # #- left_hip_mimic
+        # - left_knee_mimic
+        # - left_foot_mimic
+        # - right_hand_mimic
+        # # #- right_elbow_mimic
+        # # #- right_shoulder_mimic
+        # # #- right_hip_mimic
+        # - right_knee_mimic
+        # - right_foot_mimic
   hidden_layers: [512, 256]
   lr: 1e-4
   num_envs: 2048
   num_steps: 200
-  total_timesteps: 1600e6 #800e6 #600e6 #10e6 #60e6 #900e6 #1000e6 #1100e6 #900e6 #300e6
+  total_timesteps: 800e6 #800e6 #600e6 #10e6 #60e6 #900e6 #1000e6 #1100e6 #900e6 #300e6
   result_dir: None
   checkpoint_num: 8 #5
   # checkpoint_interval: 2e6
@@ -161,11 +168,11 @@ randomization_config:
       # # prosthesis_body_position_range: {'z': [0.1, 0.5]} 
       # #'x': [-0.001, 0.001], 'y': [0.015, 0.02], 'z': [-0.001, 0.001]
 
-      randomize_prosthesis_body_position: True
+      randomize_prosthesis_body_position: False #True
       prosthesis_body_position_range: {'pylon_socket': {'x': [-0.01,0.01],'z': [-0.01,0.01]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
       #{'calcn': {'x': [0.3, 0.4],'y': [0.4, 0.5]}}
 
-      randomize_prosthesis_body_orientation: True #True #False #True #True
+      randomize_prosthesis_body_orientation: False #True #True #False #True #True
       # randomization_body_orientation_names: ['calcn']
       # prosthesis_body_orientation_range: {'y': [-0.09, 0.09]} #[-0.1, 0.1]
       prosthesis_body_orientation_range: {'pylon_socket': {'x': [-0.1,0.1],'y': [-0.3,0.3],'z': [-0.1,0.1]},'talus': {'x': [-0.1,0.1],'y': [-0.3,0.3],'z': [-0.1,0.1]}}
@@ -187,7 +194,11 @@ randomization_config:
       adapt_tibia_socket_parameters: False
 
 
-# checkpoint_path: "/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2025-07-26/00-28-17/checkpoints/ckpt_799539200"
+checkpoint_path: "/home/nadinebadie/loco-mujoco/prosthesis_randomization/outputs/2025-07-22/01-50-59/PPOJax_saved.pkl"
+
+#"/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2025-07-29/10-07-12/SavePPOJax_saved.pkl"
+
+#"/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2025-07-26/00-28-17/checkpoints/ckpt_799539200"
 #"/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2025-07-25/17-19-45/checkpoints/ckpt_799539200"
 #"/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2025-07-25/10-57-00/checkpoints/ckpt_819200"
 

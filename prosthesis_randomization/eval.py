@@ -35,8 +35,17 @@ config.experiment.env_params.reward_params.sites_for_mimic = "upper_body_mimic"
 # config.experiment.env_params.reward_type="MimicRewardCross"
 # config.experiment.env_params.reward_params.foot_cross_coeff=0.002
 
-config.experiment.env_params.reward_type="MimicRewardVel" 
-config.experiment.env_params.reward_params.joint_torque_vel_coeff=0.003 #0.002
+# config.experiment.env_params.reward_type="MimicRewardVel" 
+# config.experiment.env_params.reward_params.joint_torque_vel_coeff=0.003 #0.002
+
+config.experiment.env_params.reward_type="MimicRewardVelArm" 
+# config.experiment.env_params.reward_params.joint_torque_arm_coeff=0.003 
+# config.experiment.env_params.reward_params.joint_torque_nonarm_coeff=0.002 
+# config.experiment.env_params.reward_params.joint_torque_vel_arm_coeff=0.004 #0.003 
+# config.experiment.env_params.reward_params.joint_torque_vel_nonarm_coeff=0.0015 #0.002 
+config.experiment.env_params.reward_params.action_coeff=0.1 #0.002 
+
+
 # get task factory
 factory = TaskFactory.get_factory_cls(config.experiment.task_factory.name)
 

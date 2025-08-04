@@ -714,7 +714,7 @@ class Mjx(Mujoco):
                 
                 current_model_body_pos[body_id] = np.array(position_value_array[0], dtype=np.float64).squeeze()
 
-            if 'socket_ty'+self._domain_randomizer.prosthesis_side_str in self._domain_randomizer._socket_joint_indices:
+            if 'socket_ty'+self._domain_randomizer.prosthesis_side_str in self._domain_randomizer._socket_joint_indices and self._domain_randomizer.rand_conf["randomize_prosthesis_socket_joint"]:
                 talus_offset_y = domain_randomizer_state.prosthesis_socket_joint_value[f"socket_ty"+self._domain_randomizer.prosthesis_side_str]
                 talus_offset_array = np.array([0,talus_offset_y[0], 0])
                 # jax.debug.print("pos_y view: {pos_y}", pos_y = pos_y)

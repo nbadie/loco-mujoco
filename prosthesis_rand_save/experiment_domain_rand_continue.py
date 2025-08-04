@@ -19,7 +19,7 @@ from loco_mujoco.utils.metrics import QuantityContainer
 from omegaconf import DictConfig, OmegaConf #OmegaConf is a YAML based hierarchical configuration system, with support for merging configurations from multiple sources
 
 from loco_mujoco import TaskFactory
-from loco_mujoco.algorithms import PPOJax
+from loco_mujoco.algorithms import SavePPOJax
 from loco_mujoco.utils import MetricsHandler
 from loco_mujoco import ImitationFactory
 
@@ -75,15 +75,19 @@ def experiment(config: DictConfig):
         if config.checkpoint_path is not None:# and os.path.exists(config.checkpoint_path):
             print(f"Loading agent state from: {config.checkpoint_path}")
             # Load the agent configuration and state
-            agent_conf, agent_state = PPOJax.load_agent(config.checkpoint_path)
+            agent_conf, agent_state = SavePPOJax.load_agent(config.checkpoint_path)
             print("Agent state loaded successfully.")
-            new_agent_conf = PPOJax.init_agent_conf(env, config)
+            new_agent_conf = SavePPOJax.init_agent_conf(env, config)
             agent_conf = new_agent_conf 
         else:
             print("No checkpoint path provided or file not found. Initializing new agent.")
             # If no checkpoint, initialize a new agent configuration
-            agent_conf = PPOJax.init_agent_conf(env, config)
+            agent_conf = SavePPOJax.init_agent_conf(env, config)
 
+        save_path = SavePPOJax.save_conf(result_dir, agent_conf)
+        run.config.update({"agent_conf_save_path": save_path})
+        
+        config.experiment.result_dir = result_dir
         # agent_conf = 
         # get initial agent configuration
         # agent_conf = PPOJax.init_agent_conf(env, config) #PPOJax.init_agent_conf(env, config)
@@ -92,7 +96,7 @@ def experiment(config: DictConfig):
         mh = MetricsHandler(config, env) if config.experiment.validation.active else None
 
         # build training function
-        train_fn = PPOJax.build_train_fn_continue(env, agent_conf, agent_state=agent_state, mh=mh) #PPOJax.build_train_fn(env, agent_conf, mh=mh)
+        train_fn = SavePPOJax.build_train_fn_continue(env, agent_conf, agent_state=agent_state.train_state, mh=mh) #PPOJax.build_train_fn(env, agent_conf, mh=mh)
 
 
         # jit and vmap training function
@@ -108,7 +112,7 @@ def experiment(config: DictConfig):
 
         # save agent state
         agent_state = out["agent_state"]
-        save_path = PPOJax.save_agent(result_dir, agent_conf, agent_state) #PPOJax.save_agent(result_dir, agent_conf, agent_state)
+        save_path = SavePPOJax.save_agent(result_dir, agent_conf, agent_state) #PPOJax.save_agent(result_dir, agent_conf, agent_state)
         run.config.update({"agent_save_path": save_path})
 
         import time
@@ -156,7 +160,7 @@ def experiment(config: DictConfig):
         print(f"Time taken to log metrics: {time.time() - t_start}s")
 
         # run the environment with the trained agent to record video
-        PPOJax.play_policy(env, agent_conf, agent_state, deterministic=True, n_steps=200, n_envs=20, record=True,
+        SavePPOJax.play_policy(env, agent_conf, agent_state.train_state, deterministic=True, n_steps=200, n_envs=20, record=True,
                            train_state_seed=0)
         # PPOJax.play_policy(env, agent_conf, agent_state, deterministic=True, n_steps=200, n_envs=20, record=True,
         #                    train_state_seed=0)

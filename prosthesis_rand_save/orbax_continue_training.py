@@ -107,8 +107,6 @@ def experiment(config: DictConfig):
         env = factory.make(domain_randomization_type=randomization_type, domain_randomization_params=randomization_params,
             **config.experiment.env_params, **config.experiment.task_factory.params)
         
-        save_path = SavePPOJax.save_conf(result_dir, agent_conf)
-        run.config.update({"agent_conf_save_path": save_path})
 
         config.experiment.result_dir = result_dir
         if config.checkpoint_path is not None:# and os.path.exists(config.checkpoint_path):
@@ -118,6 +116,7 @@ def experiment(config: DictConfig):
             # print("Agent state loaded successfully.")
             new_agent_conf = SavePPOJax.init_agent_conf(env, config)
             agent_conf = new_agent_conf
+            
 
             checkpoint_path = config.checkpoint_path
             # extract static agent info
@@ -159,7 +158,8 @@ def experiment(config: DictConfig):
             # If no checkpoint, initialize a new agent configuration
             agent_conf = SavePPOJax.init_agent_conf(env, config)
 
-
+        save_path = SavePPOJax.save_conf(result_dir, agent_conf)
+        run.config.update({"agent_conf_save_path": save_path})
         # setup metric handler (optional)
         mh = MetricsHandler(agent_conf.config, env) if agent_conf.config.experiment.validation.active else None
 

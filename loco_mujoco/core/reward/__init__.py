@@ -5,6 +5,7 @@ from .utils import *
 from .default_cross import TargetVelocityGoalRewardCross
 from .trajectory_based_cross import MimicRewardCross
 from .trajectory_based_vel import MimicRewardVel
+from .trajectory_based_vel import MimicRewardVelArm
 
 
 # register all rewards
@@ -17,3 +18,4 @@ MimicRewardCross.register()
 LocomotionReward.register()
 TargetVelocityGoalRewardCross.register()
 MimicRewardVel.register()
+MimicRewardVelArm.register()

@@ -55,7 +55,19 @@ OmegaConf.set_struct(config, False)  # Allow modifications
 config.experiment.env_params["headless"] = True #False
 config.experiment.env_params["goal_type"] = "GoalTrajMimicv2"   # nicer looking than GoalTrajMimic
 config.experiment.env_params["add_sensors"] = True
-env = factory.make(**config.experiment.env_params, **config.experiment.task_factory.params)
+
+randomization_type = config.randomization_config["randomization_type"]
+# Convert to plain dict to allow adding new keys
+randomization_params = OmegaConf.to_container(config.randomization_config["randomization_params"], resolve=True)
+
+# add prosthesis side to randomization params if it exists in config.experiment.env_params
+if "prosthesis_side" in config.experiment.env_params:
+    randomization_params["prosthesis_side"] = config.experiment.env_params["prosthesis_side"]
+
+# randomization_params["randomize_prosthesis_body_position"] = True
+# randomization_params["prosthesis_body_position_range"] = {'pylon_socket': {'x': [0.05,0.05]}} #[-0.01,-0.01]}} 
+env = factory.make(**config.experiment.env_params, **config.experiment.task_factory.params,
+                   domain_randomization_type=randomization_type, domain_randomization_params=randomization_params)
 env.th.to_jax()
 env = VecEnv(env)
 jit_step  = jax.jit(jax.vmap(env.mjx_step))  #env.step)
@@ -286,7 +298,8 @@ for i in range(n_steps):
 
     step_total += n_envs 
 
-    env.mjx_render(env_state, record=True)
+    # env.mjx_render(env_state, record=True)
+    env.mjx_render_domain_randomization(env_state, record=True)
 
 time_all.append(timeit.default_timer())  # End timer
 
