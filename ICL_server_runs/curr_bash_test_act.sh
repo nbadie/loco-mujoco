@@ -1,25 +1,3 @@
-# python experiment_domain_rand_fullCurr_.py --config-name conf_4
-# python experiment_domain_rand_fullCurr__.py --config-name conf
-
-
-# #!/bin/bash
-
-# # Run the first script with its specific config and capture its output
-# SAVE_PATH=$(python experiment_domain_rand_fullCurr_.py --config-name conf_4_t | grep "CHECKPOINT_PATH" | cut -d: -f2)
-
-# # Check if a path was captured
-# if [ -z "$SAVE_PATH" ]; then
-#     echo "Error: Could not determine save path from the first script."
-#     exit 1
-# fi
-
-# echo "Captured save path: $SAVE_PATH"
-
-# # Run the second script with its specific config, passing the captured path as a command-line override
-# python experiment_domain_rand_fullCurr__.py --config-name conf_4_tt checkpoint_path="$SAVE_PATH"
-
-
-
 #!/bin/bash
 
 # Create a temporary file to store the script's output
