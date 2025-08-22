@@ -315,7 +315,10 @@ class Observation:
                                             f" a dedicated one.")
 
         # get the attribute from the mujoco data structure
-        data_attr = getattr(data, data_type_name)
+        if hasattr(data, data_type_name):
+            data_attr = getattr(data, data_type_name)
+        else: # Added for Model
+            data_attr = getattr(model,data_type_name)
         # get the indices of all observations of this type
         data_ind = getattr(data_ind_cont, obs_type_name)
         # return the observation
@@ -1083,6 +1086,55 @@ class RelativeSiteQuantaties(StatefulObservation):
 
         return backend.ravel(site_obs), carry
 
+class ModelBodyPos(SimpleObs):
+    """
+    Observation Type holding x, y, z position of the body.
+
+    See also:
+        :class:`Obs` for the base observation class.
+    """
+
+    dim = 3
+
+    def _init_from_mj(self, env, model, data, current_obs_size):
+        body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, self.xml_name)
+        dim = len(model.body_pos[body_id]) #self.xml_name))
+        assert dim == self.dim
+        self.min, self.max = [-np.inf] * dim, [np.inf] * dim
+        self.data_type_ind = np.array(self.to_list(body_id)) # #np.array(self.to_list(np.array(model.body_pos[body_id]))) #data.body(self.xml_name).id))
+        self.obs_ind = np.array([j for j in range(current_obs_size, current_obs_size + dim)])
+        self._initialized_from_mj = True
+
+    @classmethod
+    def data_type(cls):
+        return "body_pos"
+
+
+class ModelBodyRot(SimpleObs):
+    """
+    Observation Type holding the quaternion of the body.
+
+    See also:
+        :class:`Obs` for the base observation class.
+    """
+
+    dim = 4
+
+    def _init_from_mj(self, env, model, data, current_obs_size):
+        body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, self.xml_name)
+        dim = len(model.body_quat[body_id]) #self.xml_name))
+        assert dim == self.dim
+        self.min, self.max = [-np.inf] * dim, [np.inf] * dim
+        self.data_type_ind = np.array(self.to_list(body_id)) #np.array(self.to_list(np.array(model.body_quat[body_id]))) #data.body(self.xml_name).id))
+        self.obs_ind = np.array([j for j in range(current_obs_size, current_obs_size + dim)])
+        self._initialized_from_mj = True
+
+    @classmethod
+    def data_type(cls):
+        return "body_quat"
+
+
+
 class ObservationType:
     """
     Namespace for all observation types for easy access.
@@ -1106,6 +1158,8 @@ class ObservationType:
     LastAction = LastAction
     ModelInfo = ModelInfo
     RelativeSiteQuantaties = RelativeSiteQuantaties
+    ModelBodyPos = ModelBodyPos
+    ModelBodyRot = ModelBodyRot
 
     @classmethod
     def get(cls, obs_name):

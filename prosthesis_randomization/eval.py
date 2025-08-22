@@ -1,9 +1,9 @@
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "" 
-# os.environ["JAX_PLATFORMS"] = "cpu"
+os.environ["CUDA_VISIBLE_DEVICES"] = "" 
+os.environ["JAX_PLATFORMS"] = "cpu"
 
 import jax 
-# jax.config.update('jax_platform_name', 'cpu')
+jax.config.update('jax_platform_name', 'cpu')
 
 import argparse
 
@@ -43,7 +43,9 @@ config.experiment.env_params.reward_type="MimicRewardVelArm"
 # config.experiment.env_params.reward_params.joint_torque_nonarm_coeff=0.002 
 # config.experiment.env_params.reward_params.joint_torque_vel_arm_coeff=0.004 #0.003 
 # config.experiment.env_params.reward_params.joint_torque_vel_nonarm_coeff=0.0015 #0.002 
-config.experiment.env_params.reward_params.action_coeff=0.1 #0.002 
+config.experiment.env_params.reward_params.action_coeff=0.03 #0.002
+config.experiment.env_params.reward_params.lateral_range_coeff = 0.5 
+config.experiment.env_params.reward_params.lateral_pos_reward_range = 0.3 
 
 
 # get task factory

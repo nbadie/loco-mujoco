@@ -27,46 +27,46 @@ from dataclasses import fields
 from loco_mujoco.utils.metrics import QuantityContainer
 
 
-# SOLUTION for your specific error:
-def load_checkpoint_with_device_fix(ckpt_path, train_state_template):
-    """
-    Load checkpoint with proper device handling and target tree
-    This fixes the TFRT_CPU_0 device error and missing target tree warning
-    """
-    import jax
+# # SOLUTION for your specific error:
+# def load_checkpoint_with_device_fix(ckpt_path, train_state_template):
+#     """
+#     Load checkpoint with proper device handling and target tree
+#     This fixes the TFRT_CPU_0 device error and missing target tree warning
+#     """
+#     import jax
     
-    # Create proper restore arguments with target template
-    template = {
-        'params': train_state_template.params,
-        'run_stats': train_state_template.run_stats, 
-        'step': train_state_template.step,
-        'opt_state': train_state_template.opt_state,
-    }
+#     # Create proper restore arguments with target template
+#     template = {
+#         'params': train_state_template.params,
+#         'run_stats': train_state_template.run_stats, 
+#         'step': train_state_template.step,
+#         'opt_state': train_state_template.opt_state,
+#     }
     
-    check_options = ocp.CheckpointManagerOptions(max_to_keep=5, create=False)
+#     check_options = ocp.CheckpointManagerOptions(max_to_keep=5, create=False)
     
-    with ocp.CheckpointManager(ckpt_path, options=check_options, item_names=('agent_state',)) as mngr:
-        latest_step = mngr.latest_step()
-        print(f"Loading checkpoint from step: {latest_step}")
+#     with ocp.CheckpointManager(ckpt_path, options=check_options, item_names=('agent_state',)) as mngr:
+#         latest_step = mngr.latest_step()
+#         print(f"Loading checkpoint from step: {latest_step}")
         
-        # Use StandardRestore with template to avoid device mismatch
-        restored = mngr.restore(
-            latest_step,
-            args=ocp.args.Composite(
-                agent_state=ocp.args.StandardRestore(template),
-            )
-        )
+#         # Use StandardRestore with template to avoid device mismatch
+#         restored = mngr.restore(
+#             latest_step,
+#             args=ocp.args.Composite(
+#                 agent_state=ocp.args.StandardRestore(template),
+#             )
+#         )
         
-        # Transfer to current devices if needed
-        loaded_state = restored['agent_state']
+#         # Transfer to current devices if needed
+#         loaded_state = restored['agent_state']
         
-        # Ensure all arrays are on current devices
-        loaded_state = jax.tree_util.tree_map( #jax.tree_map(
-            lambda x: jax.device_put(x) if hasattr(x, 'device') else x,
-            loaded_state
-        )
+#         # Ensure all arrays are on current devices
+#         loaded_state = jax.tree_util.tree_map( #jax.tree_map(
+#             lambda x: jax.device_put(x) if hasattr(x, 'device') else x,
+#             loaded_state
+#         )
         
-        return loaded_state
+#         return loaded_state
 
 
 
@@ -137,9 +137,9 @@ def experiment(config: DictConfig):
                 tx=tx,
             )
 
-            # To continue training from your saved checkpoint:
-            loaded_state = SavePPOJax.load_checkpoint_with_device_fix(checkpoint_path, train_state_template) #load_checkpoint_callback(ckpt_path)
-
+            # # To continue training from your saved checkpoint:
+            # loaded_state = SavePPOJax.load_checkpoint_with_device_fix(checkpoint_path, train_state_template) #load_checkpoint_callback(ckpt_path)
+            loaded_state = SavePPOJax.load_checkpoint_with_device_fix_without_value(checkpoint_path, train_state_template,network,env)
             # Extract the components
             params = loaded_state['params']
             run_stats = loaded_state['run_stats'] 

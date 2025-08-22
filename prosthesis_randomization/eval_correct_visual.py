@@ -132,10 +132,10 @@ for i in range(n_steps):
 
 
     env_state, sys = jit_step(env_state, action)  #env.step(env_state, action)
-    print(f"sys.jnt_stiffness: {sys.jnt_stiffness}")
-    print(f"sys.dof_damping: {sys.dof_damping}")
-    print(f"sys.body_pos: {sys.body_pos}")
-    print(f"sys.body_quat: {sys.body_quat}")
+    # print(f"sys.jnt_stiffness: {sys.jnt_stiffness}")
+    # print(f"sys.dof_damping: {sys.dof_damping}")
+    # print(f"sys.body_pos: {sys.body_pos}")
+    # print(f"sys.body_quat: {sys.body_quat}")
 
     obs = env_state.observation
     # obs, reward, absorbing, done, info, env_state = jit_step(env_state, action)  #env.step(env_state, action)

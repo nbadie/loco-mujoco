@@ -71,6 +71,7 @@ class BaseSkeleton(LocoEnv):
         # --- Modify the xml, the action_spec, and the observation_spec if needed ---
         self._use_muscles = use_muscles
         self._use_box_feet = use_box_feet
+        # kwargs["ignore_modify_mjx_contact"] = True
         self._disable_arms = disable_arms
         joints_to_remove, motors_to_remove, equ_constr_to_remove = self._get_spec_modifications()
 
@@ -83,16 +84,17 @@ class BaseSkeleton(LocoEnv):
                                           motors_to_remove, equ_constr_to_remove)
             if self._use_box_feet:
                 spec = self._add_box_feet_to_spec(spec, alpha_box_feet)
+                # spec = self._add_2_box_per_foot_to_spec(spec)
 
             if self._disable_arms:
                 spec = self._reorient_arms(spec)
 
-        # Adapted for using 2 box geometries in foot
+        # # Adapted for using 2 box geometries in foot
         if hasattr(kwargs,"ignore_modify_mjx_contact") and not kwargs["ignore_modify_mjx_contact"]:
             if self.mjx_enabled:
                 assert use_box_feet
                 spec = self._modify_spec_for_mjx(spec)
-
+        # spec = self._add_2_box_per_foot_to_spec(spec)
         super().__init__(spec=spec, actuation_spec=actuation_spec, observation_spec=observation_spec, **kwargs)
 
     def _get_spec_modifications(self) -> Tuple[List[str], List[str], List[str]]:
@@ -254,6 +256,49 @@ class BaseSkeleton(LocoEnv):
                 g.conaffinity = 0
 
         return spec
+    
+
+    def _add_2_box_per_foot_to_spec(self, spec: MjSpec):
+        # find foot and attach box
+        alpha_box_feet = 0.5
+        scaling  = 1
+        toe_l = spec.find_body("toes_l")
+        size_foot = np.array([0.09, 0.03, 0.05])* scaling 
+        size_toes = np.array([0.041, 0.03, 0.048]) * scaling 
+ 
+        pos_foot = np.array([0.085, 0.019, -0.01]) * scaling
+        pos_toes = np.array([0.035, 0.019, 0.01]) * scaling
+        # Flip the z-axis for the mirrored positions and reassemble
+        pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+        pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+        euler_foot = [0.0, 0.15, 0.0] 
+        euler_toes = [0.0, 0.15, 0.0] 
+    
+        toe_l.add_geom(name="toes_box_l", type=mujoco.mjtGeom.mjGEOM_BOX, size=size_toes, pos=pos_toes_l,
+                       rgba=[0, 1, 0, alpha_box_feet], euler=euler_toes)
+        toe_r = spec.find_body("toes_r")
+        toe_r.add_geom(name="toes_box_r", type=mujoco.mjtGeom.mjGEOM_BOX, size=size_toes, pos=pos_toes,
+                       rgba=[0, 1, 0, alpha_box_feet], euler=[a*-1 for a in euler_toes])
+        
+        calcn_l = spec.find_body("calcn_l")
+        calcn_r = spec.find_body("calcn_r")
+        calcn_l.add_geom(name="foot_box_l", type=mujoco.mjtGeom.mjGEOM_BOX, size=size_foot, pos=pos_foot_l,
+                       rgba=[1, 0, 0, alpha_box_feet], euler=euler_foot)
+        calcn_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_BOX, size=size_foot, pos=pos_foot,
+                       rgba=[1, 0, 0, alpha_box_feet], euler=[a*-1 for a in euler_foot])
+        
+        for g in spec.geoms:
+            g.contype = 0
+            g.conaffinity = 0
+
+        # --- define contacts between feet and floor --
+        spec.add_pair(geomname1="floor", geomname2="foot_box_r")
+        spec.add_pair(geomname1="floor", geomname2="foot_box_l")
+        spec.add_pair(geomname1="floor", geomname2="toes_box_r")
+        spec.add_pair(geomname1="floor", geomname2="toes_box_l")
+
+        return spec
+    
 
     @staticmethod
     def _reorient_arms(spec: MjSpec) -> MjSpec:

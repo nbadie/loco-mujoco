@@ -110,7 +110,7 @@ class JaxRLAlgorithmBase:
         with open(path, 'rb') as file:
             data = pickle.load(file)
         return cls.from_dict(data)
-
+    
     @classmethod
     def serialize(cls, agent_conf: AgentConfBase, agent_state: AgentStateBase):
         """ Serialize conf and state of an agent. """

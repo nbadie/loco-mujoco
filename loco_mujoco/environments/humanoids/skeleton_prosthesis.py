@@ -7,6 +7,7 @@ from flax import struct
 from loco_mujoco.environments.base import  LocoCarry
 import jax.numpy as jnp
 from loco_mujoco.core.utils import info_property
+# from omegaconf import OmegaConf
 
 
 class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
@@ -66,16 +67,40 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             self.prosthesis_subtype = kwargs.pop("prosthesis_subtype")
         if "reward_type" in kwargs: 
             self.reward_type = kwargs.get("reward_type")
+        if "limit_knee_extension" in kwargs:
+            self.limit_knee_extension = kwargs.get("limit_knee_extension")
+            self.knee_extension_limit = kwargs.get("knee_extension_limit")
+        if "socket_ty_slack" in kwargs:
+            self.socket_ty_slack = kwargs.get("socket_ty_slack")
+        else: 
+            self.socket_ty_slack = False
+        if "add_pos_ori_to_observation" in kwargs:
+            if kwargs.get("add_pos_ori_to_observation"):
+                self.add_pos_ori_to_observation = kwargs.get("add_pos_ori_to_observation")
+                if "domain_randomization_params" in kwargs:
+                    domain_randomization_params = kwargs.get("domain_randomization_params")
+                    if "randomize_prosthesis_body_position" in domain_randomization_params:
+                        if domain_randomization_params["randomize_prosthesis_body_position"]:
+                            self.prosthesis_body_position_range = domain_randomization_params["prosthesis_body_position_range"]
+                    if "randomize_prosthesis_body_orientation" in domain_randomization_params:
+                        if domain_randomization_params["randomize_prosthesis_body_orientation"]:
+                            self.prosthesis_body_orientation_range = domain_randomization_params["prosthesis_body_orientation_range"]
+                else: 
+                   self.prosthesis_body_position_range = {'pylon_socket': {'x': [-0.01,0.01],'z': [-0.01,0.01]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
+                   self.prosthesis_body_orientation_range = {'pylon_socket': {'x': [-0.1,0.1],'y': [-0.1,0.1],'z': [-0.1,0.1]},'talus': {'x': [-0.1,0.1],'y': [-0.1,0.1],'z': [-0.1,0.1]}}
+
+        else:
+            self.add_pos_ori_to_observation = False
 
 
-        
+        self.actuators_removed = []
         self.amputated_joint_names = []
         self.amputated_body_names = []
 
         side_arg = kwargs.pop("prosthesis_side")
         self.prosthesis_type = kwargs.pop("prosthesis_type")
 
-        if side_arg == "left_side":
+        if side_arg == "left_side" or side_arg == "bilateral":
             self.prosthesis_side = "_l"
         elif side_arg == "right_side":
             self.prosthesis_side = "_r"
@@ -89,8 +114,37 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         spec = mujoco.MjSpec.from_file(self.get_default_xml_file_path())
         spec = self.replace_leg_level(spec) 
 
+        if side_arg == 'bilateral':
+            self.prosthesis_side = "_r"
+            spec = self.replace_leg_level(spec)
+
+        if hasattr(self, "prosthesis_type") and self.prosthesis_type != "None" and hasattr(self, "prosthesis_subtype") and self.prosthesis_subtype == "SACH" and hasattr(self, 'use_2_box_per_foot') and self.use_2_box_per_foot:
+            spec = self._add_2_box_per_foot_to_spec(spec)
+
+
         if hasattr(self, "replace_world_joint") and self.replace_world_joint: 
             spec = self._replace_joint(spec, 'pelvis', mujoco.mjtJoint.mjJNT_SLIDE, [0,1,0])
+
+        if hasattr(self, 'add_sensors') and self.add_sensors:
+                joint_force_sensor_site_name = "hip_mimic"
+                self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
+                self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
+                self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
+                self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
+                joint_force_sensor_site_name = "knee_mimic"
+                self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
+                self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
+                self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
+                self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
+                joint_force_sensor_site_name = "foot_mimic"
+                self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
+                self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
+                self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
+                self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
+
+        if hasattr(self, 'limit_knee_extension') and self.limit_knee_extension:
+            self.limit_joint_range(spec, 'knee_angle',self.knee_extension_limit)
+
 
         # Model option configuration
         model_option_conf = kwargs.pop("model_option_conf", {
@@ -101,6 +155,15 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
 
         super().__init__(timestep=timestep, n_substeps=n_substeps,
                          model_option_conf=model_option_conf, spec=spec,use_box_feet=use_box_feet, **kwargs)
+        
+
+    def limit_joint_range(self, spec, joint_name, upper_limit):
+        
+        joint_names = [joint_name + '_l', joint_name + '_r']
+        for j in spec.joints:
+            if j.name in joint_names:
+                j.range = [j.range[0], upper_limit]
+
         
 
     def add_force_sensor_prosthesis_side(self, spec, site_name):
@@ -259,6 +322,24 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             MjSpec: The modified model specification.
         """
         if self.prosthesis_type == "None":
+            if hasattr(self, 'use_2_box_per_foot') and self.use_2_box_per_foot:
+                spec = self._add_2_box_per_foot_to_spec(spec)
+            # if hasattr(self, 'add_sensors') and self.add_sensors:
+            #     joint_force_sensor_site_name = "hip_mimic"
+            #     self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
+            #     self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
+            #     self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
+            #     self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
+            #     joint_force_sensor_site_name = "knee_mimic"
+            #     self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
+            #     self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
+            #     self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
+            #     self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
+            #     joint_force_sensor_site_name = "foot_mimic"
+            #     self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
+            #     self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
+            #     self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
+            #     self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
             return spec
         elif self.prosthesis_type == "transtibial":
             self.amputated_joint_names = [
@@ -274,8 +355,8 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
                 spec = self.add_SACHFoot_properties(spec)
                 if hasattr(self, 'reattach_muscle') and self.reattach_muscle:
                     spec = self.reattach_muscles_above_amputation(spec)
-                if hasattr(self, 'use_2_box_per_foot') and self.use_2_box_per_foot:
-                    spec = self.add_2_box_per_foot_to_spec(spec)
+                # if hasattr(self, 'use_2_box_per_foot') and self.use_2_box_per_foot:
+                #     spec = self._add_2_box_per_foot_to_spec(spec)
                     
                 return spec
             else: 
@@ -285,17 +366,17 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
                 if hasattr(self, 'delete_joints') and self.delete_joints:
                     spec = self.transtibial_prosthesis(spec)
                     if hasattr(self, 'use_2_box_per_foot') and self.use_2_box_per_foot:
-                        spec = self.add_2_box_per_foot_to_spec(spec)
+                        spec = self._add_2_box_per_foot_to_spec(spec)
                     #return spec
                 elif not hasattr(self, 'delete_joints'): # Was initally not defined. To use for older policies 
                     spec = self.transtibial_prosthesis(spec)
                     if hasattr(self, 'use_2_box_per_foot') and self.use_2_box_per_foot:
-                        spec = self.add_2_box_per_foot_to_spec(spec)
+                        spec = self._add_2_box_per_foot_to_spec(spec)
                     #return spec
                 else:
                     spec = self.transtibial_prosthesis_with_joints(spec)
                     if hasattr(self, 'use_2_box_per_foot') and self.use_2_box_per_foot:
-                        spec = self.add_2_box_per_foot_to_spec(spec)
+                        spec = self._add_2_box_per_foot_to_spec(spec)
                 return spec
         elif self.prosthesis_type == "transfemoral":
             raise NotImplementedError("Transfemoral prosthesis not implemented yet.")
@@ -433,6 +514,7 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             # print(f"Muscle names: {muscle_names}")
             if any(m in a.name for m in muscle_names):
                 # print(f"Removing actuator: {a.name}")
+                self.actuators_removed.append(a.name)
                 a.delete()
 
 
@@ -495,23 +577,23 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         self.remove_site_actuator_tendon(spec)
 
        
-        # joint force sensor site name only for evaluation
-        if hasattr(self, 'add_sensors') and self.add_sensors:
-            joint_force_sensor_site_name = "hip_mimic"
-            self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
-            joint_force_sensor_site_name = "knee_mimic"
-            self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
-            joint_force_sensor_site_name = "foot_mimic"
-            self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        # # joint force sensor site name only for evaluation
+        # if hasattr(self, 'add_sensors') and self.add_sensors:
+        #     joint_force_sensor_site_name = "hip_mimic"
+        #     self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        #     joint_force_sensor_site_name = "knee_mimic"
+        #     self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        #     joint_force_sensor_site_name = "foot_mimic"
+        #     self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
 
 
         return spec
@@ -530,18 +612,18 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
 
         self.remove_site_actuator_tendon(spec)
 
-        # joint force sensor site name only for evaluation
-        if hasattr(self, 'add_sensors') and self.add_sensors:
-            joint_force_sensor_site_name = "knee_mimic"
-            self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
-            joint_force_sensor_site_name = "foot_mimic"
-            self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        # # joint force sensor site name only for evaluation
+        # if hasattr(self, 'add_sensors') and self.add_sensors:
+        #     joint_force_sensor_site_name = "knee_mimic"
+        #     self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        #     joint_force_sensor_site_name = "foot_mimic"
+        #     self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
 
         # for b in self.amputated_body_names:
         #     body = spec.find_body(b)
@@ -745,7 +827,7 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         socket_joint_damping_tx = 40 #100 #400 #200 # ty/2
         socket_joint_stiffness_tx = 43500 #43500 #10000 #21750 # ty/2
         socket_joint_stiffness_ty= 43500 #10 #43500 #8000 #4350 #43500 #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
-        socket_joint_damping_ty = 40 #1 #0  #4 #100 #400 #3000 #100 #5
+        socket_joint_damping_ty = 4 #40 #4 #40 #1 #0  #4 #100 #400 #3000 #100 #5
         socket_joint_stiffness_axial = 10 #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
         socket_joint_damping_axial = 2 #300 #5
         socket_joint_stiffness_flexion = 997 #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
@@ -1691,77 +1773,77 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         self.remove_site_actuator_tendon(spec)
 
        
-        # joint force sensor site name only for evaluation
-        if hasattr(self, 'add_sensors') and self.add_sensors:
-            joint_force_sensor_site_name = "hip_mimic"
-            self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
-            joint_force_sensor_site_name = "knee_mimic"
-            self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
-            joint_force_sensor_site_name = "foot_mimic"
-            self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
-            self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        # # joint force sensor site name only for evaluation
+        # if hasattr(self, 'add_sensors') and self.add_sensors:
+        #     joint_force_sensor_site_name = "hip_mimic"
+        #     self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        #     joint_force_sensor_site_name = "knee_mimic"
+        #     self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        #     joint_force_sensor_site_name = "foot_mimic"
+        #     self.add_force_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
+        #     self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
 
         return spec 
 
 
 
-    def add_2_box_per_foot_to_spec(self, spec: mujoco.MjSpec):
-        # find foot and attach box
-        alpha_box_feet = 0.5
-        scaling  = 1
-        toe_l = spec.find_body("toes_l")
-        size_foot = np.array([0.09, 0.03, 0.05])* scaling #np.array([0.100, 0.03, 0.05])* scaling
-        size_toes = np.array([0.041, 0.03, 0.048]) * scaling 
-        # size_toes = np.array([0.045, 0.03, 0.05]) * scaling 
-        pos_foot = np.array([0.085, 0.019, -0.01]) * scaling
-        pos_toes = np.array([0.035, 0.019, 0.01]) * scaling
-        # Flip the z-axis for the mirrored positions and reassemble
-        pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
-        pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
-        euler_foot = [0.0, 0.15, 0.0] #[0.0, 0.15, 0.0]
-        euler_toes = [0.0, 0.15, 0.0] #[0.0, 0.15, 0.0]
-        # size = np.array([0.112, 0.03, 0.05]) * scaling
-        # pos = np.array([-0.09, 0.019, 0.0]) * scaling
-        toe_l.add_geom(name="toes_box_l", type=mujoco.mjtGeom.mjGEOM_BOX, size=size_toes, pos=pos_toes_l,
-                       rgba=[0, 1, 0, alpha_box_feet], euler=euler_toes)
-        toe_r = spec.find_body("toes_r")
-        toe_r.add_geom(name="toes_box_r", type=mujoco.mjtGeom.mjGEOM_BOX, size=size_toes, pos=pos_toes,
-                       rgba=[0, 1, 0, alpha_box_feet], euler=[a*-1 for a in euler_toes])
+    # def _add_2_box_per_foot_to_spec(self, spec: mujoco.MjSpec):
+    #     # find foot and attach box
+    #     alpha_box_feet = 0.5
+    #     scaling  = 1
+    #     toe_l = spec.find_body("toes_l")
+    #     size_foot = np.array([0.09, 0.03, 0.05])* scaling #np.array([0.100, 0.03, 0.05])* scaling
+    #     size_toes = np.array([0.041, 0.03, 0.048]) * scaling 
+    #     # size_toes = np.array([0.045, 0.03, 0.05]) * scaling 
+    #     pos_foot = np.array([0.085, 0.019, -0.01]) * scaling
+    #     pos_toes = np.array([0.035, 0.019, 0.01]) * scaling
+    #     # Flip the z-axis for the mirrored positions and reassemble
+    #     pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+    #     pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+    #     euler_foot = [0.0, 0.15, 0.0] #[0.0, 0.15, 0.0]
+    #     euler_toes = [0.0, 0.15, 0.0] #[0.0, 0.15, 0.0]
+    #     # size = np.array([0.112, 0.03, 0.05]) * scaling
+    #     # pos = np.array([-0.09, 0.019, 0.0]) * scaling
+    #     toe_l.add_geom(name="toes_box_l", type=mujoco.mjtGeom.mjGEOM_BOX, size=size_toes, pos=pos_toes_l,
+    #                    rgba=[0, 1, 0, alpha_box_feet], euler=euler_toes)
+    #     toe_r = spec.find_body("toes_r")
+    #     toe_r.add_geom(name="toes_box_r", type=mujoco.mjtGeom.mjGEOM_BOX, size=size_toes, pos=pos_toes,
+    #                    rgba=[0, 1, 0, alpha_box_feet], euler=[a*-1 for a in euler_toes])
         
-        calcn_l = spec.find_body("calcn_l")
-        calcn_r = spec.find_body("calcn_r")
-        calcn_l.add_geom(name="foot_box_l", type=mujoco.mjtGeom.mjGEOM_BOX, size=size_foot, pos=pos_foot_l,
-                       rgba=[1, 0, 0, alpha_box_feet], euler=euler_foot)
-        calcn_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_BOX, size=size_foot, pos=pos_foot,
-                       rgba=[1, 0, 0, alpha_box_feet], euler=[a*-1 for a in euler_foot])
+    #     calcn_l = spec.find_body("calcn_l")
+    #     calcn_r = spec.find_body("calcn_r")
+    #     calcn_l.add_geom(name="foot_box_l", type=mujoco.mjtGeom.mjGEOM_BOX, size=size_foot, pos=pos_foot_l,
+    #                    rgba=[1, 0, 0, alpha_box_feet], euler=euler_foot)
+    #     calcn_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_BOX, size=size_foot, pos=pos_foot,
+    #                    rgba=[1, 0, 0, alpha_box_feet], euler=[a*-1 for a in euler_foot])
         
 
-        # # make true foot uncollidable
-        # foot_geoms = ["r_foot", "r_bofoot", "l_foot", "l_bofoot"]
-        # for g in spec.geoms:
-        #     if g.name in foot_geoms:
-        #         g.contype = 0
-        #         g.conaffinity = 0
+    #     # # make true foot uncollidable
+    #     # foot_geoms = ["r_foot", "r_bofoot", "l_foot", "l_bofoot"]
+    #     # for g in spec.geoms:
+    #     #     if g.name in foot_geoms:
+    #     #         g.contype = 0
+    #     #         g.conaffinity = 0
 
-        for g in spec.geoms:
-            g.contype = 0
-            g.conaffinity = 0
+    #     for g in spec.geoms:
+    #         g.contype = 0
+    #         g.conaffinity = 0
 
-        # --- define contacts between feet and floor --
-        spec.add_pair(geomname1="floor", geomname2="foot_box_r")
-        spec.add_pair(geomname1="floor", geomname2="foot_box_l")
-        spec.add_pair(geomname1="floor", geomname2="toes_box_r")
-        spec.add_pair(geomname1="floor", geomname2="toes_box_l")
+    #     # --- define contacts between feet and floor --
+    #     spec.add_pair(geomname1="floor", geomname2="foot_box_r")
+    #     spec.add_pair(geomname1="floor", geomname2="foot_box_l")
+    #     spec.add_pair(geomname1="floor", geomname2="toes_box_r")
+    #     spec.add_pair(geomname1="floor", geomname2="toes_box_l")
 
-        return spec
+    #     return spec
     
     @info_property
     def foot_geom_names(self):
@@ -1776,6 +1858,34 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         Returns:
             List[ObservationType]: List of observation space specification.
         """
+
+
+        if self.add_pos_ori_to_observation:
+            if hasattr(self, 'prosthesis_body_position_range'):
+                rand_pos_body_names=[]
+                observation_spec_body_pos = []
+                # if OmegaConf.is_dict(self.prosthesis_body_position_range): # when loading with orbax
+                #     prosthesis_body_position_range_dict = OmegaConf.to_container(self.prosthesis_body_position_range, resolve=True)
+                #     rand_pos_body_names = list(prosthesis_body_position_range_dict.keys())
+                if isinstance(self.prosthesis_body_position_range, dict):
+                    rand_pos_body_names = list(self.prosthesis_body_position_range.keys())
+                    # rand_pos_body_names.append(self.prosthesis_body_position_range.keys())
+                for b in rand_pos_body_names:
+                    b = b + self.prosthesis_side  # Append prosthesis side to body names 
+                    observation_spec_body_pos.append(ObservationType.ModelBodyPos(f"pos_{b}", xml_name=b))
+
+            if hasattr(self, 'prosthesis_body_orientation_range'):
+                rand_ori_body_names=[]
+                observation_spec_body_quat = []
+                # if OmegaConf.is_dict(self.prosthesis_body_orientation_range): # when loading with orbax
+                #     prosthesis_body_orientation_range_dict = OmegaConf.to_container(self.prosthesis_body_orientation_range, resolve=True)
+                #     rand_ori_body_names = list(prosthesis_body_orientation_range_dict.keys())
+                if isinstance(self.prosthesis_body_orientation_range, dict):
+                    rand_ori_body_names= list(self.prosthesis_body_orientation_range.keys())
+                for b in rand_ori_body_names:    
+                    b = b + self.prosthesis_side  # Append prosthesis side to body names
+                    observation_spec_body_quat.append(ObservationType.ModelBodyRot(f"quat_{b}", xml_name=b))
+
         joint_names = []
         for j in spec.joints: 
             joint_names.append(j.name)
@@ -1785,7 +1895,6 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
 
         if 'root' in joint_names: 
             joint_names.remove('root')
-        # print(f"Joint names without root: {joint_names}")
 
         observation_spec_joint_pos = []
         observation_spec_joint_vel = []
@@ -1807,85 +1916,130 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         # # print(f"Observation spec joint pos: {observation_spec_joint_pos}")
         # # print(f"Observation spec joint vel: {observation_spec_joint_vel}")
         observation_spec = [  # ------------- JOINT POS -------------
-                            ObservationType.FreeJointPosNoXY("q_root", xml_name="root"),
-                            # --- lower limb right ---
-                            # ObservationType.JointPos("q_hip_flexion_r", xml_name="hip_flexion_r"),
-                            # ObservationType.JointPos("q_hip_adduction_r", xml_name="hip_adduction_r"),
-                            # ObservationType.JointPos("q_hip_rotation_r", xml_name="hip_rotation_r"),
-                            # ObservationType.JointPos("q_knee_angle_r", xml_name="knee_angle_r"),
-                            # ObservationType.JointPos("q_ankle_angle_r", xml_name="ankle_angle_r"),
-                            # ObservationType.JointPos("q_subtalar_angle_r", xml_name="subtalar_angle_r"),
-                            # ObservationType.JointPos("q_mtp_angle_r", xml_name="mtp_angle_r"),
-                            # # --- lower limb left ---
-                            # ObservationType.JointPos("q_hip_flexion_l", xml_name="hip_flexion_l"),
-                            # ObservationType.JointPos("q_hip_adduction_l", xml_name="hip_adduction_l"),
-                            # ObservationType.JointPos("q_hip_rotation_l", xml_name="hip_rotation_l"),
-                            # ObservationType.JointPos("q_knee_angle_l", xml_name="knee_angle_l"),
-                            # ObservationType.JointPos("q_ankle_angle_l", xml_name="ankle_angle_l"),
-                            # ObservationType.JointPos("q_subtalar_angle_l", xml_name="subtalar_angle_l"),
-                            # ObservationType.JointPos("q_mtp_angle_l", xml_name="mtp_angle_l"),
-                            # # --- lumbar ---
-                            # ObservationType.JointPos("q_lumbar_extension", xml_name="lumbar_extension"),
-                            # ObservationType.JointPos("q_lumbar_bending", xml_name="lumbar_bending"),
-                            # ObservationType.JointPos("q_lumbar_rotation", xml_name="lumbar_rotation"),
-                            # # --- upper body right ---
-                            # ObservationType.JointPos("q_arm_flex_r", xml_name="arm_flex_r"),
-                            # ObservationType.JointPos("q_arm_add_r", xml_name="arm_add_r"),
-                            # ObservationType.JointPos("q_arm_rot_r", xml_name="arm_rot_r"),
-                            # ObservationType.JointPos("q_elbow_flex_r", xml_name="elbow_flex_r"),
-                            # ObservationType.JointPos("q_pro_sup_r", xml_name="pro_sup_r"),
-                            # ObservationType.JointPos("q_wrist_flex_r", xml_name="wrist_flex_r"),
-                            # ObservationType.JointPos("q_wrist_dev_r", xml_name="wrist_dev_r"),
-                            # # --- upper body left ---
-                            # ObservationType.JointPos("q_arm_flex_l", xml_name="arm_flex_l"),
-                            # ObservationType.JointPos("q_arm_add_l", xml_name="arm_add_l"),
-                            # ObservationType.JointPos("q_arm_rot_l", xml_name="arm_rot_l"),
-                            # ObservationType.JointPos("q_elbow_flex_l", xml_name="elbow_flex_l"),
-                            # ObservationType.JointPos("q_pro_sup_l", xml_name="pro_sup_l"),
-                            # ObservationType.JointPos("q_wrist_flex_l", xml_name="wrist_flex_l"),
-                            # ObservationType.JointPos("q_wrist_dev_l", xml_name="wrist_dev_l"),
+                                ObservationType.FreeJointPosNoXY("q_root", xml_name="root"),
 
-                            # # ------------- JOINT VEL -------------
-                            # ObservationType.FreeJointVel("dq_root", xml_name="root"),
-                            # # --- lower limb right ---
-                            # ObservationType.JointVel("dq_hip_flexion_r", xml_name="hip_flexion_r"),
-                            # ObservationType.JointVel("dq_hip_adduction_r", xml_name="hip_adduction_r"),
-                            # ObservationType.JointVel("dq_hip_rotation_r", xml_name="hip_rotation_r"),
-                            # ObservationType.JointVel("dq_knee_angle_r", xml_name="knee_angle_r"),
-                            # ObservationType.JointVel("dq_ankle_angle_r", xml_name="ankle_angle_r"),
-                            # ObservationType.JointVel("dq_subtalar_angle_r", xml_name="subtalar_angle_r"),
-                            # ObservationType.JointVel("dq_mtp_angle_r", xml_name="mtp_angle_r"),
-                            # # --- lower limb left ---
-                            # ObservationType.JointVel("dq_hip_flexion_l", xml_name="hip_flexion_l"),
-                            # ObservationType.JointVel("dq_hip_adduction_l", xml_name="hip_adduction_l"),
-                            # ObservationType.JointVel("dq_hip_rotation_l", xml_name="hip_rotation_l"),
-                            # ObservationType.JointVel("dq_knee_angle_l", xml_name="knee_angle_l"),
-                            # ObservationType.JointVel("dq_ankle_angle_l", xml_name="ankle_angle_l"),
-                            # ObservationType.JointVel("dq_subtalar_angle_l", xml_name="subtalar_angle_l"),
-                            # ObservationType.JointVel("dq_mtp_angle_l", xml_name="mtp_angle_l"),
-                            # # --- lumbar ---
-                            # ObservationType.JointVel("dq_lumbar_extension", xml_name="lumbar_extension"),
-                            # ObservationType.JointVel("dq_lumbar_bending", xml_name="lumbar_bending"),
-                            # ObservationType.JointVel("dq_lumbar_rotation", xml_name="lumbar_rotation"),
-                            # # --- upper body right ---
-                            # ObservationType.JointVel("dq_arm_flex_r", xml_name="arm_flex_r"),
-                            # ObservationType.JointVel("dq_arm_add_r", xml_name="arm_add_r"),
-                            # ObservationType.JointVel("dq_arm_rot_r", xml_name="arm_rot_r"),
-                            # ObservationType.JointVel("dq_elbow_flex_r", xml_name="elbow_flex_r"),
-                            # ObservationType.JointVel("dq_pro_sup_r", xml_name="pro_sup_r"),
-                            # ObservationType.JointVel("dq_wrist_flex_r", xml_name="wrist_flex_r"),
-                            # ObservationType.JointVel("dq_wrist_dev_r", xml_name="wrist_dev_r"),
-                            # # --- upper body left ---
-                            # ObservationType.JointVel("dq_arm_flex_l", xml_name="arm_flex_l"),
-                            # ObservationType.JointVel("dq_arm_add_l", xml_name="arm_add_l"),
-                            # ObservationType.JointVel("dq_arm_rot_l", xml_name="arm_rot_l"),
-                            # ObservationType.JointVel("dq_elbow_flex_l", xml_name="elbow_flex_l"),
-                            # ObservationType.JointVel("dq_pro_sup_l", xml_name="pro_sup_l"),
-                            # ObservationType.JointVel("dq_wrist_flex_l", xml_name="wrist_flex_l"),
-                            # ObservationType.JointVel("dq_wrist_dev_l", xml_name="wrist_dev_l")
-                            ] + observation_spec_joint_pos + observation_spec_joint_vel
+                                ] + observation_spec_joint_pos + observation_spec_joint_vel
+        
+        if self.add_pos_ori_to_observation:
+            if hasattr(self, 'prosthesis_body_position_range'):
+                observation_spec += observation_spec_body_pos 
+            if hasattr(self, 'prosthesis_body_position_range'):
+                observation_spec += observation_spec_body_quat
         # print("Obs_spec length:", len(observation_spec))
         return observation_spec
+
+
+        # # FIRST CODE 
+        # joint_names = []
+        # for j in spec.joints: 
+        #     joint_names.append(j.name)
+
+        # # print(f"Joint names: {joint_names}")
+        # # print(f"Number of joints: {len(joint_names)}")
+
+        # if 'root' in joint_names: 
+        #     joint_names.remove('root')
+        # # print(f"Joint names without root: {joint_names}")
+
+        # observation_spec_joint_pos = []
+        # observation_spec_joint_vel = []
+
+        # for j in joint_names:
+        #     observation_spec_joint_pos.append(ObservationType.JointPos(f"q_{j}", xml_name=j))
+        #     observation_spec_joint_vel.append(ObservationType.JointVel(f"dq_{j}", xml_name=j))
+
+        # # if self.reward_type == 'TargetVelocityGoalReward': #'LocomotionReward':
+        # #     info_props = {}
+        # #     info_props["upper_body_xml_name"] = 'root'
+        # #     info_props["root_free_joint_xml_name"] = 'root'
+        # #     info_props["goal_visualization_arrow_offset"] = 0
+        # #     max_x_vel = 1.2 
+        # #     max_y_vel = 0 
+        # #     max_yaw_vel = 0
+        # #     observation_spec = [GoalRandomRootVelocity(info_props, max_x_vel, max_y_vel, max_yaw_vel), ObservationType.FreeJointPosNoXY("q_root", xml_name="root")] + observation_spec_joint_pos + observation_spec_joint_vel
+        # # else: 
+        # # # print(f"Observation spec joint pos: {observation_spec_joint_pos}")
+        # # # print(f"Observation spec joint vel: {observation_spec_joint_vel}")
+        # observation_spec = [  # ------------- JOINT POS -------------
+        #                     ObservationType.FreeJointPosNoXY("q_root", xml_name="root"),
+        #                     # --- lower limb right ---
+        #                     # ObservationType.JointPos("q_hip_flexion_r", xml_name="hip_flexion_r"),
+        #                     # ObservationType.JointPos("q_hip_adduction_r", xml_name="hip_adduction_r"),
+        #                     # ObservationType.JointPos("q_hip_rotation_r", xml_name="hip_rotation_r"),
+        #                     # ObservationType.JointPos("q_knee_angle_r", xml_name="knee_angle_r"),
+        #                     # ObservationType.JointPos("q_ankle_angle_r", xml_name="ankle_angle_r"),
+        #                     # ObservationType.JointPos("q_subtalar_angle_r", xml_name="subtalar_angle_r"),
+        #                     # ObservationType.JointPos("q_mtp_angle_r", xml_name="mtp_angle_r"),
+        #                     # # --- lower limb left ---
+        #                     # ObservationType.JointPos("q_hip_flexion_l", xml_name="hip_flexion_l"),
+        #                     # ObservationType.JointPos("q_hip_adduction_l", xml_name="hip_adduction_l"),
+        #                     # ObservationType.JointPos("q_hip_rotation_l", xml_name="hip_rotation_l"),
+        #                     # ObservationType.JointPos("q_knee_angle_l", xml_name="knee_angle_l"),
+        #                     # ObservationType.JointPos("q_ankle_angle_l", xml_name="ankle_angle_l"),
+        #                     # ObservationType.JointPos("q_subtalar_angle_l", xml_name="subtalar_angle_l"),
+        #                     # ObservationType.JointPos("q_mtp_angle_l", xml_name="mtp_angle_l"),
+        #                     # # --- lumbar ---
+        #                     # ObservationType.JointPos("q_lumbar_extension", xml_name="lumbar_extension"),
+        #                     # ObservationType.JointPos("q_lumbar_bending", xml_name="lumbar_bending"),
+        #                     # ObservationType.JointPos("q_lumbar_rotation", xml_name="lumbar_rotation"),
+        #                     # # --- upper body right ---
+        #                     # ObservationType.JointPos("q_arm_flex_r", xml_name="arm_flex_r"),
+        #                     # ObservationType.JointPos("q_arm_add_r", xml_name="arm_add_r"),
+        #                     # ObservationType.JointPos("q_arm_rot_r", xml_name="arm_rot_r"),
+        #                     # ObservationType.JointPos("q_elbow_flex_r", xml_name="elbow_flex_r"),
+        #                     # ObservationType.JointPos("q_pro_sup_r", xml_name="pro_sup_r"),
+        #                     # ObservationType.JointPos("q_wrist_flex_r", xml_name="wrist_flex_r"),
+        #                     # ObservationType.JointPos("q_wrist_dev_r", xml_name="wrist_dev_r"),
+        #                     # # --- upper body left ---
+        #                     # ObservationType.JointPos("q_arm_flex_l", xml_name="arm_flex_l"),
+        #                     # ObservationType.JointPos("q_arm_add_l", xml_name="arm_add_l"),
+        #                     # ObservationType.JointPos("q_arm_rot_l", xml_name="arm_rot_l"),
+        #                     # ObservationType.JointPos("q_elbow_flex_l", xml_name="elbow_flex_l"),
+        #                     # ObservationType.JointPos("q_pro_sup_l", xml_name="pro_sup_l"),
+        #                     # ObservationType.JointPos("q_wrist_flex_l", xml_name="wrist_flex_l"),
+        #                     # ObservationType.JointPos("q_wrist_dev_l", xml_name="wrist_dev_l"),
+
+        #                     # # ------------- JOINT VEL -------------
+        #                     # ObservationType.FreeJointVel("dq_root", xml_name="root"),
+        #                     # # --- lower limb right ---
+        #                     # ObservationType.JointVel("dq_hip_flexion_r", xml_name="hip_flexion_r"),
+        #                     # ObservationType.JointVel("dq_hip_adduction_r", xml_name="hip_adduction_r"),
+        #                     # ObservationType.JointVel("dq_hip_rotation_r", xml_name="hip_rotation_r"),
+        #                     # ObservationType.JointVel("dq_knee_angle_r", xml_name="knee_angle_r"),
+        #                     # ObservationType.JointVel("dq_ankle_angle_r", xml_name="ankle_angle_r"),
+        #                     # ObservationType.JointVel("dq_subtalar_angle_r", xml_name="subtalar_angle_r"),
+        #                     # ObservationType.JointVel("dq_mtp_angle_r", xml_name="mtp_angle_r"),
+        #                     # # --- lower limb left ---
+        #                     # ObservationType.JointVel("dq_hip_flexion_l", xml_name="hip_flexion_l"),
+        #                     # ObservationType.JointVel("dq_hip_adduction_l", xml_name="hip_adduction_l"),
+        #                     # ObservationType.JointVel("dq_hip_rotation_l", xml_name="hip_rotation_l"),
+        #                     # ObservationType.JointVel("dq_knee_angle_l", xml_name="knee_angle_l"),
+        #                     # ObservationType.JointVel("dq_ankle_angle_l", xml_name="ankle_angle_l"),
+        #                     # ObservationType.JointVel("dq_subtalar_angle_l", xml_name="subtalar_angle_l"),
+        #                     # ObservationType.JointVel("dq_mtp_angle_l", xml_name="mtp_angle_l"),
+        #                     # # --- lumbar ---
+        #                     # ObservationType.JointVel("dq_lumbar_extension", xml_name="lumbar_extension"),
+        #                     # ObservationType.JointVel("dq_lumbar_bending", xml_name="lumbar_bending"),
+        #                     # ObservationType.JointVel("dq_lumbar_rotation", xml_name="lumbar_rotation"),
+        #                     # # --- upper body right ---
+        #                     # ObservationType.JointVel("dq_arm_flex_r", xml_name="arm_flex_r"),
+        #                     # ObservationType.JointVel("dq_arm_add_r", xml_name="arm_add_r"),
+        #                     # ObservationType.JointVel("dq_arm_rot_r", xml_name="arm_rot_r"),
+        #                     # ObservationType.JointVel("dq_elbow_flex_r", xml_name="elbow_flex_r"),
+        #                     # ObservationType.JointVel("dq_pro_sup_r", xml_name="pro_sup_r"),
+        #                     # ObservationType.JointVel("dq_wrist_flex_r", xml_name="wrist_flex_r"),
+        #                     # ObservationType.JointVel("dq_wrist_dev_r", xml_name="wrist_dev_r"),
+        #                     # # --- upper body left ---
+        #                     # ObservationType.JointVel("dq_arm_flex_l", xml_name="arm_flex_l"),
+        #                     # ObservationType.JointVel("dq_arm_add_l", xml_name="arm_add_l"),
+        #                     # ObservationType.JointVel("dq_arm_rot_l", xml_name="arm_rot_l"),
+        #                     # ObservationType.JointVel("dq_elbow_flex_l", xml_name="elbow_flex_l"),
+        #                     # ObservationType.JointVel("dq_pro_sup_l", xml_name="pro_sup_l"),
+        #                     # ObservationType.JointVel("dq_wrist_flex_l", xml_name="wrist_flex_l"),
+        #                     # ObservationType.JointVel("dq_wrist_dev_l", xml_name="wrist_dev_l")
+        #                     ] + observation_spec_joint_pos + observation_spec_joint_vel
+        # # print("Obs_spec length:", len(observation_spec))
+        # return observation_spec
     
 
 
@@ -1943,3 +2097,214 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
 
 
 
+
+class MjxSkeletonMuscleProsthesisRandObs(MjxSkeletonMuscleProsthesis):
+    """
+    Mjx version of SkeletonMuscle with specs for adding a prosthesis.
+    """
+
+    mjx_enabled = True
+
+    def __init__(self, timestep: float = 0.002, n_substeps: int = 5, **kwargs):
+        """
+        Constructor for MjxSkeletonMuscleProsthesis.
+        Args:
+            timestep (float): The time step for the simulation.
+            n_substeps (int): The number of substeps for the simulation.
+            **kwargs: Additional keyword arguments for configuration.
+        Raises:
+            ValueError: If required arguments are missing.
+        """
+        super().__init__(timestep=timestep, n_substeps=n_substeps,
+                        #  model_option_conf=model_option_conf, spec=spec,
+                           **kwargs)
+
+    
+    def _get_observation_specification(self, spec: mujoco.MjSpec):
+        """
+        Getter for the observation space specification.
+        Args:
+            spec (MjSpec): Specification of the environment.
+        Returns:
+            List[ObservationType]: List of observation space specification.
+        """
+        pylon_name = f"pylon_socket{self.prosthesis_side}"
+        talus_name = f"talus{self.prosthesis_side}"
+        rand_body_names = [pylon_name, talus_name]
+
+        joint_names = []
+        for j in spec.joints: 
+            joint_names.append(j.name)
+
+        # print(f"Joint names: {joint_names}")
+        # print(f"Number of joints: {len(joint_names)}")
+
+        if 'root' in joint_names: 
+            joint_names.remove('root')
+        # print(f"Joint names without root: {joint_names}")
+
+        observation_spec_joint_pos = []
+        observation_spec_joint_vel = []
+        observation_spec_body_pos = []
+        observation_spec_body_quat = []
+
+        for j in joint_names:
+            observation_spec_joint_pos.append(ObservationType.JointPos(f"q_{j}", xml_name=j))
+            observation_spec_joint_vel.append(ObservationType.JointVel(f"dq_{j}", xml_name=j))
+
+        for b in rand_body_names: 
+            observation_spec_body_pos.append(ObservationType.ModelBodyPos(f"pos_{b}", xml_name=b))
+            observation_spec_body_quat.append(ObservationType.ModelBodyRot(f"quat_{b}", xml_name=b))
+
+        # if self.reward_type == 'TargetVelocityGoalReward': #'LocomotionReward':
+        #     info_props = {}
+        #     info_props["upper_body_xml_name"] = 'root'
+        #     info_props["root_free_joint_xml_name"] = 'root'
+        #     info_props["goal_visualization_arrow_offset"] = 0
+        #     max_x_vel = 1.2 
+        #     max_y_vel = 0 
+        #     max_yaw_vel = 0
+        #     observation_spec = [GoalRandomRootVelocity(info_props, max_x_vel, max_y_vel, max_yaw_vel), ObservationType.FreeJointPosNoXY("q_root", xml_name="root")] + observation_spec_joint_pos + observation_spec_joint_vel
+        # else: 
+        # # print(f"Observation spec joint pos: {observation_spec_joint_pos}")
+        # # print(f"Observation spec joint vel: {observation_spec_joint_vel}")
+        observation_spec = [  # ------------- JOINT POS -------------
+                            ObservationType.FreeJointPosNoXY("q_root", xml_name="root"),
+
+                            ] + observation_spec_joint_pos + observation_spec_joint_vel + observation_spec_body_pos + observation_spec_body_quat
+        # print("Obs_spec length:", len(observation_spec))
+        return observation_spec
+    
+
+
+# class MjxSkeletonMuscleProsthesisRandPylonObs(MjxSkeletonMuscleProsthesis):
+#     """
+#     Mjx version of SkeletonMuscle with specs for adding a prosthesis.
+#     """
+
+#     mjx_enabled = True
+
+#     def __init__(self, timestep: float = 0.002, n_substeps: int = 5, **kwargs):
+#         """
+#         Constructor for MjxSkeletonMuscleProsthesis.
+#         Args:
+#             timestep (float): The time step for the simulation.
+#             n_substeps (int): The number of substeps for the simulation.
+#             **kwargs: Additional keyword arguments for configuration.
+#         Raises:
+#             ValueError: If required arguments are missing.
+#         """
+#         super().__init__(timestep=timestep, n_substeps=n_substeps,
+#                         #  model_option_conf=model_option_conf, spec=spec,
+#                            **kwargs)
+
+    
+#     def _get_observation_specification(self, spec: mujoco.MjSpec):
+#         """
+#         Getter for the observation space specification.
+#         Args:
+#             spec (MjSpec): Specification of the environment.
+#         Returns:
+#             List[ObservationType]: List of observation space specification.
+#         """
+#         pylon_name = f"pylon_socket{self.prosthesis_side}"
+#         # talus_name = f"talus{self.prosthesis_side}"
+#         rand_body_names = [pylon_name]#, talus_name]
+
+#         joint_names = []
+#         for j in spec.joints: 
+#             joint_names.append(j.name)
+
+#         # print(f"Joint names: {joint_names}")
+#         # print(f"Number of joints: {len(joint_names)}")
+
+#         if 'root' in joint_names: 
+#             joint_names.remove('root')
+#         # print(f"Joint names without root: {joint_names}")
+
+#         observation_spec_joint_pos = []
+#         observation_spec_joint_vel = []
+#         observation_spec_body_pos = []
+#         observation_spec_body_quat = []
+
+#         for j in joint_names:
+#             observation_spec_joint_pos.append(ObservationType.JointPos(f"q_{j}", xml_name=j))
+#             observation_spec_joint_vel.append(ObservationType.JointVel(f"dq_{j}", xml_name=j))
+
+#         for b in rand_body_names: 
+#             observation_spec_body_pos.append(ObservationType.ModelBodyPos(f"pos_{b}", xml_name=b))
+#             observation_spec_body_quat.append(ObservationType.ModelBodyRot(f"quat_{b}", xml_name=b))
+
+#         observation_spec = [  # ------------- JOINT POS -------------
+#                             ObservationType.FreeJointPosNoXY("q_root", xml_name="root"),
+
+#                             ] + observation_spec_joint_pos + observation_spec_joint_vel + observation_spec_body_pos + observation_spec_body_quat
+#         # print("Obs_spec length:", len(observation_spec))
+#         return observation_spec
+    
+
+    
+# class MjxSkeletonMuscleProsthesisRandTalusObs(MjxSkeletonMuscleProsthesis):
+#     """
+#     Mjx version of SkeletonMuscle with specs for adding a prosthesis.
+#     """
+
+#     mjx_enabled = True
+
+#     def __init__(self, timestep: float = 0.002, n_substeps: int = 5, **kwargs):
+#         """
+#         Constructor for MjxSkeletonMuscleProsthesis.
+#         Args:
+#             timestep (float): The time step for the simulation.
+#             n_substeps (int): The number of substeps for the simulation.
+#             **kwargs: Additional keyword arguments for configuration.
+#         Raises:
+#             ValueError: If required arguments are missing.
+#         """
+#         super().__init__(timestep=timestep, n_substeps=n_substeps,
+#                         #  model_option_conf=model_option_conf, spec=spec,
+#                            **kwargs)
+
+    
+#     def _get_observation_specification(self, spec: mujoco.MjSpec):
+#         """
+#         Getter for the observation space specification.
+#         Args:
+#             spec (MjSpec): Specification of the environment.
+#         Returns:
+#             List[ObservationType]: List of observation space specification.
+#         """
+#         # pylon_name = f"pylon_socket{self.prosthesis_side}"
+#         talus_name = f"talus{self.prosthesis_side}"
+#         rand_body_names = [talus_name]
+
+#         joint_names = []
+#         for j in spec.joints: 
+#             joint_names.append(j.name)
+
+#         # print(f"Joint names: {joint_names}")
+#         # print(f"Number of joints: {len(joint_names)}")
+
+#         if 'root' in joint_names: 
+#             joint_names.remove('root')
+#         # print(f"Joint names without root: {joint_names}")
+
+#         observation_spec_joint_pos = []
+#         observation_spec_joint_vel = []
+#         observation_spec_body_pos = []
+#         observation_spec_body_quat = []
+
+#         for j in joint_names:
+#             observation_spec_joint_pos.append(ObservationType.JointPos(f"q_{j}", xml_name=j))
+#             observation_spec_joint_vel.append(ObservationType.JointVel(f"dq_{j}", xml_name=j))
+
+#         for b in rand_body_names: 
+#             observation_spec_body_pos.append(ObservationType.ModelBodyPos(f"pos_{b}", xml_name=b))
+#             observation_spec_body_quat.append(ObservationType.ModelBodyRot(f"quat_{b}", xml_name=b))
+
+#         observation_spec = [  # ------------- JOINT POS -------------
+#                             ObservationType.FreeJointPosNoXY("q_root", xml_name="root"),
+
+#                             ] + observation_spec_joint_pos + observation_spec_joint_vel + observation_spec_body_pos + observation_spec_body_quat
+#         # print("Obs_spec length:", len(observation_spec))
+#         return observation_spec

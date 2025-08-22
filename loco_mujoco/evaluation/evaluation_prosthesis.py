@@ -84,6 +84,24 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
     #         "mtp_angle": ["mtp_angle"],
     #     }
 
+
+    def get_xpos(self, mjx_data):
+        body_xpos  = {}
+        for i in range(self.model.nbody):
+            body_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, i)
+            body_pos = mjx_data.xpos[...][0, i]
+            body_xpos[body_name] = body_pos
+        return body_xpos
+    
+    def get_xpos_batched(self, mjx_data):
+        body_xpos = {}
+        for i in range(self.model.nbody):
+            body_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, i)
+            # Get all seeds for body i
+            body_pos = mjx_data.xpos[:, i]  # shape: [1,n_bodies,n_seeds]
+            body_xpos[body_name] = body_pos
+        return body_xpos
+
     def get_joint_angles(self,mjx_data): 
         """ Get all joint angles and save in dictionary with joint name as key and angle as value.
         """
@@ -113,14 +131,17 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
         """
         joint_forces_constraint = {}
         joint_forces_smooth = {}
+        joint_forces_applied = {}
         for i in range(self.model.njnt):
             joint_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_JOINT, i)
             dof_address = self.model.jnt_dofadr[i]
             joint_force_constraint = mjx_data.qfrc_constraint[...,dof_address] # constraint force; joint limits and contacts etc. 
             joint_force_smooth = mjx_data.qfrc_smooth[...,dof_address] # net unconstrained force; Sum of all forces, e.g., gravity, applied torques etc,
+            joint_force_applied = mjx_data.qfrc_applied[...,dof_address]
             joint_forces_constraint[joint_name] = joint_force_constraint
             joint_forces_smooth[joint_name] = joint_force_smooth
-        return joint_forces_constraint, joint_forces_smooth
+            joint_forces_applied[joint_name] = joint_force_applied
+        return joint_forces_constraint, joint_forces_smooth, joint_forces_applied
     
     def get_joint_trques(self, mjx_data):
         """ 
@@ -134,6 +155,8 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
             joint_torque = mjx_data.qfrc_actuator[...,dof_address]
             joint_torques[joint_name] = joint_torque
         return joint_torques
+
+    
     
 
     def calc_joint_energy_exp(self, joint_torques, joint_vels):
@@ -159,18 +182,18 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
         "leg_muscles": [
             "glut_med1", "glut_med2", "glut_med3", "glut_min1", "glut_min2", "glut_min3",
             "semimem", "semiten", "bifemlh", "bifemsh", "sar", "add_long", "add_brev",
-            "add_mag1", "add_mag2", "add_mag3", "tfl_r", "pect", "grac", "glut_max1",
+            "add_mag1", "add_mag2", "add_mag3", "tfl", "pect", "grac", "glut_max1",
             "glut_max2", "glut_max3", "iliacus", "psoas", "quad_fem", "gem", "peri",
-            "rect_fem", "vas_med_r", "vas_int_r", "vas_lat", "med_gas", "lat_gas", "soleus",
+            "rect_fem", "vas_med", "vas_int", "vas_lat", "med_gas", "lat_gas", "soleus",
             "tib_post", "flex_dig", "flex_hal", "tib_ant", "per_brev", "per_long",
             "per_tert", "ext_dig", "ext_hal"
         ],
         "all_muscles": [
             "glut_med1", "glut_med2", "glut_med3", "glut_min1", "glut_min2", "glut_min3",
             "semimem", "semiten", "bifemlh", "bifemsh", "sar", "add_long", "add_brev",
-            "add_mag1", "add_mag2", "add_mag3", "tfl_r", "pect", "grac", "glut_max1",
+            "add_mag1", "add_mag2", "add_mag3", "tfl", "pect", "grac", "glut_max1",
             "glut_max2", "glut_max3", "iliacus", "psoas", "quad_fem", "gem", "peri",
-            "rect_fem", "vas_med_r", "vas_int_r", "vas_lat", "med_gas", "lat_gas", "soleus",
+            "rect_fem", "vas_med", "vas_int", "vas_lat", "med_gas", "lat_gas", "soleus",
             "tib_post", "flex_dig", "flex_hal", "tib_ant", "per_brev", "per_long",
             "per_tert", "ext_dig", "ext_hal", "ercspn", "intobl", "extobl"
         ]
@@ -242,39 +265,75 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
         return processed_action[muscle_indices]
 
 
-    def setup_muscle_indices(self, model, evaluation_muscle_groups, evaluation_muscle_names):
+    def setup_muscle_indices(self, model, evaluation_muscle_names, muscle_group, side):
         """
-        Call this ONCE before JIT compilation to pre-compute muscle indices
-        Add this method to your ProsthesisMetricsHandler class
+        Computes muscle indices for a specific muscle group and side.
+
+        Args:
+            model (mujoco.MjModel): The MuJoCo model.
+            evaluation_muscle_names (dict): A dictionary mapping muscle group names to a list of muscle names.
+            muscle_group (str): The name of the muscle group to process.
+            side (str): The side of the body ('left' or 'right').
+
+        Returns:
+            jnp.array: A JAX array of muscle indices for the specified group and side.
         """
-        if not hasattr(self, '_muscle_indices_cache'):
-            self._muscle_indices_cache = {}
+        # Build actuator name to index mapping
+        name_to_idx = {
+            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, i): i
+            for i in range(model.nu)
+        }
+
+        indices = []
+        muscle_names = evaluation_muscle_names.get(muscle_group, [])
+
+        for muscle_name in muscle_names:
+            if muscle_name in name_to_idx:
+                idx = name_to_idx[muscle_name]
+                
+                # Determine left/right based on naming convention
+                is_left = "_l" in muscle_name or "left" in muscle_name.lower()
+                
+                if (side == 'left' and is_left) or (side == 'right' and not is_left):
+                    indices.append(idx)
+
+        return jnp.array(indices) if indices else jnp.array([])
+
+
+    # def setup_muscle_indices(self, model, evaluation_muscle_groups, evaluation_muscle_names):
+    #     """
+    #     Call this ONCE before JIT compilation to pre-compute muscle indices
+    #     Add this method to your ProsthesisMetricsHandler class
+    #     """
+    #     if not hasattr(self, '_muscle_indices_cache'):
+    #         self._muscle_indices_cache = {}
             
-            # Build actuator name to index mapping
-            name_to_idx = {}
-            for i in range(model.nu):
-                name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
-                name_to_idx[name] = i
+    #         # Build actuator name to index mapping
+    #         name_to_idx = {}
+    #         for i in range(model.nu):
+    #             name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
+    #             name_to_idx[name] = i
             
-            # Convert muscle names to indices for each group
-            for muscle_group in evaluation_muscle_groups:
-                muscle_names = evaluation_muscle_names[muscle_group]
+    #         # Convert muscle names to indices for each group
+    #         for muscle_group in evaluation_muscle_groups:
+    #             muscle_names = evaluation_muscle_names[muscle_group]
                 
-                left_indices = []
-                right_indices = []
+    #             left_indices = []
+    #             right_indices = []
                 
-                for muscle_name in muscle_names:
-                    if muscle_name in name_to_idx:
-                        idx = name_to_idx[muscle_name]
-                        # Determine left/right based on naming convention
-                        if "_l" in muscle_name or "left" in muscle_name.lower():
-                            left_indices.append(idx)
-                        else:
-                            right_indices.append(idx)
+    #             for muscle_name in muscle_names:
+    #                 if muscle_name in name_to_idx:
+    #                     idx = name_to_idx[muscle_name]
+    #                     # Determine left/right based on naming convention
+    #                     if "_l" in muscle_name or "left" in muscle_name.lower():
+    #                         left_indices.append(idx)
+    #                     else:
+    #                         right_indices.append(idx)
                 
-                self._muscle_indices_cache[f"{muscle_group}_left"] = jnp.array(left_indices) if left_indices else jnp.array([])
-                self._muscle_indices_cache[f"{muscle_group}_right"] = jnp.array(right_indices) if right_indices else jnp.array([])
-    
+    #             self._muscle_indices_cache[f"{muscle_group}_left"] = jnp.array(left_indices) if left_indices else jnp.array([])
+    #             self._muscle_indices_cache[f"{muscle_group}_right"] = jnp.array(right_indices) if right_indices else jnp.array([])
+
+
     def get_muscle_activations_by_indices(self, processed_action, muscle_group, side):
         """
         JAX-compatible muscle activation extraction using pre-computed indices
@@ -297,6 +356,8 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
         floor_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'floor')
         foot_box_r_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'foot_box_r')
         foot_box_l_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'foot_box_l')
+        toes_box_r_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'toes_box_r')
+        toes_box_l_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'toes_box_l')
 
         mj_data = mjx.get_data(self.model, data)
         geom1_id_is_floor = geom1_id == floor_id
@@ -318,6 +379,12 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
                     # f_contact_frame_r += contact_force_raw[0:3]
                     f_contact_frame_r += frX * contact_force_raw[0] + frY * contact_force_raw[1] + frZ * contact_force_raw[2]
                 elif mj_data[0].contact.geom2[n] == foot_box_l_id:
+                    # f_contact_frame_l += contact_force_raw[0:3]
+                    f_contact_frame_l += frX * contact_force_raw[0] + frY * contact_force_raw[1] + frZ * contact_force_raw[2]
+                elif mj_data[0].contact.geom2[n] == toes_box_r_id:
+                    # f_contact_frame_r += contact_force_raw[0:3]
+                    f_contact_frame_r += frX * contact_force_raw[0] + frY * contact_force_raw[1] + frZ * contact_force_raw[2]
+                elif mj_data[0].contact.geom2[n] == toes_box_l_id:
                     # f_contact_frame_l += contact_force_raw[0:3]
                     f_contact_frame_l += frX * contact_force_raw[0] + frY * contact_force_raw[1] + frZ * contact_force_raw[2]
 
@@ -394,6 +461,8 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
         floor_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'floor')
         foot_box_r_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'foot_box_r')
         foot_box_l_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'foot_box_l')
+        toes_box_l_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'toes_box_l')
+        toes_box_r_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'toes_box_r')
 
         geom1_id_is_floor = geom1_id == floor_id
         # if all geom1_id_is lfoor true: get indices wheren dist is smaller= 0 
@@ -405,6 +474,11 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
             for n in penetration_indices_geom:
                 if geom2_id[...,n] == foot_box_r_id: 
                     contact_index_r = step
+                elif geom2_id[...,n] == toes_box_r_id: 
+                    contact_index_r = step
+                    
+                if geom2_id[...,n] == toes_box_l_id: 
+                    contact_index_l = step
                 elif geom2_id[...,n] == foot_box_l_id: 
                     contact_index_l = step
 
@@ -419,6 +493,8 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
             self._floor_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'floor')
             self._foot_box_r_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'foot_box_r') 
             self._foot_box_l_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'foot_box_l')
+            self._toes_box_l_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'toes_box_l')
+            self._toes_box_r_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'toes_box_r')
         
         geom_distance = data.contact.dist
         geom1_id = data.contact.geom1
@@ -436,8 +512,15 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
             penetration = geom_distance <= 0.0
             valid_contacts = penetration  # Since we know all are floor
             
-            left_contact = jnp.any(valid_contacts & (geom2_id == self._foot_box_l_id))
-            right_contact = jnp.any(valid_contacts & (geom2_id == self._foot_box_r_id))
+            left_foot_contact = jnp.any(valid_contacts & (geom2_id == self._foot_box_l_id))
+            right_foot_contact = jnp.any(valid_contacts & (geom2_id == self._foot_box_r_id))
+
+            left_toes_contact = jnp.any(valid_contacts & (geom2_id == self._toes_box_l_id))
+            right_toes_contact = jnp.any(valid_contacts & (geom2_id == self._toes_box_r_id))
+
+            # Combine left foot and toes contact
+            left_contact = left_foot_contact | left_toes_contact
+            right_contact = right_foot_contact | right_toes_contact
             
             contact_l = jnp.where(left_contact, step, -1)
             contact_r = jnp.where(right_contact, step, -1)
@@ -684,6 +767,78 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
                 # print(f"Sensor {sensor_name} data: {sensor_data}")
                 # No specific sensor data is saved!!!! FIX!!!!!!!!!!!!!!!!
 
+    def get_sensor_data_batched(self, mjx_data):
+        """
+        Retrieve sensor data from the Mujoco environment.
+        Returns (sensor_data, sensor_names) where
+        - sensor_data is a dict name -> [batch, 3] (PyTree, JAX-friendly)
+        - sensor_names is a list of names (static Python)
+        """
+
+        # Cache sensor names (static, not traced)
+        if not hasattr(self, "_batched_sensor_names"):
+            self._batched_sensor_names = [
+                mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_SENSOR, i)
+                for i in range(self.model.nsensor)
+            ]
+        sensor_names = self._batched_sensor_names
+        nsensor = self.model.nsensor
+
+        # sensordata shape: [batch, nsensor*3]
+        sensordata = mjx_data.sensordata
+
+        # Split into [batch, nsensor, 3]
+        sensordata_split = sensordata.reshape(-1, nsensor, 3)
+
+        # Make a dict {name: [batch, 3]}
+        # sensor_data = {name: sensordata_split[:, i, :] for i, name in enumerate(sensor_names)}
+        sensor_data = {name: sensordata_split[0, i] for i, name in enumerate(sensor_names)}
+
+        return sensor_data, sensor_names
+
+    # def get_sensor_data_batched(self, mjx_data):
+    #     """
+    #     Retrieve sensor data from the Mujoco environment.
+    #     This function extracts sensor data from the Mujoco data structure.
+        
+    #     """
+    #     # Force sensor: creates a 3-axis force sensor. The sensor outputs three numbers, which are the interaction 
+    #     # force between a child and a parent body, expressed in the site frame defining the sensor. The convention 
+    #     # is that the site is attached to the child body, and the force points from the child towards the parent. 
+    #     # The computation here takes into account all forces acting on the system, including contacts as well as 
+    #     # external perturbations. 
+
+    #     # Retrieve sensor names from the model
+    #     # JAX-compatible sensor data extraction for parallel runs (batched mjx_data)
+    #     # Get sensor names from the model (cache for efficiency)
+    #     # if not hasattr(self, '_batched_sensor_names'):
+    #     self._batched_sensor_names = [
+    #     mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_SENSOR, i)
+    #     for i in range(self.model.nsensor)
+    #     ]
+    #     # # Optionally add mimic sensors if needed
+    #     # mimic_names = ["hip_mimic", "knee_mimic", "foot_mimic"]
+    #     # self._batched_sensor_names = (
+    #     # [name + '_l' for name in mimic_names] +
+    #     # [name + '_r' for name in mimic_names] +
+    #     # self._batched_sensor_names
+    #     # )
+
+    #     sensor_names = self._batched_sensor_names
+    #     nsensor = self.model.nsensor
+
+    #     # mjx_data.sensordata shape: [batch, nsensor*3] or [batch, N] (N = nsensor*3)
+    #     sensordata = mjx_data.sensordata #jnp.atleast_2d(mjx_data.sensordata)
+
+    #     # Always return a dict of sensor_name -> [batch, 3] arrays
+    #     sensor_data = {}
+    #     for i, name in enumerate(sensor_names):  # Only real sensors, not mimic
+    #         start = i * 3
+    #         end = start + 3
+    #         sensor_data[name] = sensordata[:, start:end]
+
+    #     return sensor_data, sensor_names
+
 
     # def get_sensor_data_batched(self, mjx_data):
         # """
@@ -730,30 +885,31 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
         
         # return sensor_data, sensor_names
 
-    def get_sensor_data_batched(self, mjx_data):
-        # Get sensor count and names (cached)
-        if not hasattr(self, '_simple_sensor_cache'):
-            self._simple_nsensor = self.model.nsensor
-            self._simple_sensor_names = []
-            for i in range(self._simple_nsensor):
-                name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_SENSOR, i)
-                self._simple_sensor_names.append(name)
-            self._simple_sensor_cache = True
+    # def get_sensor_data_batched(self, mjx_data):
+    #     # Get sensor count and names (cached)
+    #     if not hasattr(self, '_simple_sensor_cache'):
+    #         self._simple_nsensor = self.model.nsensor
+    #         self._simple_sensor_names = []
+    #         for i in range(self._simple_nsensor):
+    #             name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_SENSOR, i)
+    #             self._simple_sensor_names.append(name)
+    #         self._simple_sensor_cache = True
+
         
-        # Extract data - always return dict
-        sensor_data = {}
-        data = jnp.atleast_1d(mjx_data.sensordata)
+    #     # Extract data - always return dict
+    #     sensor_data = {}
+    #     data = jnp.atleast_1d(mjx_data.sensordata)
         
-        if self._simple_nsensor == 1:
-            sensor_data[self._simple_sensor_names[0]] = data
-        else:
-            # Multiple sensors: 3 values each
-            for i in range(self._simple_nsensor):
-                start = i * 3
-                end = start + 3
-                sensor_data[self._simple_sensor_names[i]] = data[start:end]
+    #     if self._simple_nsensor == 1:
+    #         sensor_data[self._simple_sensor_names[0]] = data
+    #     else:
+    #         # Multiple sensors: 3 values each
+    #         for i in range(self._simple_nsensor):
+    #             start = i * 3
+    #             end = start + 3
+    #             sensor_data[self._simple_sensor_names[i]] = data[start:end]
         
-        return sensor_data, self._simple_sensor_names
+    #     return sensor_data, self._simple_sensor_names
     # # Most robust version that handles edge cases
     # def get_sensor_data_batched(self, mjx_data):
     #     """
@@ -995,6 +1151,273 @@ class PostProcessMetricsHandler():
         # if all_step_start[m] - all_start_step[m+1] > min_walk_step_length:
         #     all_step_start.append(all_step_contact[m+1])
         return filtered_start_steps #all_step_start
+    
+    def get_start_steps_from_grfZ(self, grfZ, min_walk_step_length=60, threshold=0.5):
+        """
+        Detect step start indices from vertical GRF data.
+
+        Args:
+            grfZ (list or np.array): Vertical ground reaction force data.
+            min_walk_step_length (int): Minimum number of frames between steps.
+            threshold (float): GRF threshold to detect foot contact.
+
+        Returns:
+            list: Indices where steps start.
+        """
+        # Alternative only next time step still above 0 
+        # grfZ = np.array(grfZ)
+        # above_threshold = grfZ > threshold
+        # step_starts = []
+
+        # for i in range(1, len(above_threshold)):
+        #     # Detect rising edge: from below to above threshold
+        #     if above_threshold[i] and not above_threshold[i - 1] and above_threshold[i+2]:
+        #         if not step_starts or (i - step_starts[-1]) > min_walk_step_length:
+        #             step_starts.append(i)
+
+        # return step_starts
+        
+
+        # Alternative only next 20 time steps still above 0 
+        grfZ = np.array(grfZ)
+        above_threshold = grfZ > threshold
+        step_starts = []
+
+        for i in range(1, len(above_threshold) - 20):  # Ensure we have 20 values ahead
+            # Detect rising edge and check next 20 values
+            if above_threshold[i] and not above_threshold[i - 1]:
+                if np.all(grfZ[i:i+20] > 0):
+                    if not step_starts or (i - step_starts[-1]) > min_walk_step_length:
+                        step_starts.append(i)
+
+        return step_starts
+
+        # # Alternative only 20 time steps before has to be 0 
+        # grfZ = np.array(grfZ)
+        # above_threshold = grfZ > threshold
+        # step_starts = []
+
+        # for i in range(30, len(above_threshold)):  # Ensure we have 30 values before and 20 ahead
+        #     # Check if GRF was zero for at least 30 frames before
+        #     if np.all(grfZ[i-30:i] == 0):
+        #         # Detect rising edge and check next 20 values
+        #         if above_threshold[i] and not above_threshold[i - 1]:
+        #             if not step_starts or (i - step_starts[-1]) > min_walk_step_length:
+        #                 step_starts.append(i)
+
+        # return step_starts
+        
+    
+    def get_contact_lengths(self, contact_data, min_walk_step_length):
+        """
+        Identify contact segments and compute their lengths based on gaps in contact data.
+        
+        Args:
+        contact_data (list): A list of contact indices (integers).
+        min_walk_step_length (int): Minimum length of a valid contact segment.
+        
+        Returns:
+        list: Lengths of valid contact segments.
+        """
+        contact_lengths = []
+        start_index = contact_data[0]
+
+        for i in range(1, len(contact_data)):
+            if contact_data[i] - contact_data[i - 1] > 1:
+                end_index = contact_data[i - 1]
+                length = end_index - start_index + 1
+                if length >= min_walk_step_length:
+                    contact_lengths.append(length)
+                start_index = contact_data[i]
+
+        # Handle the final segment
+        final_length = contact_data[-1] - start_index + 1
+        if final_length >= min_walk_step_length:
+            contact_lengths.append(final_length)
+
+        return contact_lengths
+
+
+    def get_contact_lengths_from_grfZ(self, grfZ, min_walk_step_length=20, threshold=50):
+        """
+        Detect contact lengths from vertical GRF data.
+
+        Args:
+            grfZ (list or np.array): Vertical ground reaction force data.
+            min_walk_step_length (int): Minimum number of frames to consider a valid contact.
+            threshold (float): GRF threshold to define contact (default is 50 N).
+
+        Returns:
+            list: Lengths of valid contact segments.
+        """
+        import numpy as np
+
+        grfZ = np.array(grfZ)
+        above_threshold = grfZ > threshold
+
+        contact_lengths = []
+        in_contact = False
+        start_idx = None
+
+        for i, val in enumerate(above_threshold):
+            if val and not in_contact:
+                # Start of contact
+                in_contact = True
+                start_idx = i
+            elif not val and in_contact:
+                # End of contact
+                end_idx = i
+                length = end_idx - start_idx
+                if length >= min_walk_step_length:
+                    contact_lengths.append(length)
+                in_contact = False
+
+        # Handle case where contact continues till the end
+        if in_contact:
+            length = len(grfZ) - start_idx
+            if length >= min_walk_step_length:
+                contact_lengths.append(length)
+
+        return contact_lengths
+
+    def get_contact_from_grfZ(self, grfZ, threshold=50):
+        grfZ = np.array(grfZ)
+        above_threshold = grfZ > threshold
+        in_contact = 100*above_threshold
+        return in_contact
+
+    def compute_single_support_time(self ,in_contact_right, in_contact_left, total_steps = 1000):
+        """
+        Computes single support time for left and right legs.
+        
+        Parameters:
+            in_contact_right (list of bool): Right foot contact per frame
+            in_contact_left (list of bool): Left foot contact per frame
+            frame_rate (int): Frames per second (default 100 Hz)
+        
+        Returns:
+            dict: Single support time in seconds for left and right
+        """
+        single_support_right_frames = 0
+        single_support_left_frames = 0
+
+        for r, l in zip(in_contact_right, in_contact_left):
+            if r and not l:
+                single_support_right_frames += 1
+            elif l and not r:
+                single_support_left_frames += 1
+
+        single_support_right_time = single_support_right_frames/1000
+        single_support_left_time = single_support_left_frames/1000
+
+
+        return single_support_right_time, single_support_left_time
+
+
+    def compute_single_support_per_step(self, in_contact_right,in_contact_left, step_start_right, step_start_left):
+        """
+        Computes single support time per step for left and right legs.
+
+        Parameters:
+            run_data (dict): Contains 'in_contact_right', 'in_contact_left',
+                            'step_start_right', 'step_start_left'
+            frame_rate (int): Sampling rate in Hz
+
+        Returns:
+            dict: Lists of single support times per step for left and right
+        """
+        # in_contact_right = run_data["in_contact_right"]
+        # in_contact_left = run_data["in_contact_left"]
+        # step_start_right = run_data["step_start_right"]
+        # step_start_left = run_data["step_start_left"]
+
+        step_count = min(len(step_start_right), len(step_start_left)) - 1
+        if step_count < 1:
+            return {"right": [], "left": []}
+
+        single_support_right = []
+        single_support_left = []
+
+        for i in range(step_count):
+            # Right step window
+            start_r = step_start_right[i]
+            end_r = step_start_right[i + 1]
+            ss_r_frames = sum(
+                1 for r, l in zip(in_contact_right[start_r:end_r], in_contact_left[start_r:end_r])
+                if r and not l
+            )
+            single_support_right.append(ss_r_frames)
+
+            # Left step window
+            start_l = step_start_left[i]
+            end_l = step_start_left[i + 1]
+            ss_l_frames = sum(
+                1 for r, l in zip(in_contact_right[start_l:end_l], in_contact_left[start_l:end_l])
+                if l and not r
+            )
+            single_support_left.append(ss_l_frames)
+
+        return single_support_right, single_support_left
+    
+
+
+    def compute_double_support_per_step(self, in_contact_right,in_contact_left, step_start_right, step_start_left):
+        """
+        Compute double support time per step for left and right legs.
+        """
+        step_count = min(len(step_start_right), len(step_start_left)) - 1
+        if step_count < 1:
+            return []
+
+        double_support = []
+
+        for i in range(step_count):
+            # Right step window
+            start_r = step_start_right[i]
+            end_r = step_start_right[i + 1]
+            ds_r_frames = sum(
+                1 for r, l in zip(in_contact_right[start_r:end_r], in_contact_left[start_r:end_r])
+                if r and l
+            )
+            double_support.append(ds_r_frames)
+
+        return double_support
+
+
+    def compute_step_cadence(self, episode_length, in_contact_right,in_contact_left, step_start_right, step_start_left):
+        """
+        Compute step cadence in walking steps per minute.
+        Look for how many steps take place on average in 6000 steps
+        """
+        step_count = min(len(step_start_right), len(step_start_left)) - 1
+        if step_count < 1:
+            return 0
+
+        # Compute amount of steps in 6000 frames
+        steps_in_6000 = (6000/episode_length) *step_count
+        # steps_in_6000 = 6000 / (step_count / 60) if step_count > 0 else 0
+
+        # step_count = min(len(step_start_right), len(step_start_left)) - 1
+        # if step_count < 1:
+        #     return 0
+
+        # # Compute total step duration in seconds
+        # total_duration = 0
+        # for i in range(step_count):
+        #     start_r = step_start_right[i]
+        #     end_r = step_start_right[i + 1]
+        #     start_l = step_start_left[i]
+        #     end_l = step_start_left[i + 1]
+        #     duration = max(end_r, end_l) - min(start_r, start_l)
+        #     total_duration *= 100 # 1000 steps is 10 seconds
+        #     total_duration += duration
+
+        # # Convert to minutes and compute cadence
+        # total_duration_minutes = total_duration / 60
+        # cadence = step_count / total_duration_minutes if total_duration_minutes > 0 else 0
+        # return cadence
+        return steps_in_6000
+    
 
     @staticmethod
     def _get_step_slices(data, step_indices):
@@ -1938,6 +2361,7 @@ class PostProcessMetricsHandler():
                 run_dict = all_loaded_data[run_key]
                 all_actuator_names = run_dict["all_actuator_names"]
                 all_actions = run_dict["all_actions"]
+                all_actions = np.array(all_actions)  # Ensure actions are numpy array for indexing
                 step_data = run_step_data[run_key]
                 all_step_start_left = step_data["step_start_left"]
                 all_step_start_right = step_data["step_start_right"]
@@ -1960,7 +2384,15 @@ class PostProcessMetricsHandler():
                 if all_step_start_left and len(all_step_start_left) > 1:
                     for j in range(len(all_step_start_left) - 1):
                         start, end = all_step_start_left[j], all_step_start_left[j + 1]
-                        y = [float(np.array(a)[0][idx_left]) for a in all_actions[start:end]]
+                        # print("all_actions shape:", all_actions.shape)
+                        # print("a shape:", np.array(all_actions[start:end]).shape)
+                        # print("idx_left:", idx_left)
+                        # y = [float(a[idx_left]) for a in all_actions[start:end]]
+                        # y = [float(np.array(a)[0][idx_left]) for a in all_actions[start:end]]
+                        if hasattr(all_actions[start], 'shape') and len(np.array(all_actions[start]).shape) > 1:
+                            y = [float(np.array(a)[0][idx_left]) for a in all_actions[start:end]]
+                        else:
+                            y = [float(a[idx_left]) for a in all_actions[start:end]]
                         if len(y) < 2:
                             continue
                         x_old = np.linspace(0, 1, len(y))
@@ -1970,7 +2402,12 @@ class PostProcessMetricsHandler():
                 if all_step_start_right and len(all_step_start_right) > 1:
                     for j in range(len(all_step_start_right) - 1):
                         start, end = all_step_start_right[j], all_step_start_right[j + 1]
-                        y = [float(np.array(a)[0][idx_right]) for a in all_actions[start:end]]
+                        
+                        if hasattr(all_actions[start], 'shape') and len(np.array(all_actions[start]).shape) > 1:
+                            y = [float(np.array(a)[0][idx_right]) for a in all_actions[start:end]]
+                        else: 
+                            y = [float(a[idx_right]) for a in all_actions[start:end]]
+
                         if len(y) < 2:
                             continue
                         x_old = np.linspace(0, 1, len(y))
@@ -1983,6 +2420,7 @@ class PostProcessMetricsHandler():
                     std_left = np.std(left_steps, axis=0)
                     mean_right = np.mean(right_steps, axis=0)
                     std_right = np.std(right_steps, axis=0)
+                    # diff = mean_right - mean_left #
                     diff = mean_left - mean_right
                     mean_left_all.append((run_key, mean_left, std_left))
                     mean_right_all.append((run_key, mean_right, std_right))
@@ -1992,20 +2430,20 @@ class PostProcessMetricsHandler():
             fig, axes = plt.subplots(1, 3, figsize=(18, 5), sharex=True)
             # Plot mean left
             for run_key, mean_left, std_left in mean_left_all:
-                axes[0].plot(x, mean_left, label=f"{run_key} {muscle_name}_l mean")
-                axes[0].fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.15)
-            axes[0].set_title(f"{muscle_name}_l mean (all runs)")
-            axes[0].set_xlabel("Interpolated Step (%)")
-            axes[0].set_ylabel("Activation")
-            axes[0].legend()
-            # Plot mean right
-            for run_key, mean_right, std_right in mean_right_all:
-                axes[1].plot(x, mean_right, label=f"{run_key} {muscle_name}_r mean")
-                axes[1].fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.15)
-            axes[1].set_title(f"{muscle_name}_r mean (all runs)")
+                axes[1].plot(x, mean_left, label=f"{run_key} {muscle_name}_l mean")
+                axes[1].fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.15)
+            axes[1].set_title(f"{muscle_name}_l mean (all runs)")
             axes[1].set_xlabel("Interpolated Step (%)")
             axes[1].set_ylabel("Activation")
-            axes[1].legend()
+            # axes[0].legend()
+            # Plot mean right
+            for run_key, mean_right, std_right in mean_right_all:
+                axes[0].plot(x, mean_right, label=f"{run_key} {muscle_name}_r mean")
+                axes[0].fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.15)
+            axes[0].set_title(f"{muscle_name}_r mean (all runs)")
+            axes[0].set_xlabel("Interpolated Step (%)")
+            axes[0].set_ylabel("Activation")
+            # axes[1].legend()
             # Plot difference
             for run_key, diff in diff_all:
                 axes[2].plot(x, diff, label=f"{run_key} L-R")
@@ -2017,6 +2455,238 @@ class PostProcessMetricsHandler():
             plt.tight_layout()
             plt.show()
             plt.close()
+
+
+
+    # Across all runs
+    @staticmethod
+    def plot_muscle_activation_symmetry_all_runs_summed(
+        muscle_names_list,
+        all_loaded_data,
+        run_step_data,
+        interp_len=100,
+    ):
+        """
+        Plot mean ± std across runs for left, right, and difference (L-R).
+        """
+        for muscle_name in muscle_names_list:
+            mean_left_all = []
+            mean_right_all = []
+            diff_all = []
+
+            run_keys = list(all_loaded_data.keys())
+            for run_key in run_keys:
+                run_dict = all_loaded_data[run_key]
+                all_actuator_names = run_dict["all_actuator_names"]
+                all_actions = np.array(run_dict["all_actions"])  # Ensure actions are numpy array
+                step_data = run_step_data[run_key]
+                all_step_start_left = step_data["step_start_left"]
+                all_step_start_right = step_data["step_start_right"]
+
+                def find_actuator_index(actuator_names, name):
+                    try:
+                        return actuator_names.index(name)
+                    except ValueError:
+                        print(f"{name} not found in all_actuator_names.")
+                        return None
+
+                idx_left = find_actuator_index(all_actuator_names, muscle_name + "_l")
+                idx_right = find_actuator_index(all_actuator_names, muscle_name + "_r")
+                if idx_left is None or idx_right is None:
+                    continue
+
+                # Collect left and right activations per step
+                left_steps, right_steps = [], []
+                if all_step_start_left and len(all_step_start_left) > 1:
+                    for j in range(len(all_step_start_left) - 1):
+                        start, end = all_step_start_left[j], all_step_start_left[j + 1]
+                        if hasattr(all_actions[start], 'shape') and len(np.array(all_actions[start]).shape) > 1:
+                            y = [float(np.array(a)[0][idx_left]) for a in all_actions[start:end]]
+                        else:
+                            y = [float(a[idx_left]) for a in all_actions[start:end]]
+                        if len(y) < 2:
+                            continue
+                        x_old = np.linspace(0, 1, len(y))
+                        x_new = np.linspace(0, 1, interp_len)
+                        left_steps.append(np.interp(x_new, x_old, y))
+
+                if all_step_start_right and len(all_step_start_right) > 1:
+                    for j in range(len(all_step_start_right) - 1):
+                        start, end = all_step_start_right[j], all_step_start_right[j + 1]
+                        if hasattr(all_actions[start], 'shape') and len(np.array(all_actions[start]).shape) > 1:
+                            y = [float(np.array(a)[0][idx_right]) for a in all_actions[start:end]]
+                        else:
+                            y = [float(a[idx_right]) for a in all_actions[start:end]]
+                        if len(y) < 2:
+                            continue
+                        x_old = np.linspace(0, 1, len(y))
+                        x_new = np.linspace(0, 1, interp_len)
+                        right_steps.append(np.interp(x_new, x_old, y))
+
+                # Aggregate per run
+                if left_steps and right_steps:
+                    mean_left = np.mean(left_steps, axis=0)
+                    mean_right = np.mean(right_steps, axis=0)
+                    diff = mean_left - mean_right
+                    mean_left_all.append(mean_left)
+                    mean_right_all.append(mean_right)
+                    diff_all.append(diff)
+
+            # --- Aggregate across runs ---
+            if not mean_left_all or not mean_right_all:
+                print(f"Skipping {muscle_name}, no data found.")
+                continue
+
+            mean_left_all = np.array(mean_left_all)
+            mean_right_all = np.array(mean_right_all)
+            diff_all = np.array(diff_all)
+
+            mean_left = np.mean(mean_left_all, axis=0)
+            std_left = np.std(mean_left_all, axis=0)
+            mean_right = np.mean(mean_right_all, axis=0)
+            std_right = np.std(mean_right_all, axis=0)
+            mean_diff = np.mean(diff_all, axis=0)
+            std_diff = np.std(diff_all, axis=0)
+
+            x = np.linspace(0, 100, interp_len)
+            plt.figure(figsize=(8, 5))
+
+            # Left
+            plt.plot(x, mean_left, label=f"{muscle_name}_l mean", color="blue")
+            plt.fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.2, color="blue")
+            # axes[0].set_title(f"{muscle_name}_l mean ± std (across runs)")
+            # axes[0].set_xlabel("Interpolated Step (%)")
+            # axes[0].set_ylabel("Activation")
+
+            # Right
+            plt.plot(x, mean_right, label=f"{muscle_name}_r mean", color="red")
+            plt.fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.2, color="red")
+            # axes[1].set_title(f"{muscle_name}_r mean ± std (across runs)")
+            # axes[1].set_xlabel("Interpolated Step (%)")
+            # axes[1].set_ylabel("Activation")
+
+            # Difference
+            plt.plot(x, mean_diff, label=f"{muscle_name} L-R mean", color="green")
+            plt.fill_between(x, mean_diff - std_diff, mean_diff + std_diff, alpha=0.2, color="green")
+            plt.axhline(0, color='gray', linestyle=':', linewidth=1)
+            # # plt.set_title(f"{muscle_name} L-R difference ± std (across runs)")
+            # plt.set_xlabel("Interpolated Step (%)")
+            # plt.set_ylabel("Activation Difference")
+            plt.legend()
+            plt.title(f"Muscle activation symmetry: {muscle_name} (across runs)")
+            plt.xlabel("Interpolated Step (%)")
+            plt.ylabel("Activation")
+            plt.tight_layout()
+            plt.show()
+            plt.close()
+
+
+    @staticmethod
+    def plot_muscle_activation_symmetry_all_dirs(
+        muscle_names_list,
+        all_loaded_data,
+        run_step_data,
+        interp_len=100,
+    ):
+        """
+        Plot mean ± std across runs for left, right, and difference (L-R),
+        comparing multiple directories side-by-side.
+        """
+        dir_labels = list(all_loaded_data.keys())
+        colors = plt.cm.tab10.colors
+        for muscle_name in muscle_names_list:
+            plt.figure(figsize=(20, 5))
+            x = np.linspace(0, 100, interp_len)
+
+            for dir_idx, dir_label in enumerate(dir_labels):
+                mean_left_all = []
+                mean_right_all = []
+                diff_all = []
+
+                runs = all_loaded_data[dir_label]
+                for run_key, run_dict in runs.items():
+                    all_actuator_names = run_dict.get("all_actuator_names", [])
+                    all_actions = np.array(run_dict.get("all_actions", []))
+                    step_data = run_step_data[dir_label][run_key]
+                    all_step_start_left = step_data["step_start_left"]
+                    all_step_start_right = step_data["step_start_right"]
+
+                    def find_actuator_index(actuator_names, name):
+                        try:
+                            return actuator_names.index(name)
+                        except ValueError:
+                            return None
+
+                    idx_left = find_actuator_index(all_actuator_names, muscle_name + "_l")
+                    idx_right = find_actuator_index(all_actuator_names, muscle_name + "_r")
+                    if idx_left is None or idx_right is None:
+                        continue
+
+                    # Collect left/right activations per step
+                    left_steps, right_steps = [], []
+
+                    if all_step_start_left and len(all_step_start_left) > 1:
+                        for j in range(len(all_step_start_left) - 1):
+                            start, end = all_step_start_left[j], all_step_start_left[j + 1]
+                            y = [float(a[idx_left]) for a in all_actions[start:end]]
+                            if len(y) < 2:
+                                continue
+                            left_steps.append(np.interp(np.linspace(0, 1, interp_len),
+                                                        np.linspace(0, 1, len(y)), y))
+
+                    if all_step_start_right and len(all_step_start_right) > 1:
+                        for j in range(len(all_step_start_right) - 1):
+                            start, end = all_step_start_right[j], all_step_start_right[j + 1]
+                            y = [float(a[idx_right]) for a in all_actions[start:end]]
+                            if len(y) < 2:
+                                continue
+                            right_steps.append(np.interp(np.linspace(0, 1, interp_len),
+                                                        np.linspace(0, 1, len(y)), y))
+
+                    if left_steps and right_steps:
+                        mean_left_all.append(np.mean(left_steps, axis=0))
+                        mean_right_all.append(np.mean(right_steps, axis=0))
+                        diff_all.append(np.mean(left_steps, axis=0) - np.mean(right_steps, axis=0))
+
+                if not mean_left_all or not mean_right_all:
+                    print(f"Skipping {muscle_name} in {dir_label}, no data found.")
+                    continue
+
+                mean_left = np.mean(mean_left_all, axis=0)
+                std_left = np.std(mean_left_all, axis=0)
+                mean_right = np.mean(mean_right_all, axis=0)
+                std_right = np.std(mean_right_all, axis=0)
+                mean_diff = np.mean(diff_all, axis=0)
+                std_diff = np.std(diff_all, axis=0)
+
+                # Color mapping per directory
+                # Use a larger color palette for more directories
+                # colors = [
+                #     "blue", "red", "green", "orange", "purple", "brown", "pink", "gray", "olive", "cyan",
+                #     "magenta", "gold", "teal", "navy", "maroon", "lime", "indigo", "coral", "turquoise", "darkgreen"
+                # ]
+                
+                color = colors[dir_idx % len(colors)]
+
+                plt.plot(x, mean_left, label=f"{dir_label} {muscle_name}_l", color=color, linestyle='-')
+                plt.fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.2, color=color)
+
+                plt.plot(x, mean_right, label=f"{dir_label} {muscle_name}_r", color=color, linestyle='--')
+                plt.fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.2, color=color)
+
+                plt.plot(x, mean_diff, label=f"{dir_label} {muscle_name} L-R", color=color, linestyle=':')
+                plt.fill_between(x, mean_diff - std_diff, mean_diff + std_diff, alpha=0.1, color=color)
+
+            plt.axhline(0, color='gray', linestyle=':', linewidth=1)
+            plt.xlabel("Interpolated Step (%)")
+            plt.ylabel("Activation")
+            plt.title(f"Muscle activation symmetry comparison: {muscle_name}")
+            # Place legend in 3 columns, outside plot on the right
+            plt.legend(ncol=3, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+            plt.tight_layout()
+            plt.show()
+            plt.close()
+
 
     # @staticmethod
     # def plot_joint_angle_symmetry_all_runs(
@@ -2129,6 +2799,7 @@ class PostProcessMetricsHandler():
         convert_to_deg=False,
         interp_mode="interp",
         interp_len=100,
+        body_weight_to_normalize = 1,
         plot_baseline = False, 
         baseline_data=None,  # can be added for angle and velocity from loco-mujoco data 
     ):
@@ -2188,11 +2859,11 @@ class PostProcessMetricsHandler():
                 right_steps = collect_steps(right_data, step_indices_right)
 
                 if left_steps and right_steps:
-                    mean_left = np.mean(left_steps, axis=0)
-                    std_left = np.std(left_steps, axis=0)
-                    mean_right = np.mean(right_steps, axis=0)
-                    std_right = np.std(right_steps, axis=0)
-                    diff = mean_left - mean_right
+                    mean_left = np.mean(left_steps, axis=0)/body_weight_to_normalize
+                    std_left = np.std(left_steps, axis=0)/body_weight_to_normalize
+                    mean_right = np.mean(right_steps, axis=0)/body_weight_to_normalize
+                    std_right = np.std(right_steps, axis=0)/body_weight_to_normalize
+                    diff = np.abs(mean_left) - np.abs(mean_right)
                     mean_left_all.append((run_key, mean_left, std_left))
                     mean_right_all.append((run_key, mean_right, std_right))
                     diff_all.append((run_key, diff))
@@ -2212,7 +2883,7 @@ class PostProcessMetricsHandler():
                     axes[0].set_title(f"{right_joint} mean (all runs)")
                     axes[0].set_xlabel("Interpolated Step (%)")
                     axes[0].set_ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
-                    axes[0].legend()
+                    # axes[0].legend()
                 # Plot mean of left of all runs
                 if mean_left_all:
                     for run_key, mean_left, std_left in mean_left_all:
@@ -2224,13 +2895,13 @@ class PostProcessMetricsHandler():
                     axes[1].set_title(f"{left_joint} mean (all runs)")
                     axes[1].set_xlabel("Interpolated Step (%)")
                     axes[1].set_ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
-                    axes[1].legend()
+                    # axes[1].legend()
                 # Plot difference (left - right) of all runs
                 if diff_all:
                     for run_key, diff in diff_all:
                         axes[2].plot(x, diff, label=f"{run_key} Diff (L-R)")
                     axes[2].axhline(0, color='gray', linestyle=':', linewidth=1)
-                    axes[2].set_title(f"{left_joint} - {right_joint} difference (all runs)")
+                    axes[2].set_title(f" Abs {left_joint} - Abs {right_joint} difference (all runs)")
                     axes[2].set_xlabel("Interpolated Step (%)")
                     axes[2].set_ylabel(f"{parameter_name} difference ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
                     axes[2].legend()
@@ -2327,6 +2998,239 @@ class PostProcessMetricsHandler():
                 plt.show()
                 plt.close()
 
+
+
+    @staticmethod
+    def plot_joint_angle_summed_sides_all_runs(
+        joint_names_list,
+        all_loaded_data,
+        run_step_data,
+        parameter_name="angle",
+        convert_to_deg=False,
+        interp_mode="interp",
+        interp_len=100,
+        baseline_data=None
+    ):
+        """
+        For each joint in joint_names_list, plot mean ± std curves for LEFT, RIGHT, and SYMMETRY (R-L),
+        aggregated across runs. One plot per joint. Optionally plot baseline data.
+        """
+
+        def get_side_data(base_name, side_suffix, run_key, run_dict):
+            evaluation_joint_names = run_dict.get("evaluation_joint_names", [])
+            joint_parameters = ["angle", "velocity", "forces_constraint", "forces_smooth", "torques", "energy_exp"]
+
+            joint_data = {}
+            for joint_name in evaluation_joint_names:
+                joint_data[joint_name] = {}
+                for key in joint_parameters:
+                    param = run_dict.get(f"{joint_name}_{key}")
+                    if param is not None:
+                        joint_data[joint_name][key] = param
+
+            step_indices = run_step_data[run_key].get(f"step_start_{'left' if side_suffix == '_l' else 'right'}", [])
+            joint = base_name + side_suffix
+            data = joint_data.get(joint, {}).get(parameter_name, None)
+            if data is None:
+                return None
+
+            steps = []
+            if step_indices and len(step_indices) > 1:
+                for j in range(len(step_indices) - 1):
+                    start, end = step_indices[j], step_indices[j + 1]
+                    y = [float(np.array(a).squeeze()) for a in data[start:end]]
+                    if len(y) < 2:
+                        continue
+                    if interp_mode == "interp":
+                        x_old = np.linspace(0, 1, len(y))
+                        x_new = np.linspace(0, 1, interp_len)
+                        y = np.interp(x_new, x_old, y)
+                    if convert_to_deg and parameter_name in ("angle", "velocity"):
+                        features = ['angle', 'flexion', 'adduction', 'rotation']
+                        if any(feature in joint for feature in features):
+                            y = np.rad2deg(y)
+                    steps.append(y)
+            if steps:
+                return np.mean(steps, axis=0)  # average over steps
+            return None
+
+        run_keys = list(all_loaded_data.keys())
+
+        for base_name in joint_names_list:
+            left_runs, right_runs, sym_runs = [], [], []
+
+            for run_key in run_keys:
+                run_dict = all_loaded_data[run_key]
+                left_curve = get_side_data(base_name, "_l", run_key, run_dict)
+                right_curve = get_side_data(base_name, "_r", run_key, run_dict)
+                if left_curve is not None and right_curve is not None:
+                    left_runs.append(left_curve)
+                    right_runs.append(right_curve)
+                    sym_runs.append( left_curve- right_curve)
+
+            def aggregate(curves):
+                curves = np.array(curves)
+                mean = np.mean(curves, axis=0)
+                std = np.std(curves, axis=0)
+                return mean, std
+
+            x = np.linspace(0, 100, interp_len)
+            plt.figure(figsize=(8, 5))
+
+            if left_runs:
+                mean_left, std_left = aggregate(left_runs)
+                plt.plot(x, mean_left, label="Left (mean)", color="blue")
+                plt.fill_between(x, mean_left - std_left, mean_left + std_left, color="blue", alpha=0.2)
+
+            if right_runs:
+                mean_right, std_right = aggregate(right_runs)
+                plt.plot(x, mean_right, label="Right (mean)", color="red")
+                plt.fill_between(x, mean_right - std_right, mean_right + std_right, color="red", alpha=0.2)
+
+            if sym_runs:
+                mean_sym, std_sym = aggregate(sym_runs)
+                plt.plot(x, mean_sym, label="Symmetry (R-L)", color="green")
+                plt.fill_between(x, mean_sym - std_sym, mean_sym + std_sym, color="green", alpha=0.2)
+
+            # baseline
+            if baseline_data is not None:
+                for side_suffix, color, label_suffix in [("_l", "blue", "Left"), ("_r", "red", "Right")]:
+                    joint_baseline = base_name + side_suffix
+                    if joint_baseline in baseline_data and parameter_name in baseline_data[joint_baseline]:
+                        y_baseline = baseline_data[joint_baseline][parameter_name]
+                        # if convert_to_deg and parameter_name in ("angle", "velocity"):
+                        #     y_baseline = np.rad2deg(y_baseline)
+                        plt.plot(x, y_baseline, label=f"Baseline {label_suffix}", color="black", linestyle="--")
+
+            plt.title(f"{base_name}: {parameter_name} (summed over runs)")
+            plt.xlabel("Interpolated Step (%)")
+            plt.ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
+            plt.legend()
+            plt.tight_layout()
+            plt.show()
+            plt.close()
+
+
+
+
+    @staticmethod
+    def plot_joint_angle_summed_sides_all_dirs(
+        joint_names_list,
+        all_loaded_data,
+        run_step_data,
+        parameter_name="angle",
+        convert_to_deg=False,
+        interp_mode="interp",
+        interp_len=100,
+        baseline_data=None
+    ):
+        """
+        For each joint in joint_names_list, plot mean ± std curves for LEFT, RIGHT, and SYMMETRY (L-R),
+        aggregated across runs, comparing multiple directories in one plot.
+        """
+
+        def get_side_data(base_name, side_suffix, run_dict, step_data):
+            evaluation_joint_names = run_dict.get("evaluation_joint_names", [])
+            joint_parameters = ["angle", "velocity", "forces_constraint", "forces_smooth", "torques", "energy_exp"]
+
+            joint_data = {}
+            for joint_name in evaluation_joint_names:
+                joint_data[joint_name] = {}
+                for key in joint_parameters:
+                    param = run_dict.get(f"{joint_name}_{key}")
+                    if param is not None:
+                        joint_data[joint_name][key] = param
+
+            step_indices = step_data.get(f"step_start_{'left' if side_suffix == '_l' else 'right'}", [])
+            joint = base_name + side_suffix
+            data = joint_data.get(joint, {}).get(parameter_name, None)
+            if data is None:
+                return None
+
+            steps = []
+            if step_indices and len(step_indices) > 1:
+                for j in range(len(step_indices) - 1):
+                    start, end = step_indices[j], step_indices[j + 1]
+                    y = [float(np.array(a).squeeze()) for a in data[start:end]]
+                    if len(y) < 2:
+                        continue
+                    if interp_mode == "interp":
+                        x_old = np.linspace(0, 1, len(y))
+                        x_new = np.linspace(0, 1, interp_len)
+                        y = np.interp(x_new, x_old, y)
+                    if convert_to_deg and parameter_name in ("angle", "velocity"):
+                        features = ['angle', 'flexion', 'adduction', 'rotation']
+                        if any(feature in joint for feature in features):
+                            y = np.rad2deg(y)
+                    steps.append(y)
+            if steps:
+                return np.mean(steps, axis=0)
+            return None
+        colors = plt.cm.tab10.colors
+        dir_labels = list(all_loaded_data.keys())
+        # colors = [
+        #             "blue", "red", "green", "orange", "purple", "brown", "pink", "gray", "olive", "cyan",
+        #             "magenta", "gold", "teal", "navy", "maroon", "lime", "indigo", "coral", "turquoise", "darkgreen"
+        #         ]
+
+        for base_name in joint_names_list:
+            plt.figure(figsize=(20, 5))
+            x = np.linspace(0, 100, interp_len)
+
+            for dir_idx, dir_label in enumerate(dir_labels):
+                left_runs, right_runs, sym_runs = [], [], []
+                runs = all_loaded_data[dir_label]
+
+                for run_key, run_dict in runs.items():
+                    step_data = run_step_data[dir_label][run_key]
+                    left_curve = get_side_data(base_name, "_l", run_dict, step_data)
+                    right_curve = get_side_data(base_name, "_r", run_dict, step_data)
+
+                    if left_curve is not None and right_curve is not None:
+                        left_runs.append(left_curve)
+                        right_runs.append(right_curve)
+                        sym_runs.append(left_curve - right_curve)
+
+                if not left_runs or not right_runs:
+                    print(f"Skipping {base_name} in {dir_label}, no data found.")
+                    continue
+
+                # Aggregate per directory
+                def aggregate(curves):
+                    curves = np.array(curves)
+                    return np.mean(curves, axis=0), np.std(curves, axis=0)
+
+                mean_left, std_left = aggregate(left_runs)
+                mean_right, std_right = aggregate(right_runs)
+                mean_sym, std_sym = aggregate(sym_runs)
+
+                color = colors[dir_idx % len(colors)]
+                plt.plot(x, mean_left, label=f"{dir_label} Left", color=color, linestyle='-')
+                plt.fill_between(x, mean_left - std_left, mean_left + std_left, color=color, alpha=0.2)
+                plt.plot(x, mean_right, label=f"{dir_label} Right", color=color, linestyle='--')
+                plt.fill_between(x, mean_right - std_right, mean_right + std_right, color=color, alpha=0.2)
+                plt.plot(x, mean_sym, label=f"{dir_label} Sym (L-R)", color=color, linestyle=':')
+                plt.fill_between(x, mean_sym - std_sym, mean_sym + std_sym, color=color, alpha=0.1)
+
+            # Baseline if provided
+            if baseline_data:
+                for side_suffix, label_suffix, linestyle in [("_l", "Left", "--"), ("_r", "Right", "--")]:
+                    joint_baseline = base_name + side_suffix
+                    if joint_baseline in baseline_data and parameter_name in baseline_data[joint_baseline]:
+                        y_baseline = baseline_data[joint_baseline][parameter_name]
+                        plt.plot(x, y_baseline, label=f"Baseline {label_suffix}", color="black", linestyle=linestyle)
+
+            plt.title(f"{base_name}: {parameter_name} (summed over runs, all directories)")
+            plt.xlabel("Interpolated Step (%)")
+            plt.ylabel(f"{parameter_name} ({'deg' if convert_to_deg else 'rad'})")
+            plt.legend(ncol=3, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+            plt.tight_layout()
+            plt.show()
+            plt.close()
+
+
+
+
     #@staticmethod 
     # def plot_sensor_force_symmetry_all_runs(all_loaded_data, run_step_data, interp_len=100, sensor_force_names=None):
     #     """
@@ -2403,7 +3307,7 @@ class PostProcessMetricsHandler():
 
     @staticmethod
     def plot_sensor_force_symmetry_all_runs(
-        all_loaded_data, run_step_data, direction, interp_len=100, sensor_force_names=None
+        all_loaded_data, run_step_data, direction, interp_len=100, body_weight_to_normalize=1, sensor_force_names=None
     ):
         """
         Plot mean of right of all runs, mean of left, and the difference, side by side in one figure.
@@ -2416,6 +3320,9 @@ class PostProcessMetricsHandler():
             force_direction = 1
         elif direction == "z":
             force_direction = 2
+
+        # direction_map = {"x": 0, "y": 1, "z": 2}
+        # force_direction = direction_map.get(direction, 0)
         # Use sensor_force_names from the first run if not provided
         if sensor_force_names is None:
             first_run = next(iter(all_loaded_data))
@@ -2472,10 +3379,10 @@ class PostProcessMetricsHandler():
                         right_steps.append(y_interp)
                 # Compute means and stds
                 if left_steps and right_steps:
-                    mean_left = np.mean(left_steps, axis=0)
-                    std_left = np.std(left_steps, axis=0)
-                    mean_right = np.mean(right_steps, axis=0)
-                    std_right = np.std(right_steps, axis=0)
+                    mean_left = np.mean(left_steps, axis=0)/body_weight_to_normalize
+                    std_left = np.std(left_steps, axis=0)/body_weight_to_normalize
+                    mean_right = np.mean(right_steps, axis=0)/body_weight_to_normalize
+                    std_right = np.std(right_steps, axis=0)/body_weight_to_normalize
                     diff = mean_left - mean_right
                     mean_left_all.append((run_key, mean_left, std_left))
                     mean_right_all.append((run_key, mean_right, std_right))
@@ -2496,7 +3403,7 @@ class PostProcessMetricsHandler():
             axes[0].set_title(f"{right_sensor} mean (all runs)")
             axes[0].set_xlabel("Interpolated Step (%)")
             axes[0].set_ylabel("Force Value")
-            axes[0].legend()
+            # axes[0].legend()
 
             # Plot mean of left of all runs
             for run_key, mean_left, std_left in mean_left_all:
@@ -2506,7 +3413,7 @@ class PostProcessMetricsHandler():
             axes[1].set_title(f"{left_sensor} mean (all runs)")
             axes[1].set_xlabel("Interpolated Step (%)")
             axes[1].set_ylabel("Force Value")
-            axes[1].legend()
+            # axes[1].legend()
 
             # Plot difference (left - right) of all runs
             for run_key, diff in diff_all:
@@ -2525,11 +3432,180 @@ class PostProcessMetricsHandler():
 
 
     @staticmethod
+    def plot_sensor_force_symmetry_summed_all_runs(
+        all_loaded_data, run_step_data, direction, interp_len=100, body_weight_to_normalize=1, sensor_force_names=None
+    ):
+        """
+        Plot combined mean of right, left, and their difference (symmetry) across all runs in one figure.
+        """
+        force_direction = {"x": 0, "y": 1, "z": 2}.get(direction, 0)
+
+        if sensor_force_names is None:
+            first_run = next(iter(all_loaded_data))
+            sensor_force_names = all_loaded_data[first_run]["sensor_force_names"]
+
+        # Find left-right sensor pairs
+        sensor_pairs = [
+            (name, name.replace("left_", "right_"))
+            for name in sensor_force_names
+            if name.startswith("left_") and name.replace("left_", "right_") in sensor_force_names
+        ]
+
+        for left_sensor, right_sensor in sensor_pairs:
+            all_left_steps, all_right_steps = [], []
+
+            for run_key in all_loaded_data.keys():
+                run_dict = all_loaded_data[run_key]
+                step_data = run_step_data[run_key]
+                left_data = run_dict["all_sensor_force"][left_sensor]
+                right_data = run_dict["all_sensor_force"][right_sensor]
+
+                # Interpolate left steps
+                all_step_start_left = step_data.get("step_start_left", [])
+                for j in range(len(all_step_start_left) - 1):
+                    start, end = all_step_start_left[j], all_step_start_left[j + 1]
+                    y = [float(np.array(a)[force_direction]) for a in left_data[start:end]]
+                    if len(y) < 2:
+                        continue
+                    x_old = np.linspace(0, 1, len(y))
+                    x_new = np.linspace(0, 1, interp_len)
+                    all_left_steps.append(np.interp(x_new, x_old, y))
+
+                # Interpolate right steps
+                all_step_start_right = step_data.get("step_start_right", [])
+                for j in range(len(all_step_start_right) - 1):
+                    start, end = all_step_start_right[j], all_step_start_right[j + 1]
+                    y = [float(np.array(a)[force_direction]) for a in right_data[start:end]]
+                    if len(y) < 2:
+                        continue
+                    x_old = np.linspace(0, 1, len(y))
+                    x_new = np.linspace(0, 1, interp_len)
+                    all_right_steps.append(np.interp(x_new, x_old, y))
+
+            # Compute overall mean and std across all runs
+            mean_left = np.mean(all_left_steps, axis=0) / body_weight_to_normalize
+            std_left = np.std(all_left_steps, axis=0) / body_weight_to_normalize
+            mean_right = np.mean(all_right_steps, axis=0) / body_weight_to_normalize
+            std_right = np.std(all_right_steps, axis=0) / body_weight_to_normalize
+            symmetry = mean_left - mean_right
+
+            x = np.linspace(0, 100, interp_len)
+
+            # Plot all three curves in one figure
+            plt.figure(figsize=(10, 6))
+            plt.plot(x, mean_right, label=f"{right_sensor} mean (all runs)", color='r')
+            plt.fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.15, color='r')
+
+            plt.plot(x, mean_left, label=f"{left_sensor} mean (all runs)", color='b')
+            plt.fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.15, color='b')
+
+            plt.plot(x, symmetry, label="Left - Right", color='g', linestyle='--')
+            plt.axhline(0, color='gray', linestyle=':', linewidth=1)
+
+            plt.title(f"Sensor Force Symmetry: {left_sensor} & {right_sensor}")
+            plt.xlabel("Interpolated Step (%)")
+            plt.ylabel("Force Value")
+            plt.legend()
+            plt.tight_layout()
+            plt.show()
+            plt.close()
+
+
+
+    def plot_sensor_force_symmetry_summed_all_dirs(self,
+        all_loaded_data, run_step_data, direction, interp_len=100, body_weight_to_normalize=1, sensor_force_names=None
+    ):
+        """
+        Plot mean ± std of right, left, and symmetry across runs, comparing directories side by side.
+        """
+        force_direction = {"x": 0, "y": 1, "z": 2}.get(direction, 0)
+
+        # Use sensor names from first run if not provided
+        if sensor_force_names is None:
+            first_dir = next(iter(all_loaded_data))
+            first_run = next(iter(all_loaded_data[first_dir]))
+            sensor_force_names = all_loaded_data[first_dir][first_run]["sensor_force_names"]
+
+        # Find left-right pairs
+        sensor_pairs = [
+            (name, name.replace("left_", "right_"))
+            for name in sensor_force_names
+            if name.startswith("left_") and name.replace("left_", "right_") in sensor_force_names
+        ]
+
+        colors = plt.cm.tab10.colors
+
+        for left_sensor, right_sensor in sensor_pairs:
+            plt.figure(figsize=(20, 6))
+            x = np.linspace(0, 100, interp_len)
+
+            for i, dir_label in enumerate(all_loaded_data.keys()):
+                # Collect all interpolated steps per directory
+                left_steps_dir, right_steps_dir = [], []
+
+                for run_key, run_dict in all_loaded_data[dir_label].items():
+                    step_data = run_step_data[dir_label][run_key]
+                    left_data = run_dict["all_sensor_force"][left_sensor]
+                    right_data = run_dict["all_sensor_force"][right_sensor]
+
+                    # LEFT steps
+                    step_starts = step_data.get("step_start_left", [])
+                    for j in range(len(step_starts) - 1):
+                        start, end = step_starts[j], step_starts[j + 1]
+                        y = [float(np.array(a)[force_direction]) for a in left_data[start:end]]
+                        if len(y) < 2: 
+                            continue
+                        x_old = np.linspace(0, 1, len(y))
+                        left_steps_dir.append(np.interp(np.linspace(0, 1, interp_len), x_old, y))
+
+                    # RIGHT steps
+                    step_starts = step_data.get("step_start_right", [])
+                    for j in range(len(step_starts) - 1):
+                        start, end = step_starts[j], step_starts[j + 1]
+                        y = [float(np.array(a)[force_direction]) for a in right_data[start:end]]
+                        if len(y) < 2: 
+                            continue
+                        x_old = np.linspace(0, 1, len(y))
+                        right_steps_dir.append(np.interp(np.linspace(0, 1, interp_len), x_old, y))
+
+                # Compute mean ± std per directory
+                if left_steps_dir and right_steps_dir:
+                    left_steps_dir = np.array(left_steps_dir)
+                    right_steps_dir = np.array(right_steps_dir)
+
+                    mean_left = np.mean(left_steps_dir, axis=0) / body_weight_to_normalize
+                    std_left = np.std(left_steps_dir, axis=0) / body_weight_to_normalize
+                    mean_right = np.mean(right_steps_dir, axis=0) / body_weight_to_normalize
+                    std_right = np.std(right_steps_dir, axis=0) / body_weight_to_normalize
+                    symmetry = mean_left - mean_right
+
+                    color = colors[i % len(colors)]
+                    plt.plot(x, mean_left, label=f"{dir_label} Left", color=color, linestyle='-')
+                    plt.fill_between(x, mean_left - std_left, mean_left + std_left, color=color, alpha=0.15)
+
+                    plt.plot(x, mean_right, label=f"{dir_label} Right", color=color, linestyle='--')
+                    plt.fill_between(x, mean_right - std_right, mean_right + std_right, color=color, alpha=0.1)
+
+                    plt.plot(x, symmetry, label=f"{dir_label} L-R Diff", color=color, linestyle=':')
+
+            plt.axhline(0, color='gray', linestyle=':', linewidth=1)
+            plt.xlabel("Interpolated Step (%)")
+            plt.ylabel("Force (N or normalized)")
+            plt.title(f"Sensor Force Symmetry: {left_sensor} & {right_sensor}")
+            plt.legend(ncol=3, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+            plt.tight_layout()
+            plt.show()
+            plt.close()
+
+
+
+    @staticmethod
     def plot_grf_component_symmetry_all_runs(
         grf_components,
         all_loaded_data,
         run_step_data,
         interp_len=100,
+        body_weight_to_normalize= 1,
     ):
         """
         Plot mean of right of all runs, mean of left, and the difference, side by side in one figure.
@@ -2576,10 +3652,10 @@ class PostProcessMetricsHandler():
                         right_steps.append(y_interp)
                 # Save means/stds if enough steps
                 if left_steps and right_steps:
-                    mean_left = np.mean(left_steps, axis=0)
-                    std_left = np.std(left_steps, axis=0)
-                    mean_right = np.mean(right_steps, axis=0)
-                    std_right = np.std(right_steps, axis=0)
+                    mean_left = np.mean(left_steps, axis=0)/body_weight_to_normalize
+                    std_left = np.std(left_steps, axis=0)/body_weight_to_normalize
+                    mean_right = np.mean(right_steps, axis=0)/body_weight_to_normalize
+                    std_right = np.std(right_steps, axis=0)/body_weight_to_normalize
                     diff = mean_left - mean_right
                     mean_left_all.append((run_key, mean_left, std_left))
                     mean_right_all.append((run_key, mean_right, std_right))
@@ -2593,7 +3669,7 @@ class PostProcessMetricsHandler():
                 axes[0].fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.15)
             axes[0].set_title(f"{comp} Right mean (all runs)")
             axes[0].set_xlabel("Interpolated Step (%)")
-            axes[0].set_ylabel(f"{comp} (N or Nm)")
+            axes[0].set_ylabel(f"{comp} (N or Nm / BW)")
             axes[0].legend()
             # Plot mean of left of all runs
             for run_key, mean_left, std_left in mean_left_all:
@@ -2601,7 +3677,7 @@ class PostProcessMetricsHandler():
                 axes[1].fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.15)
             axes[1].set_title(f"{comp} Left mean (all runs)")
             axes[1].set_xlabel("Interpolated Step (%)")
-            axes[1].set_ylabel(f"{comp} (N or Nm)")
+            axes[1].set_ylabel(f"{comp} (N or Nm / BW)")
             axes[1].legend()
             # Plot difference (left - right) of all runs
             for run_key, diff in diff_all:
@@ -2609,8 +3685,301 @@ class PostProcessMetricsHandler():
             axes[2].axhline(0, color='gray', linestyle=':', linewidth=1)
             axes[2].set_title(f"{comp} Left-Right difference (all runs)")
             axes[2].set_xlabel("Interpolated Step (%)")
-            axes[2].set_ylabel(f"{comp} difference (N or Nm)")
+            axes[2].set_ylabel(f"{comp} difference (N or Nm / BW)")
             axes[2].legend()
             plt.tight_layout()
             plt.show()
             plt.close()
+
+    
+
+    @staticmethod
+    def plot_grf_component_symmetry_summed_all_runs(
+        grf_components,
+        all_loaded_data,
+        run_step_data,
+        interp_len=100,
+        body_weight_to_normalize=1,
+    ):
+        """
+        Plot summed mean of right, left, and difference (symmetry) across all runs
+        in one figure per GRF component.
+        """
+        for comp_idx, comp in enumerate(grf_components):
+            left_steps_all_runs = []
+            right_steps_all_runs = []
+
+            for run_key, run_dict in all_loaded_data.items():
+                step_data = run_step_data[run_key]
+                all_grf_l = np.array(run_dict["all_grf_l"])
+                all_grf_r = np.array(run_dict["all_grf_r"])
+                all_step_start_left = step_data["step_start_left"]
+                all_step_start_right = step_data["step_start_right"]
+
+                # Process left steps
+                if all_grf_l is not None and all_step_start_left and len(all_step_start_left) > 1:
+                    for j in range(len(all_step_start_left) - 1):
+                        start, end = all_step_start_left[j], all_step_start_left[j + 1]
+                        y = [float(np.array(a)[comp_idx]) for a in all_grf_l[start:end]]
+                        if len(y) < 2:
+                            continue
+                        x_old = np.linspace(0, 1, len(y))
+                        x_new = np.linspace(0, 1, interp_len)
+                        y_interp = np.interp(x_new, x_old, y)
+                        left_steps_all_runs.append(y_interp)
+
+                # Process right steps
+                if all_grf_r is not None and all_step_start_right and len(all_step_start_right) > 1:
+                    for j in range(len(all_step_start_right) - 1):
+                        start, end = all_step_start_right[j], all_step_start_right[j + 1]
+                        y = [float(np.array(a)[comp_idx]) for a in all_grf_r[start:end]]
+                        if len(y) < 2:
+                            continue
+                        x_old = np.linspace(0, 1, len(y))
+                        x_new = np.linspace(0, 1, interp_len)
+                        y_interp = np.interp(x_new, x_old, y)
+                        right_steps_all_runs.append(y_interp)
+
+            # Compute means and stds across all runs
+            if left_steps_all_runs and right_steps_all_runs:
+                mean_left = np.mean(left_steps_all_runs, axis=0) / body_weight_to_normalize
+                std_left = np.std(left_steps_all_runs, axis=0) / body_weight_to_normalize
+                mean_right = np.mean(right_steps_all_runs, axis=0) / body_weight_to_normalize
+                std_right = np.std(right_steps_all_runs, axis=0) / body_weight_to_normalize
+                diff = mean_left - mean_right
+
+                x = np.linspace(0, 100, interp_len)
+                plt.figure(figsize=(8, 5))
+
+                # Right
+                plt.plot(x, mean_right, color='r', label="Right mean")
+                plt.fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.15, color='r')
+                # axes[0].set_title(f"{comp} Right mean (summed)")
+                # axes[0].set_xlabel("Interpolated Step (%)")
+                # axes[0].set_ylabel(f"{comp} (N or Nm / BW)")
+                # axes[0].legend()
+
+                # Left
+                plt.plot(x, mean_left, color='b', label="Left mean")
+                plt.fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.15, color='b')
+                # axes[1].set_title(f"{comp} Left mean (summed)")
+                # axes[1].set_xlabel("Interpolated Step (%)")
+                # axes[1].set_ylabel(f"{comp} (N or Nm / BW)")
+                # axes[1].legend()
+
+                # Difference
+                plt.plot(x, diff, color='g', label="Left-Right")
+                plt.axhline(0, color='gray', linestyle=':', linewidth=1)
+                # axes[2].set_title(f"{comp} Left-Right difference (summed)")
+                # axes[2].set_xlabel("Interpolated Step (%)")
+                # axes[2].set_ylabel(f"{comp} difference (N or Nm / BW)")
+                plt.legend()
+                plt.title(f"{comp} (summed across runs)")
+                plt.xlabel("Interpolated Step (%)")
+                plt.ylabel(f"{comp} (N or Nm / BW)")
+
+                plt.tight_layout()
+                plt.show()
+                plt.close()
+
+
+
+
+    def plot_grf_component_symmetry_summed_all_dirs(
+        self,  # <- important: instance method
+        grf_components,
+        all_loaded_data,
+        run_step_data,
+        interp_len=100,
+        body_weight_to_normalize=1,
+    ):
+        """
+        Plot summed mean of right, left, and difference (symmetry) across directories.
+        One figure per GRF component, showing mean ± std for each directory.
+        """
+
+        if not isinstance(grf_components, (list, tuple)):
+            raise ValueError("grf_components must be a list or tuple of GRF component names.")
+
+        for comp_idx, comp in enumerate(grf_components):
+            plt.figure(figsize=(20, 6))
+            colors = plt.cm.tab10.colors  # For different directories
+
+            for i, dir_label in enumerate(all_loaded_data.keys()):
+                left_steps_dir = []
+                right_steps_dir = []
+
+                for run_key, run_dict in all_loaded_data[dir_label].items():
+                    step_data = run_step_data[dir_label][run_key]
+                    all_grf_l = np.array(run_dict.get("all_grf_l"))
+                    all_grf_r = np.array(run_dict.get("all_grf_r"))
+                    all_step_start_left = step_data.get("step_start_left", [])
+                    all_step_start_right = step_data.get("step_start_right", [])
+
+                    # Process left steps
+                    if all_grf_l is not None and len(all_step_start_left) > 1:
+                        for j in range(len(all_step_start_left) - 1):
+                            start, end = all_step_start_left[j], all_step_start_left[j + 1]
+                            y = [float(np.array(a)[comp_idx]) for a in all_grf_l[start:end]]
+                            if len(y) < 2:
+                                continue
+                            x_old = np.linspace(0, 1, len(y))
+                            x_new = np.linspace(0, 1, interp_len)
+                            y_interp = np.interp(x_new, x_old, y)
+                            left_steps_dir.append(y_interp)
+
+                    # Process right steps
+                    if all_grf_r is not None and len(all_step_start_right) > 1:
+                        for j in range(len(all_step_start_right) - 1):
+                            start, end = all_step_start_right[j], all_step_start_right[j + 1]
+                            y = [float(np.array(a)[comp_idx]) for a in all_grf_r[start:end]]
+                            if len(y) < 2:
+                                continue
+                            x_old = np.linspace(0, 1, len(y))
+                            x_new = np.linspace(0, 1, interp_len)
+                            y_interp = np.interp(x_new, x_old, y)
+                            right_steps_dir.append(y_interp)
+
+                # Aggregate per directory
+                if left_steps_dir and right_steps_dir:
+                    mean_left = np.mean(left_steps_dir, axis=0) / body_weight_to_normalize
+                    std_left = np.std(left_steps_dir, axis=0) / body_weight_to_normalize
+                    mean_right = np.mean(right_steps_dir, axis=0) / body_weight_to_normalize
+                    std_right = np.std(right_steps_dir, axis=0) / body_weight_to_normalize
+                    mean_diff = mean_left - mean_right
+                    std_diff = np.sqrt(std_left**2 + std_right**2)
+
+                    x = np.linspace(0, 100, interp_len)
+                    color = colors[i % len(colors)]
+                    # Left
+                    plt.plot(x, mean_left, label=f"{dir_label} Left", color=color, linestyle='-')
+                    plt.fill_between(x, mean_left - std_left, mean_left + std_left, color=color, alpha=0.15)
+                    # Right
+                    plt.plot(x, mean_right, label=f"{dir_label} Right", color=color, linestyle='--')
+                    plt.fill_between(x, mean_right - std_right, mean_right + std_right, color=color, alpha=0.1)
+                    # Symmetry
+                    plt.plot(x, mean_diff, label=f"{dir_label} L-R Diff", color=color, linestyle=':')
+
+            plt.axhline(0, color='gray', linestyle=':', linewidth=1)
+            plt.xlabel("Interpolated Step (%)")
+            plt.ylabel(f"{comp} (N or Nm / BW)")
+            plt.title(f"{comp} GRF Component Symmetry Across Directories")
+            plt.legend(ncol=3, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+            plt.tight_layout()
+            plt.show()
+            plt.close()
+
+
+
+
+
+    def plot_full_grf_with_step_markers(
+    self,
+    all_loaded_data,
+    run_step_data,
+    component_index=5,
+    ):
+        """
+        For each run, plot full GRF data for left and right in separate subplots.
+        Add vertical black lines at step start indices.
+        
+        Args:
+        - all_loaded_data (dict): {run_key: {"all_grf_l": array, "all_grf_r": array}}
+        - run_step_data (dict): {run_key: {"step_start_left": [...], "step_start_right": [...]} }
+        - component_index (int): GRF component to plot (default is 5)
+        """
+        for run_key in all_loaded_data.keys():
+            run_dict = all_loaded_data[run_key]
+            step_data = run_step_data[run_key]
+            
+
+            all_grf_l = np.array(run_dict["all_grf_l"])
+            all_grf_r = np.array(run_dict["all_grf_r"])
+            step_start_left = step_data.get("step_start_left", [])
+            step_start_right = step_data.get("step_start_right", [])
+
+            grf_l = all_grf_l[:, component_index]
+            grf_r = all_grf_r[:, component_index]
+            x_l = np.arange(len(grf_l))
+            x_r = np.arange(len(grf_r))
+
+            # From GRF Contact detection 
+            filtered_left = step_data.get("all_contact_left", [])
+            filtered_right = step_data.get("all_contact_right", [])
+            # print('filtered_data_left', filtered_left)
+            # print('filtered_data_right', filtered_right)
+
+            # From contact 
+            # all_foot_ground_contact_left = run_dict.get("all_foot_ground_contact_left", [])
+            # all_foot_ground_contact_right = run_dict.get("all_foot_ground_contact_right", [])
+            # filtered_left =  np.zeros(len(all_foot_ground_contact_left))
+            # filtered_right = np.zeros(len(all_foot_ground_contact_right))
+            # for i in range(len(filtered_left)):
+            #     if all_foot_ground_contact_left[i] != []:
+            #         filtered_left[i]=100
+            #     else: 
+            #         filtered_left[i] = 0
+
+            # for i in range(len(filtered_right)):
+            #     if all_foot_ground_contact_right[i] != []:
+            #         filtered_right[i]=100
+            #     else: 
+            #         filtered_right[i] = 0
+              
+            fig, axes = plt.subplots(2, 1, figsize=(14, 8), sharex=False)
+            # Left GRF
+            axes[0].plot(filtered_left, label="Contact", color='red')
+            axes[0].plot(x_l, grf_l, label="Left GRF", color='blue')
+            for step in step_start_left:
+                axes[0].axvline(x=step, color='black', linestyle='--', linewidth=1)
+            axes[0].set_title(f"{run_key} - Left GRF Component [{component_index}]")
+            axes[0].set_ylabel("Force (N)")
+            axes[0].legend()
+            print('step_start_left', step_start_left)
+            # Right GRF
+            axes[1].plot(filtered_right, label="Contact", color='red')
+            axes[1].plot(x_r, grf_r, label="Right GRF", color='green')
+            for step in step_start_right:
+                axes[1].axvline(x=step, color='black', linestyle='--', linewidth=1)
+            axes[1].set_title(f"{run_key} - Right GRF Component [{component_index}]")
+            axes[1].set_xlabel("Frame Index")
+            axes[1].set_ylabel("Force (N)")
+            axes[1].legend()
+            print('step_start_right', step_start_right)
+
+            plt.tight_layout()
+            plt.show()
+            plt.close()
+
+
+
+    def get_step_distance_length(self, all_body_poses, foot_body_name, step_start_indices):
+        """
+        Calculate step lengths in meters based on foot position at step start frames.
+
+        Args:
+            all_body_poses (np.array): Array of body poses per frame (shape: [frames, bodies, 3])
+            foot_body_name (str): Name of the foot body (e.g., "toes")
+            step_start_indices (list): List of frame indices where steps start
+
+        Returns:
+            list: Step lengths in meters
+        """
+        # Assume foot_body_name maps to a known index
+        # foot_index = get_body_index(foot_body_name)  # You must define this mapping
+        step_lengths = []
+        pose_dict = all_body_poses.item()
+        # foot_pos = pose_dict[foot_body_name]
+        foot_pos_x = [pose[0] for pose in pose_dict[foot_body_name]] #foot_pos[0][:]
+
+        for i in range(len(step_start_indices) - 1):
+            start = step_start_indices[i]
+            end = step_start_indices[i + 1]
+
+            pos_start = foot_pos_x[start] #foot_pos[:,start]  # X position
+            pos_end = foot_pos_x[end]  #foot_pos[:,end]    # X position
+
+            step_length = abs(pos_end - pos_start)
+            step_lengths.append(step_length)
+
+        return step_lengths

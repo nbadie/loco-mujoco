@@ -370,6 +370,8 @@ class MimicRewardVelArm(MimicReward):
         self._joint_torque_vel_arm_coeff = kwargs.get("joint_torque_vel_arm_coeff", 0.0)
         self._joint_torque_vel_nonarm_coeff = kwargs.get("joint_torque_vel_nonarm_coeff", 0.0)
         self._action_coeff = kwargs.get("action_coeff", 0.0)
+        self._lateral_range_coeff = kwargs.get("lateral_range_coeff", 0.0)
+        self._lateral_pos_reward_range = kwargs.get("lateral_pos_reward_range",0.1)
 
 
         # get main body name of the environment
@@ -512,7 +514,7 @@ class MimicRewardVelArm(MimicReward):
             site_rpos_traj, site_rangles_traj, site_rvel_traj =\
                 calculate_relative_site_quatities(traj_data_single, self._rel_site_ids,
                                                 self._rel_body_ids, model.body_rootid, backend)
-
+        
         # get all quantities from the current data
         qpos, qvel = data.qpos[self._qpos_ind], data.qvel[self._qvel_ind]
         qpos_quat = qpos[self._quat_in_qpos].reshape(-1, 4)
@@ -651,7 +653,18 @@ class MimicRewardVelArm(MimicReward):
                         + self._rvel_w_sum * rvel_rot_reward + self._rvel_w_sum * rvel_lin_reward)
         # jax.debug.print('total_reward: {total_reward}', total_reward=total_reward)
 
-        total_reward = total_reward + total_penalities
+
+        if self._lateral_range_coeff>0.0:
+            # z_pos_reward_range = 0.3
+            lateral_free_pos = data.qpos[1]
+            condition = jnp.logical_and(lateral_free_pos > -self._lateral_pos_reward_range, lateral_free_pos < self._lateral_pos_reward_range)
+            lateral_pos_reward = jnp.where(condition, self._lateral_range_coeff, 0.0)
+        else: 
+            lateral_pos_reward = 0.0
+
+        # jax.debug.print('z_pos_reward: {total_reward}', total_reward=lateral_pos_reward)
+
+        total_reward = total_reward + total_penalities + lateral_pos_reward
 
         # jax.debug.print('total_reward - pen: {total_reward}', total_reward=total_reward)
 

@@ -67,7 +67,9 @@ if "prosthesis_side" in config.experiment.env_params:
 # randomization_params["randomize_prosthesis_body_position"] = True
 # randomization_params["prosthesis_body_position_range"] = {'pylon_socket': {'x': [0.05,0.05]}} #[-0.01,-0.01]}} 
 env = factory.make(**config.experiment.env_params, **config.experiment.task_factory.params,
-                   domain_randomization_type=randomization_type, domain_randomization_params=randomization_params)
+                #    terrain_type="RoughTerrain", terrain_params=dict(random_min_height=-0.00005,random_max_height=0.00005),
+                   domain_randomization_type=randomization_type, domain_randomization_params=randomization_params
+                )
 env.th.to_jax()
 env = VecEnv(env)
 jit_step  = jax.jit(jax.vmap(env.mjx_step))  #env.step)
@@ -76,9 +78,10 @@ model = env.get_model()
 
 prosthesis_metrics_handler = ProsthesisMetricsHandler(env) #(config, env)
 
-n_steps = 1000 #1000
+n_steps = 1000 #00 #1000
 n_envs = 1 #1  # <--- Make sure this matches your training batch size
-rng = jax.random.key(0)
+seed = 0
+rng = jax.random.key(seed) #0)
 train_state_seed = 0  # Take first seed 
 
 keys = jax.random.split(rng, n_envs + 1)
@@ -116,8 +119,17 @@ else:
 
 ###### Some params for evaluation 
 all_foot_ground_contact_left =[]
-all_foot_ground_contact_right =[]            
+all_foot_ground_contact_right =[]       
 
+body_names = []
+for i in range(model.nbody):
+    joint_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, i)
+    body_names.append(joint_name)
+
+body_xposes = {}
+for i in range(model.nbody):
+    body_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, i)
+    body_xposes[body_name] = []
 
 joint_data = {}
 for i in range(model.njnt):
@@ -127,6 +139,7 @@ for i in range(model.njnt):
         "velocity": [],
         "forces_constraint": [],
         "forces_smooth": [],
+        "forces_applied": [],
         "torques": [],
         "energy_exp": [],
     }
@@ -137,6 +150,7 @@ for i in range(model.njnt):
             "velocity_per_step": [],
             "forces_constraint_per_step": [],
             "forces_smooth_per_step": [],
+            "forces_applied_per_step": [],
             "torques_per_step": [],
             "energy_exp_per_step": [],
         })
@@ -150,6 +164,8 @@ for i in range(model.njnt):
             "forces_constraint_per_step_right": [],
             "forces_smooth_per_step_left": [],
             "forces_smooth_per_step_right": [],
+            "forces_applied_per_step_left": [],
+            "forces_applied_per_step_right": [],
             "torques_per_step_left": [],
             "torques_per_step_right": [],
             "energy_exp_per_step_left": [],
@@ -203,7 +219,17 @@ for i in range(n_steps):
     env_state = jit_step(env_state, action)  #env.step(env_state, action)
     obs = env_state.observation
     # obs, reward, absorbing, done, info, env_state = jit_step(env_state, action)  #env.step(env_state, action)
+    torso_id = mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_BODY,"torso")
+    # print('torso xpos: ', env_state.data.body('torso').xpos )
+    # print('torso xipos: ', env_state.data.body('torso').xipos)
+    # print('torso xquat: ', env_state.data.body('torso').xquat)
+    # print('torso xmat: ', env_state.data.body('torso').xmat)
 
+    # print('torso xpos: ', env_state.data.xpos[:,13])
+    # print('torso xipos: ', env_state.data.xipos[:,13])
+    # print('torso xquat: ', env_state.data.xquat)
+    # print('torso xmat: ', env_state.data.xmat)
+    
     if step_total % 100 == 0:
         print(f"Step {step_total}")
 
@@ -228,16 +254,24 @@ for i in range(n_steps):
 
     grf_l = grf_foot_l + grf_calcn_l
     grf_r = grf_foot_r + grf_calcn_r
+
+    # grf_l, grf_r = prosthesis_metrics_handler.calc_mean_grf(model,env_state.data)
         
 
     all_grf_l.append(grf_l)
     all_grf_r.append(grf_r)
 
 
+    # Body position
+    body_xpos = prosthesis_metrics_handler.get_xpos(env_state.data)
+    for name in body_names: 
+        # for body_name, pos in body_xpos[name]:
+        body_xposes[name].append(body_xpos[name])
+
     # Joint data
     joint_angles = prosthesis_metrics_handler.get_joint_angles(env_state.data)
     joint_velocities = prosthesis_metrics_handler.get_joint_vels(env_state.data)
-    joint_forces_constraint, joint_forces_smooth = prosthesis_metrics_handler.get_joint_frces(env_state.data)
+    joint_forces_constraint, joint_forces_smooth,joint_forces_applied = prosthesis_metrics_handler.get_joint_frces(env_state.data)
     joint_torques = prosthesis_metrics_handler.get_joint_trques(env_state.data)
     joint_energy_exp = prosthesis_metrics_handler.calc_joint_energy_exp(joint_torques, joint_velocities)
     # Append all joint data to the joint_data dictionary
@@ -249,6 +283,8 @@ for i in range(n_steps):
         joint_data[joint_name]["forces_constraint"].append(force)
     for joint_name, force in joint_forces_smooth.items():
         joint_data[joint_name]["forces_smooth"].append(force)
+    for joint_name, force in joint_forces_applied.items():
+        joint_data[joint_name]["forces_applied"].append(force)
     for joint_name, torque in joint_torques.items():
         joint_data[joint_name]["torques"].append(torque)
     for joint_name, energy_exp in joint_energy_exp.items():
@@ -384,6 +420,11 @@ for i in range(model.njnt):
     joint_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, i)
     joint_names.append(joint_name)
 
+body_names = []
+for i in range(model.nbody):
+    joint_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, i)
+    body_names.append(joint_name)
+
 # Collect all relevant data into a dictionary
 all_relevant_data = {
     "total_steps": step_total,
@@ -407,6 +448,10 @@ all_relevant_data = {
     "evaluation_muscle_names": evaluation_muscle_names,
     "all_actions": all_actions,
     "all_actuator_names": all_actuator_names,
+    "all_body_poses": body_xposes,
+    "evaluation_body_names": body_names,
+
+
 }
 
 
@@ -424,7 +469,7 @@ for muscle_group in evaluation_muscle_groups:
 
 # Save to file
 dt_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-output_path = os.path.join(os.path.dirname(path), f"{dt_str}_evaluation_results_{n_steps}steps.pkl")
+output_path = os.path.join(os.path.dirname(path), f"{dt_str}_evaluation_results_{n_steps}steps_{seed}seed.pkl")
 with open(output_path, "wb") as f:
     pickle.dump(all_relevant_data, f)
 print(f"Saved evaluation data to {output_path}")

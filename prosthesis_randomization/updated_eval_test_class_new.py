@@ -37,35 +37,55 @@ from datetime import datetime
 import timeit 
 import sys
 
-# Parameter randomization initialization
-randomization_params_names = ["prosthesis_dof_damping", "prosthesis_joint_stiffness", "prosthesis_body_position", "prosthesis_body_orientation"]
+# # Parameter randomization initialization
+# randomization_params_names = ["prosthesis_dof_damping", "prosthesis_joint_stiffness", "prosthesis_body_position", "prosthesis_body_orientation"]
 
+# randomization_params_eval = {
+#     "prosthesis_side": "left_side",
+#     "randomize_prosthesis_dof_damping": False,
+#     "prosthesis_dof_damping_range": {'ankle_angle':[2, 10]}, #, 'subtalar_angle', 'mtp_angle'],
+#     # "prosthesis_dof_damping_range": [0, 10],
+#     "randomize_prosthesis_joint_stiffness": False,
+#     # "randomization_joint_names": ['ankle_angle', 'subtalar_angle', 'mtp_angle'],
+#     "prosthesis_joint_stiffness_range":{'ankle_angle': [50, 100]}, #[],
+#     "randomize_prosthesis_body_position": True,
+#     "prosthesis_body_position_range": {'calcn': {'x': [0.0, 0.1]}}, #,'y': [0.4, 0.5]}}, #['calcn'],
+#     # "prosthesis_body_position_range": {
+#     #     'z': [0.6, 0.7]
+#     # },
+#     "randomize_prosthesis_body_orientation": False,
+#     "prosthesis_body_orientation_range": {'pylon_socket': {'y': [-0.3,0.3]}}, #['calcn'],
+#     # "prosthesis_body_orientation_range": {}
+
+#     "randomize_prosthesis_socket_joint": False,
+#     "socket_joint_range": {'socket_ty': [-0.25,0.025]},
+# }
+
+# randomization_increments = {
+#     "prosthesis_joint_stiffness": 10,
+#     "prosthesis_dof_damping": 5,
+#     "prosthesis_body_position": 0.05, #0.002,
+#     "prosthesis_body_orientation": 0.1
+# }
+
+# Parameter randomization initialization (no changes)
+randomization_params_names = ["prosthesis_dof_damping", "prosthesis_joint_stiffness", "prosthesis_body_position", "prosthesis_body_orientation"]
 randomization_params_eval = {
     "prosthesis_side": "left_side",
     "randomize_prosthesis_dof_damping": False,
-    "prosthesis_dof_damping_range": {'ankle_angle':[2, 10]}, #, 'subtalar_angle', 'mtp_angle'],
-    # "prosthesis_dof_damping_range": [0, 10],
-    "randomize_prosthesis_joint_stiffness": False,
-    # "randomization_joint_names": ['ankle_angle', 'subtalar_angle', 'mtp_angle'],
-    "prosthesis_joint_stiffness_range":{'ankle_angle': [50, 100]}, #[],
-    "randomize_prosthesis_body_position": True,
-    "prosthesis_body_position_range": {'calcn': {'x': [0.0, 0.01]}}, #,'y': [0.4, 0.5]}}, #['calcn'],
-    # "prosthesis_body_position_range": {
-    #     'z': [0.6, 0.7]
-    # },
-    "randomize_prosthesis_body_orientation": False,
-    "prosthesis_body_orientation_range": {'pylon_socket': {'y': [-0.3,0.3]}}, #['calcn'],
-    # "prosthesis_body_orientation_range": {}
-
-    "randomize_prosthesis_socket_joint": False,
-    "socket_joint_range": {'socket_ty': [-0.25,0.025]},
+    "prosthesis_dof_damping_range": {'ankle_angle': [2, 10]},
+    "randomize_prosthesis_joint_stiffness": True, #False,
+    "prosthesis_joint_stiffness_range": {'ankle_angle': [50, 100]}, #[14924, 24924]}, #{'ankle_angle': [50, 100]},
+    "randomize_prosthesis_body_position": False, #True, #False, #True,
+    "prosthesis_body_position_range": {'pylon_socket': {'x': [-0.1, 0.1]}},
+    "randomize_prosthesis_body_orientation": False, #True, #False, #True, #False,
+    "prosthesis_body_orientation_range": {'pylon_socket': {'z': [-0.1, 0.1]}},
 }
-
 randomization_increments = {
-    "prosthesis_joint_stiffness": 10,
+    "prosthesis_joint_stiffness": 25, #10,
     "prosthesis_dof_damping": 5,
-    "prosthesis_body_position": 0.002,
-    "prosthesis_body_orientation": 0.1
+    "prosthesis_body_position": 0.05,
+    "prosthesis_body_orientation": 0.2
 }
 
 os.environ["MUJOCO_GL"] = "egl"  # Use EGL for rendering, which is more compatible with headless environments
@@ -119,7 +139,7 @@ model = env.get_model()
 
 prosthesis_metrics_handler = ProsthesisMetricsHandler(env)
 
-n_steps = 1000 #1000
+n_steps = 1000
 n_envs = 1  # <--- Make sure this matches your training batch size
 rng = jax.random.key(0)
 train_state_seed = 0  # Take first seed 
@@ -224,12 +244,22 @@ else:
 
 muscle_skeleton_control_activation = SkeletonMuscleControlFunction(env)
 
-def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_handler, param_name=None, param_value=None):
+def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_handler, param_name=None, param_value=None, direction=None):
     step_total = 0
 
     ###### Some params for evaluation 
     all_foot_ground_contact_left =[]
-    all_foot_ground_contact_right =[]            
+    all_foot_ground_contact_right =[]   
+
+    body_names = []
+    for i in range(model.nbody):
+        joint_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, i)
+        body_names.append(joint_name)        
+
+    body_xposes = {}
+    for i in range(model.nbody):
+        body_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, i)
+        body_xposes[body_name] = [] 
 
 
     joint_data = {}
@@ -240,6 +270,7 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
             "velocity": [],
             "forces_constraint": [],
             "forces_smooth": [],
+            "forces_applied": [] ,
             "torques": [],
             "energy_exp": [],
         }
@@ -250,6 +281,7 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
                 "velocity_per_step": [],
                 "forces_constraint_per_step": [],
                 "forces_smooth_per_step": [],
+                "forces_applied_per_step": [],
                 "torques_per_step": [],
                 "energy_exp_per_step": [],
             })
@@ -263,6 +295,8 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
                 "forces_constraint_per_step_right": [],
                 "forces_smooth_per_step_left": [],
                 "forces_smooth_per_step_right": [],
+                "forces_applied_per_step_left": [],
+                "forces_applied_per_step_right": [],
                 "torques_per_step_left": [],
                 "torques_per_step_right": [],
                 "energy_exp_per_step_left": [],
@@ -312,12 +346,22 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
         env_state, sys = jit_step(env_state, action)  #env.step(env_state, action)
         obs = env_state.observation
 
-        if i == 0:
-            print(f"sys.jnt_stiffness: {sys.jnt_stiffness}")
-            print(f"sys.dof_damping: {sys.dof_damping}")
-            print(f"sys.body_pos: {sys.body_pos}")
-            print(f"sys.body_quat: {sys.body_quat}")
-            print(f"Step {i}")
+        # print('pylon_socket xpos: ', env_state.data.body('pylon_socket_l').xpos )
+        # print('pylon_socket xipos: ', env_state.data.body('pylon_socket_l').xipos)
+        # print('pylon_socket xquat: ', env_state.data.body('pylon_socket_l').xquat)
+        # print('pylon_socket xmat: ', env_state.data.body('pylon_socket_l').xmat)
+
+        # print('torso xpos: ', env_state.data.body('torso').xpos )
+        # print('torso xipos: ', env_state.data.body('torso').xipos)
+        # print('torso xquat: ', env_state.data.body('torso').xquat)
+        # print('torso xmat: ', env_state.data.body('torso').xmat)
+
+        # if i == 0:
+            # print(f"sys.jnt_stiffness: {sys.jnt_stiffness}")
+            # print(f"sys.dof_damping: {sys.dof_damping}")
+            # print(f"sys.body_pos: {sys.body_pos}")
+            # print(f"sys.body_quat: {sys.body_quat}")
+            # print(f"Step {i}")
         # env.mjx_render_domain_randomization(env_state)#, record=True)
 
         # if step_total % 100 == 0:
@@ -348,11 +392,17 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
         all_grf_l.append(grf_l)
         all_grf_r.append(grf_r)
 
+        # Body position
+        body_xpos = prosthesis_metrics_handler.get_xpos(env_state.data)
+        for name in body_names: 
+            # for body_name, pos in body_xpos[name]:
+            body_xposes[name].append(body_xpos[name])
+
 
         # Joint data
         joint_angles = prosthesis_metrics_handler.get_joint_angles(env_state.data)
         joint_velocities = prosthesis_metrics_handler.get_joint_vels(env_state.data)
-        joint_forces_constraint, joint_forces_smooth = prosthesis_metrics_handler.get_joint_frces(env_state.data)
+        joint_forces_constraint, joint_forces_smooth, joint_forces_applied  = prosthesis_metrics_handler.get_joint_frces(env_state.data)
         joint_torques = prosthesis_metrics_handler.get_joint_trques(env_state.data)
         joint_energy_exp = prosthesis_metrics_handler.calc_joint_energy_exp(joint_torques, joint_velocities)
         # Append all joint data to the joint_data dictionary
@@ -364,6 +414,8 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
             joint_data[joint_name]["forces_constraint"].append(force)
         for joint_name, force in joint_forces_smooth.items():
             joint_data[joint_name]["forces_smooth"].append(force)
+        for joint_name, force in joint_forces_applied.items():
+            joint_data[joint_name]["forces_applied"].append(force)
         for joint_name, torque in joint_torques.items():
             joint_data[joint_name]["torques"].append(torque)
         for joint_name, energy_exp in joint_energy_exp.items():
@@ -465,6 +517,11 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
         joint_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, i)
         joint_names.append(joint_name)
 
+    body_names = []
+    for i in range(model.nbody):
+        joint_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, i)
+        body_names.append(joint_name)
+
     # Collect all relevant data into a dictionary
     all_relevant_data = {
         "total_steps": step_total,
@@ -488,6 +545,8 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
         "evaluation_muscle_names": evaluation_muscle_names,
         "all_actions": all_actions,
         "all_actuator_names": all_actuator_names,
+        "all_body_poses": body_xposes,
+        "evaluation_body_names": body_names,
     }
 
 
@@ -506,7 +565,9 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
     # Save to file
     dt_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     if "param_name":
-        output_path = os.path.join(os.path.dirname(path), f"{dt_str}_evaluation_results_{n_steps}steps_{int(param_value)}{param_name}.pkl")
+        joint_name = list(randomization_params_eval[f"{param_name}_range"].keys())[0]
+        output_path = os.path.join(os.path.dirname(path), f"{dt_str}_eval_{n_steps}steps_{joint_name}_{direction}_{int(param_value*10)}{param_name}.pkl")
+        # output_path = os.path.join(os.path.dirname(path), f"{dt_str}_evaluation_results_{n_steps}steps_{int(param_value*1000)}{param_name}.pkl")
     else:   
         output_path = os.path.join(os.path.dirname(path), f"{dt_str}_evaluation_results_{n_steps}steps.pkl")
     with open(output_path, "wb") as f:
@@ -549,42 +610,55 @@ time_all.append(timeit.default_timer())  # Start timer
 
 # Iterate over params in randomization_params_names 
 for param_name in randomization_params_names:
-    # set all env._domain_randomizer.rand_conf[f"randomize_{other_param}"]= True
+    # Set all randomization flags to False initially to isolate the current parameter
     for name in randomization_params_names:
-        env._domain_randomizer.rand_conf[f"randomize_{name}"] = True
-    # If the key exists, update it
-    if randomization_params[f"randomize_{param_name}"]:
-        # set other "randomize_param_name" to False
-        for other_param in randomization_params_names:
-            if other_param != param_name:
-                env._domain_randomizer.rand_conf[f"randomize_{other_param}"] = False
+        env._domain_randomizer.rand_conf[f"randomize_{name}"] = False
+
+    # Only proceed if the current parameter is set to be randomized in the eval config
+    if randomization_params_eval[f"randomize_{param_name}"]:
+
+        # Set the current parameter's randomization flag to True
+        env._domain_randomizer.rand_conf[f"randomize_{param_name}"] = True
         
         if "stiffness" in param_name or "damping" in param_name:
-            min_val, max_val = randomization_params[f"{param_name}_range"]
+            # The range is now a dictionary, not a simple list
+            joint_name = list(randomization_params_eval[f"{param_name}_range"].keys())[0]
+            min_val, max_val = randomization_params_eval[f"{param_name}_range"][joint_name]
+            increment = randomization_increments[param_name]
 
-            for i in range(min_val,max_val, randomization_increments[param_name]):
-                env._domain_randomizer.rand_conf[f"{param_name}_range"] = [min_val + i, min_val +i]
+            # Iterate through the range with the specified increment
+            current_value = min_val
+            while current_value <= max_val:
+                # Update the randomization range for the specific joint to be a fixed value
+                env._domain_randomizer.rand_conf[f"{param_name}_range"][joint_name] = [current_value, current_value]
                 
                 # env_keys = jax.random.split(rng, 2)
                 jit_reset  = jax.jit(jax.vmap(env.mjx_reset)) #env.reset)
                 env_state = jit_reset(env_keys) 
                 obs = env_state.observation
-                print("Running evaluation for ", param_name, " with value: ", min_val + i)
-                run_evaluation_loop(env_state, n_steps, train_state, rng, prosthesis_metrics_handler,param_name=param_name, param_value = min_val + i)
-
+                print("Running evaluation for ", param_name, " with value: ", current_value)
+                run_evaluation_loop(env_state, n_steps, train_state, rng, prosthesis_metrics_handler,param_name=param_name, param_value = current_value) #min_val + increment)
+                current_value += increment
 
         elif "position" in param_name or "orientation" in param_name:
-            body_range = randomization_params[f"{param_name}_range"]
-            directions = list(body_range.keys())
+            body_range = randomization_params_eval[f"{param_name}_range"]
+            body_name = list(body_range.keys())[0]
+            directions = list(body_range[body_name].keys())
+
             for axis in directions:
-                min_val= body_range[axis][0]
-                max_val= body_range[axis][1]
+                min_val = body_range[body_name][axis][0]
+                max_val = body_range[body_name][axis][1]
                 inc = randomization_increments[param_name]
-                for n in range(int(min_val*1000),  int(max_val*1000), int(inc*1000)):
-                    env._domain_randomizer.rand_conf[f"{param_name}_range"][axis] = [min_val+n/1000, min_val+n/1000]
+
+                # Use a small tolerance for floating-point comparison
+                current_value = min_val
+                while current_value <= max_val + 1e-6:
+                    # Reset all axes to a zero range first
                     for other_axis in directions:
-                        if other_axis != axis:
-                            env._domain_randomizer.rand_conf[f"{param_name}_range"][other_axis] = [0,0]
+                        env._domain_randomizer.rand_conf[f"{param_name}_range"][body_name][other_axis] = [0, 0]
+
+                    # Set the current axis to a fixed value for evaluation
+                    env._domain_randomizer.rand_conf[f"{param_name}_range"][body_name][axis] = [current_value, current_value]
                     
                     # Reset to new domain randomization state
                     # Re jit reset for correct update of env_state?
@@ -593,10 +667,16 @@ for param_name in randomization_params_names:
                     # env_keys = jax.random.split(rng, 2)
                     env_state = jit_reset(env_keys)
                     obs = env_state.observation
-                    print("Running evaluation for ", param_name," for axis: ", axis, " with value: ",min_val + n/1000)
-                    run_evaluation_loop(env_state, n_steps, train_state, rng, prosthesis_metrics_handler,param_name=param_name, param_value = min_val*1000 + n)
+                    print("Running evaluation for ", param_name," for axis: ", axis, " with value: ",current_value)
+                    run_evaluation_loop(env_state, n_steps, train_state, rng, prosthesis_metrics_handler,param_name=param_name, param_value = current_value,direction=axis) #min_val + inc)
+                    current_value += inc
 
-                    
+        # jit_reset  = jax.jit(jax.vmap(env.mjx_reset))
+        # # env_keys = jax.random.split(rng, 2)
+        # env_state = jit_reset(env_keys)
+        # obs = env_state.observation
+        # print("Running evaluation for ", param_name," for axis: ", axis, " with value: ",min_val + n/1000)
+        # run_evaluation_loop(env_state, n_steps, train_state, rng, prosthesis_metrics_handler,param_name=param_name, param_value = min_val*1000 + n)
 
 
                 

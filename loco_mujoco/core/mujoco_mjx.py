@@ -73,6 +73,19 @@ class Mjx(Mujoco):
         data = mjx.put_data(self._model, self._data)
         self._first_data = mjx.forward(self.sys, data)
         self.init_talus_pos = 0
+        
+        #if hasattr(self,'socket_ty_slack') and self.socket_ty_slack: 
+        # Socket_ty hysterisis
+        high_stiffness = 43500 #70000 #30000 #43500
+        low_stiffness = 4350 #6000 #7000 #4350 #1000
+        a = 0.038 #0.02 #0.038
+        H = 0.025
+        delta_shift =  0 #0.01
+        self.xp = jnp.array([-a+delta_shift, 0+delta_shift, H+delta_shift, H+a+delta_shift])
+        self.fp = jnp.array([-high_stiffness*(a+delta_shift), 0+delta_shift, low_stiffness*(H+delta_shift), low_stiffness*(H+delta_shift)+high_stiffness*(a+delta_shift)])
+        # self.f_kp = jnp.interp(x,xp=[-a, 0, H, H+a], fp=[-high_stiffness*a, 0, low_stiffness*H, low_stiffness*H+high_stiffness*a], left="extrapolate", right="extrapolate") 
+        #else: 
+            #self.socket_ty_slack = False
 
     def mjx_reset(self, key: jax.random.PRNGKey) -> MjxState:
         """
@@ -167,6 +180,23 @@ class Mjx(Mujoco):
         # modify data and model *before* step if needed
         sys, data, carry = self._mjx_simulation_pre_step(self.sys, data, carry)
 
+        def _adapt_qfrc_applied(_data):
+            #Adapt qfrc_applied for socket_ty slack during swing phase 
+            joint_id= mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, 'socket_ty'+self.prosthesis_side)
+            # jax.debug.print("joint_id: {joint_id}", joint_id = joint_id)
+            qpos_address = self._model.jnt_qposadr[joint_id]
+            # jax.debug.print("qpos_address: {qpos_address}", qpos_address = qpos_address)
+            pistoning_qpos_adr = qpos_address
+            pistoning_dof_adr = self._model.jnt_dofadr[joint_id]
+            # jax.debug.print("pistoning_dof_adr: {pistoning_dof_adr}", pistoning_dof_adr = pistoning_dof_adr)
+            f_kp = jnp.interp(data.qpos[pistoning_qpos_adr],xp=self.xp, fp=self.fp, left="extrapolate", right="extrapolate")
+            _data = _data.replace(qfrc_applied=_data.qfrc_applied.at[pistoning_dof_adr].set(f_kp))
+        
+            return _data
+
+        def _no_adaptation(_data):
+            return _data
+
         def _inner_loop(idx, _runner_state):
 
             _data, _carry = _runner_state
@@ -176,6 +206,9 @@ class Mjx(Mujoco):
             # step in the environment using the action
             ctrl = _data.ctrl.at[jnp.array(self._action_indices)].set(ctrl_action)
             _data = _data.replace(ctrl=ctrl)
+
+            _data = jax.lax.cond(self.socket_ty_slack, _adapt_qfrc_applied, _no_adaptation, _data)
+
             step_fn = lambda _, x: mjx.step(sys, x)
             _data = jax.lax.fori_loop(0, self._n_substeps, step_fn, _data)
 
@@ -521,6 +554,16 @@ class Mjx(Mujoco):
                 self._viewer_params["default_camera_mode"] = "static"
             if 'ignore_modify_mjx_contact' in self._viewer_params.keys():
                 del self._viewer_params['ignore_modify_mjx_contact']
+            if 'add_sensors' in self._viewer_params.keys():
+                del self._viewer_params['add_sensors']
+            if 'socket_ty_slack' in self._viewer_params.keys():
+                del self._viewer_params['socket_ty_slack']
+            if 'add_pos_ori_to_observation' in self._viewer_params.keys():
+                del self._viewer_params['add_pos_ori_to_observation']
+            if 'limit_knee_extension' in self._viewer_params.keys():
+                del self._viewer_params['limit_knee_extension']
+            if 'knee_extension_limit' in self._viewer_params.keys():
+                del self._viewer_params['knee_extension_limit']
             self._viewer = MujocoViewer(self._model, self.dt, record=record, **self._viewer_params)
 
         if self._terrain.is_dynamic:
@@ -551,6 +594,16 @@ class Mjx(Mujoco):
                 self._viewer_params["default_camera_mode"] = "static"
             if 'ignore_modify_mjx_contact' in self._viewer_params.keys():
                 del self._viewer_params['ignore_modify_mjx_contact']
+            if 'add_sensors' in self._viewer_params.keys():
+                del self._viewer_params['add_sensors']
+            if 'socket_ty_slack' in self._viewer_params.keys():
+                del self._viewer_params['socket_ty_slack']
+            if 'add_pos_ori_to_observation' in self._viewer_params.keys():
+                del self._viewer_params['add_pos_ori_to_observation']
+            if 'limit_knee_extension' in self._viewer_params.keys():
+                del self._viewer_params['limit_knee_extension']
+            if 'knee_extension_limit' in self._viewer_params.keys():
+                del self._viewer_params['knee_extension_limit']
             self._viewer = MujocoViewer(model, self.dt, record=record, **self._viewer_params)
 
         if self._terrain.is_dynamic:
@@ -908,3 +961,87 @@ class Mjx(Mujoco):
         state = jax.lax.cond(state.done, self._mjx_reset_in_step, lambda x: x, state)
 
         return state, sys
+
+
+    def mjx_step_socket_ty(self, state: MjxState, action: jax.Array) -> MjxState:
+        """
+
+        Args:
+            state (MjxState): Current state of the environment.
+            action (jax.Array): Action to take in the environment.
+
+        Returns:
+            MjxState: The next state of the environment.
+
+        """
+
+        data = state.data
+        cur_info = state.info
+        carry = state.additional_carry
+        carry = carry.replace(last_action=action)
+
+        # reset dones
+        state = state.replace(done=jnp.zeros_like(state.done, dtype=bool))
+
+        # preprocess action
+        processed_action, carry = self._mjx_preprocess_action(action, self._model, data, carry)
+
+        # modify data and model *before* step if needed
+        sys, data, carry = self._mjx_simulation_pre_step(self.sys, data, carry)
+
+        def _inner_loop(idx, _runner_state):
+
+            _data, _carry = _runner_state
+
+            ctrl_action, _carry = self._mjx_compute_action(processed_action, self._model, _data, _carry)
+
+            # step in the environment using the action
+            ctrl = _data.ctrl.at[jnp.array(self._action_indices)].set(ctrl_action)
+            _data = _data.replace(ctrl=ctrl)
+            joint_id= mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, 'socket_ty'+self.prosthesis_side)
+            qpos_address = self._model.jnt_qposadr[joint_id]
+            pistoning_qpos_adr = qpos_address
+            pistoning_dof_adr = self._model.jnt_dofadr[joint_id]
+            f_kp = jnp.interp(data.qpos[pistoning_qpos_adr],xp=self.xp, fp=self.fp, left="extrapolate", right="extrapolate")
+            _data = _data.replace(qfrc_applied=_data.qfrc_applied.at[pistoning_dof_adr].set(f_kp))
+            step_fn = lambda _, x: mjx.step(sys, x)
+            _data = jax.lax.fori_loop(0, self._n_substeps, step_fn, _data)
+
+            return _data, _carry
+
+        # run inner loop
+        data, carry = jax.lax.fori_loop(0, self._n_intermediate_steps, _inner_loop, (data, carry))
+
+        # modify data *after* step if needed (does nothing by default)
+        data, carry = self._mjx_simulation_post_step(self._model, data, carry)
+
+        # create the observation
+        cur_obs, carry = self._mjx_create_observation(sys, data, carry)
+
+        # modify the observation and the data if needed (does nothing by default)
+        cur_obs, data, cur_info, carry = self._mjx_step_finalize(cur_obs, self._model, data, cur_info, carry)
+
+        # create info
+        cur_info = self._mjx_update_info_dictionary(cur_info, cur_obs, data, carry)
+
+        # check if the next obs is an absorbing state
+        absorbing, carry = self._mjx_is_absorbing(cur_obs, cur_info, data, carry)
+
+        # calculate the reward
+        reward, carry = self._mjx_reward(state.observation, action, cur_obs, absorbing, cur_info, self._model, data, carry)
+
+        # check if done
+        done = self._mjx_is_done(cur_obs, absorbing, cur_info, data, carry)
+
+        done = jnp.logical_or(done, jnp.any(jnp.isnan(cur_obs)))
+        cur_obs = jnp.nan_to_num(cur_obs, nan=0.0)
+
+        # create state
+        carry = carry.replace(cur_step_in_episode=carry.cur_step_in_episode + 1)
+        state = state.replace(data=data, observation=cur_obs, reward=reward,
+                              absorbing=absorbing, done=done, info=cur_info, additional_carry=carry)
+
+        # reset state if done
+        state = jax.lax.cond(state.done, self._mjx_reset_in_step, lambda x: x, state)
+
+        return state

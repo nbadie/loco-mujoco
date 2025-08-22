@@ -248,6 +248,7 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
             "velocity": [],
             "forces_constraint": [],
             "forces_smooth": [],
+            "forces_applied": [] ,
             "torques": [],
             "energy_exp": [],
         }
@@ -258,6 +259,7 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
                 "velocity_per_step": [],
                 "forces_constraint_per_step": [],
                 "forces_smooth_per_step": [],
+                "forces_applied_per_step": [],
                 "torques_per_step": [],
                 "energy_exp_per_step": [],
             })
@@ -271,6 +273,8 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
                 "forces_constraint_per_step_right": [],
                 "forces_smooth_per_step_left": [],
                 "forces_smooth_per_step_right": [],
+                "forces_applied_per_step_left": [],
+                "forces_applied_per_step_right": [],
                 "torques_per_step_left": [],
                 "torques_per_step_right": [],
                 "energy_exp_per_step_left": [],
@@ -360,7 +364,7 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
         # Joint data
         joint_angles = prosthesis_metrics_handler.get_joint_angles(env_state.data)
         joint_velocities = prosthesis_metrics_handler.get_joint_vels(env_state.data)
-        joint_forces_constraint, joint_forces_smooth = prosthesis_metrics_handler.get_joint_frces(env_state.data)
+        joint_forces_constraint, joint_forces_smooth,joint_forces_applied = prosthesis_metrics_handler.get_joint_frces(env_state.data)
         joint_torques = prosthesis_metrics_handler.get_joint_trques(env_state.data)
         joint_energy_exp = prosthesis_metrics_handler.calc_joint_energy_exp(joint_torques, joint_velocities)
         # Append all joint data to the joint_data dictionary
@@ -372,6 +376,8 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
             joint_data[joint_name]["forces_constraint"].append(force)
         for joint_name, force in joint_forces_smooth.items():
             joint_data[joint_name]["forces_smooth"].append(force)
+        for joint_name, force in joint_forces_applied.items():
+            joint_data[joint_name]["forces_applied"].append(force)
         for joint_name, torque in joint_torques.items():
             joint_data[joint_name]["torques"].append(torque)
         for joint_name, energy_exp in joint_energy_exp.items():

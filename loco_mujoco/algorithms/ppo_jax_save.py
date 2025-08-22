@@ -188,6 +188,51 @@ class SavePPOJax(PPOJax):
             )
             
             return loaded_state
+        
+    def load_checkpoint_with_device_fix_without_value(ckpt_path, train_state_template, network,env):
+        """
+        Load checkpoint with proper device handling and target tree
+        This fixes the TFRT_CPU_0 device error and missing target tree warning
+        """
+        rng = jax.random.key(0) 
+        rng, _rng1, _rng2 = jax.random.split(rng, 3)
+        init_x = jnp.zeros(env.info.observation_space.shape)
+        network_params = network.init(_rng1, init_x)
+        
+        # Create proper restore arguments with target template
+        template = {
+            'params': train_state_template.params,
+            'run_stats': train_state_template.run_stats, 
+            'step': train_state_template.step,
+            'opt_state': train_state_template.opt_state,
+        }
+        
+        check_options = ocp.CheckpointManagerOptions(max_to_keep=5, create=False)
+        
+        with ocp.CheckpointManager(ckpt_path, options=check_options, item_names=('agent_state',)) as mngr:
+            latest_step = mngr.latest_step()
+            print(f"Loading checkpoint from step: {latest_step}")
+            
+            # Use StandardRestore with template to avoid device mismatch
+            restored = mngr.restore(
+                latest_step,
+                args=ocp.args.Composite(
+                    agent_state=ocp.args.StandardRestore(template),
+                )
+            )
+            
+            # Transfer to current devices if needed
+            loaded_state = restored['agent_state']
+            
+            # Ensure all arrays are on current devices
+            loaded_state = jax.tree_util.tree_map( #jax.tree_map(
+                lambda x: jax.device_put(x) if hasattr(x, 'device') else x,
+                loaded_state
+            )
+
+            loaded_state['params']['FullyConnectedNet_1'] = network_params['params']['FullyConnectedNet_1']
+            
+            return loaded_state
     
     @classmethod
     def _train_fn(cls, rng, env,
@@ -249,7 +294,7 @@ class SavePPOJax(PPOJax):
 
                 # STEP ENV
                 obsv, reward, absorbing, done, info, env_state = env.step(env_state, action)
-
+                # jax.debug.print('obsv shape: {obs}', obs=obsv)
                 # GET METRICS
                 log_env_state = env_state.find(LogEnvState)
                 logged_metrics = log_env_state.metrics

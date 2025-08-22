@@ -57,15 +57,19 @@ import matplotlib.pyplot as plt
 
 
 
-# # file_name1= "/home/nadinebadie/loco-mujoco/prosthesis_test/outputs/2025-06-11/16-30-59/20250625_140700_evaluation_results_1000steps.pkl"
+# # file_name1= "/home/nadinebadie/loco-mujoco/healthy_test/outputs/2025-08-06/20-41-52/20250807_101329_evaluation_results_1000steps.pkl"
+# # #"/home/nadinebadie/loco-mujoco/prosthesis_test/outputs/2025-06-11/16-30-59/20250625_140700_evaluation_results_1000steps.pkl"
 # # with open(file_name1, "rb") as f:
-# #     loaded_data1 = pickle.load(f)
+# #     loaded_data = pickle.load(f)
 # # variable_name = "all_grf_l"
+# # variable_name_r = "all_grf_r"
 # # variable_data = [data[5] for data in loaded_data[variable_name]]
-# # variable_data1 = [data[5] for data in loaded_data1[variable_name]]
+# # variable_data_r = [data[5] for data in loaded_data[variable_name_r]]
+# # # variable_data1 = [data[5] for data in loaded_data1[variable_name]]
 # # plt.figure(figsize=(12,6))
 # # plt.plot(variable_data, label= f"{variable_name} new")
-# # plt.plot(variable_data1, label= variable_name)
+# # plt.plot(variable_data_r, label= f"{variable_name} new")
+# # # plt.plot(variable_data1, label= variable_name)
 # # plt.xlabel('Time')
 # # plt.ylabel(variable_name)
 # # plt.legend()
@@ -268,25 +272,19 @@ labels = [
     "092solimp0008_Rrange_mar005",    
 
 
-
-
-
-    
-
-
 ]
 
-loaded_datasets = [load_pickle(fp) for fp in file_paths]
+# loaded_datasets = [load_pickle(fp) for fp in file_paths]
 
-tx = 'socket_tx_l'
-ty = 'socket_ty_l'
-tz = 'socket_tz_l'
-flexion = 'socket_flexion_l'
-rotation = 'socket_rotation_l'
-adduction = 'socket_adduction_l'
-parameter_suffix = '_angle'
+# tx = 'socket_tx_l'
+# ty = 'socket_ty_l'
+# tz = 'socket_tz_l'
+# flexion = 'socket_flexion_l'
+# rotation = 'socket_rotation_l'
+# adduction = 'socket_adduction_l'
+# parameter_suffix = '_angle'
 
-all_parameters = [name + parameter_suffix for name in [tx, ty, tz, flexion, adduction, rotation]]
+# all_parameters = [name + parameter_suffix for name in [tx, ty, tz, flexion, adduction, rotation]]
 
-for name in all_parameters:
-    plot_from_loaded_data(loaded_datasets, labels, name)
+# for name in all_parameters:
+#     plot_from_loaded_data(loaded_datasets, labels, name)
