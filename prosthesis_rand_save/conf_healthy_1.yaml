@@ -1,0 +1,148 @@
+defaults:
+  - override hydra/job_logging: default
+  - override hydra/launcher: basic
+
+
+wandb:
+  project: "deepmimic"
+  run_name: "Knee0Lim_MjxSkeletonMuscleProsthesis_Healthy_FullMimic"
+  
+experiment:
+  task_factory:
+    name: ImitationFactory
+    params:
+      default_dataset_conf:
+          task: walk
+      # lafan1_dataset_conf:
+      #   dataset_name:
+      #     - walk1_subject1
+  env_params:
+    env_name: MjxSkeletonMuscleProsthesis #RandObs #MjxSkeletonMuscleProsthesis #SkeletonMuscle #MjxMyoSkeleton
+    prosthesis_side : 'left_side' #'right_side' #'left_side' # 'left_side' or 'right_side'
+    prosthesis_type: 'None' #'transtibial'
+    prosthesis_subtype: 'SACH'
+    #joint_stiffness: 100 #100
+    #joint_damping: 1 #10
+    delete_joints: False
+    remove_joint_names: ['subtalar_angle','ankle_angle']
+    tibia_socket_offset_z : 0
+    tibia_socket_offset_x : 0 
+    tibia_socket_overlap: 0.2 
+    amputated_tibia_length: 0.2
+    limit_knee_extension: True
+    knee_extension_limit: 0
+    socket_ty_slack: False #True
+    add_pos_ori_to_observation: False #True
+    # joint_stiffness: {'ankle_angle': 50} #, 'mtp_angle': 10}
+    # joint_damping: {'ankle_angle': 0.1} #, 'mtp_angle': 0.01}
+    reattach_muscle: False #True
+    reattach_muscles_offset: {'med_gas': [0,0,0]}
+    use_2_box_per_foot: True
+    headless: True
+    disable_arms: false
+    horizon: 1000
+    goal_type: GoalTrajMimic #GoalRootWalk #GoalTrajMimic #GoalRootWalk #GoalTrajMimic
+    goal_params:
+      visualize_goal: true
+    control_type: ${control_config.torque_control.control_type}
+    control_params: ${control_config.torque_control.control_params}
+    reward_type: MimicReward #VelArm #TargetVelocityGoalRewardCross #MimicReward #TargetVelocityGoalReward #MimicReward
+    reward_params:
+      qpos_w_sum: 0.4
+      qvel_w_sum: 0.2
+      rpos_w_sum: 0.5
+      rquat_w_sum: 0.3
+      rvel_w_sum: 0.1
+      # action_coeff: 0.03
+      # lateral_range_coeff: 0.1
+      # lateral_pos_reward_range: 0.5
+      # # joint_torque_vel_arm_coeff: 0.002
+      # # joint_torque_vel_nonarm_coeff: 0.001
+      # # joint_torque_vel_coeff: 0.003
+      # # # leg_cross_coeff: 0.1
+      # # joint_torque_coeff: 0.003 #0.002 #0.003
+      # # # action_out_of_bounds_coeff: 0.01
+      # # # joint_torque_coeff: 0.003 #4
+      sites_for_mimic:
+        - upper_body_mimic
+        # - head_mimic
+        # - pelvis_mimic
+        - left_hand_mimic
+        # ##- left_elbow_mimic
+        # #- left_shoulder_mimic
+        # #- left_hip_mimic
+        - left_knee_mimic
+        - left_foot_mimic
+        - right_hand_mimic
+        # #- right_elbow_mimic
+        # #- right_shoulder_mimic
+        # #- right_hip_mimic
+        - right_knee_mimic
+        - right_foot_mimic
+  hidden_layers: [512, 256]
+  lr: 1e-4
+  num_envs: 2048
+  num_steps: 200
+  total_timesteps: 1500e6 #800e6 #600e6 #10e6 #60e6 #900e6 #1000e6 #1100e6 #900e6 #300e6
+  result_dir: None
+  checkpoint_num: 8 #5
+  # checkpoint_interval: 2e6
+  # checkpoint_global_steps_interval: 2e6 #20e6
+  update_epochs: 4
+  proportion_env_reward: 0.0
+  num_minibatches: 32
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.2
+  init_std: 0.2
+  learnable_std: true
+  ent_coef: 0.0
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  activation: tanh 
+  anneal_lr: false
+  weight_decay: 0.0
+  normalize_env: true
+  debug: false
+  n_seeds: 1 #2 #1  # will automatically take seeds from 1 to n_seeds
+  vmap_across_seeds: true
+  validation: 
+    active: true 
+    num_steps: 100
+    num_envs: 100
+    num: 10 # set to 0 to disable validation
+    # if none of the following is set, only the mean reward and episode length is logged
+    quantities: # quantities to be used for the distance measures below
+      - JointPosition
+      - JointVelocity
+      - RelSitePosition
+      - RelSiteVelocity
+      - RelSiteOrientation
+    measures:
+      - EuclideanDistance
+      - DynamicTimeWarping
+      - DiscreteFrechetDistance
+    rel_site_names:
+      - upper_body_mimic
+      # - head_mimic
+      - left_hand_mimic
+    #   - left_knee_mimic
+      - left_foot_mimic
+      - right_hand_mimic
+    #   - right_knee_mimic
+      - right_foot_mimic
+    # # joints_to_ignore:
+    # #   - lumbar5
+    # #   - lumbar4
+    # #   - lumbar3
+    # #   - lumbar2
+    # #   - lumbar1
+
+# Define control subconfigs
+control_config:
+ torque_control:
+    control_type: SkeletonMuscleControlFunction #DefaultControl
+    control_params:
+
+
+checkpoint_path: ""

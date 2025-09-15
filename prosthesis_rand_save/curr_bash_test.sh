@@ -50,5 +50,6 @@ rm "$OUTPUT_FILE"
 
 # Run the second script with the captured path
 # python experiment_domain_rand_fullCurr__.py --config-name conf_4_tt checkpoint_path="$SAVE_PATH"
-python experiment_domain_rand_continue_wo_value_Curr.py --config-name conf_curr_9 checkpoint_path="$SAVE_PATH"
+# python experiment_domain_rand_continue_wo_value_Curr.py --config-name conf_curr_9 checkpoint_path="$SAVE_PATH"
+python experiment_domain_rand_continue_Curr.py --config-name conf_curr_9 checkpoint_path="$SAVE_PATH"
 

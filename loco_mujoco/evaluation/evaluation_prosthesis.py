@@ -2822,7 +2822,7 @@ class PostProcessMetricsHandler():
                 run_dict = all_loaded_data[run_key]
                 joint_data = {}
                 evaluation_joint_names = run_dict.get("evaluation_joint_names")
-                joint_parameters = ["angle", "velocity", "forces_constraint", "forces_smooth", "torques", "energy_exp"]
+                joint_parameters = ["angle", "velocity", "forces_constraint", "forces_smooth","forces_applied", "torques", "energy_exp"]
                 for joint_name in evaluation_joint_names:
                     joint_data[joint_name] = {}
                     for key in joint_parameters:
@@ -2863,6 +2863,11 @@ class PostProcessMetricsHandler():
                     std_left = np.std(left_steps, axis=0)/body_weight_to_normalize
                     mean_right = np.mean(right_steps, axis=0)/body_weight_to_normalize
                     std_right = np.std(right_steps, axis=0)/body_weight_to_normalize
+                    if 'knee' in left_joint: # Switch sign (-1) for knee sensors to match flexion/extension convention
+                        mean_left = -mean_left
+                        mean_right = -mean_right
+                        std_left = -std_left
+                        std_right = -std_right
                     diff = np.abs(mean_left) - np.abs(mean_right)
                     mean_left_all.append((run_key, mean_left, std_left))
                     mean_right_all.append((run_key, mean_right, std_right))
@@ -2879,7 +2884,10 @@ class PostProcessMetricsHandler():
                         axes[0].fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.15)
                     if plot_baseline and parameter_name in ["angle", "velocity"] and baseline_data is not None:
                         if right_joint in baseline_data and parameter_name in baseline_data[right_joint]:#if np.any(baseline_data[right_joint][parameter_name]):
-                            axes[0].plot(x, baseline_data[right_joint][parameter_name], label=f"Baseline {right_joint} mean", color='black')
+                            if 'knee' in right_joint: # Switch sign (-1) for knee sensors to match flexion/extension convention
+                                axes[0].plot(x, -baseline_data[right_joint][parameter_name], label=f"Baseline {right_joint} mean", color='black')
+                            else:
+                                axes[0].plot(x, baseline_data[right_joint][parameter_name], label=f"Baseline {right_joint} mean", color='black')
                     axes[0].set_title(f"{right_joint} mean (all runs)")
                     axes[0].set_xlabel("Interpolated Step (%)")
                     axes[0].set_ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
@@ -2891,7 +2899,10 @@ class PostProcessMetricsHandler():
                         axes[1].fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.15)
                     if plot_baseline and parameter_name in ["angle", "velocity"] and baseline_data is not None:
                         if right_joint in baseline_data and parameter_name in baseline_data[right_joint]:
-                            axes[1].plot(x, baseline_data[right_joint][parameter_name], label=f"Baseline {left_joint} mean", color='black')
+                            if 'knee' in right_joint: # Switch sign (-1) for knee sensors to match flexion/extension convention
+                                axes[1].plot(x, -baseline_data[right_joint][parameter_name], label=f"Baseline {left_joint} mean", color='black')
+                            else:
+                                axes[1].plot(x, baseline_data[right_joint][parameter_name], label=f"Baseline {left_joint} mean", color='black')
                     axes[1].set_title(f"{left_joint} mean (all runs)")
                     axes[1].set_xlabel("Interpolated Step (%)")
                     axes[1].set_ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
@@ -2941,7 +2952,7 @@ class PostProcessMetricsHandler():
                 run_dict = all_loaded_data[run_key]
                 joint_data = {}
                 evaluation_joint_names = run_dict.get("evaluation_joint_names", [])
-                joint_parameters = ["angle", "velocity", "forces_constraint", "forces_smooth", "torques", "energy_exp"]
+                joint_parameters = ["angle", "velocity", "forces_constraint", "forces_smooth","forces_applied", "torques", "energy_exp"]
 
                 for joint_name in evaluation_joint_names:
                     joint_data[joint_name] = {}
@@ -3383,6 +3394,11 @@ class PostProcessMetricsHandler():
                     std_left = np.std(left_steps, axis=0)/body_weight_to_normalize
                     mean_right = np.mean(right_steps, axis=0)/body_weight_to_normalize
                     std_right = np.std(right_steps, axis=0)/body_weight_to_normalize
+                    if 'knee' in left_sensor: # Switch sign (-1) for knee sensors to match flexion/extension convention
+                        mean_left = -mean_left
+                        mean_right = -mean_right
+                        std_left = -std_left
+                        std_right = -std_right
                     diff = mean_left - mean_right
                     mean_left_all.append((run_key, mean_left, std_left))
                     mean_right_all.append((run_key, mean_right, std_right))
@@ -3953,7 +3969,7 @@ class PostProcessMetricsHandler():
 
 
 
-    def get_step_distance_length(self, all_body_poses, foot_body_name, step_start_indices):
+    def get_stride_distance_length(self, all_body_poses, foot_body_name, step_start_indices):
         """
         Calculate step lengths in meters based on foot position at step start frames.
 
@@ -3983,3 +3999,90 @@ class PostProcessMetricsHandler():
             step_lengths.append(step_length)
 
         return step_lengths
+
+
+
+    def get_step_distance_length(self, all_body_poses, foot_body_name, step_start_indices_right, step_start_indices_left):
+        """
+        Calculate step lengths in meters based on foot position at step start frames.
+
+        Args:
+            all_body_poses (np.array): Array of body poses per frame (shape: [frames, bodies, 3])
+            foot_body_name (str): Name of the foot body (e.g., "toes")
+            step_start_indices (list): List of frame indices where steps start
+
+        Returns:
+            list: Step lengths in meters
+        """
+        # Assume foot_body_name maps to a known index
+        # foot_index = get_body_index(foot_body_name)  # You must define this mapping
+        step_lengths_right = []
+        step_lengths_left = []
+        pose_dict = all_body_poses.item()
+        foot_body_name_r = foot_body_name + '_r'
+        foot_body_name_l = foot_body_name + '_l'
+        # foot_pos = pose_dict[foot_body_name]
+        foot_pos_r_x = [pose[0] for pose in pose_dict[foot_body_name_r]] #foot_pos[0][:]
+        foot_pos_l_x = [pose[0] for pose in pose_dict[foot_body_name_l]] #foot_pos[0][:]
+
+        # Step length is distance between right and left foot at each heel strike
+        # Ensure indices do not go out of bounds
+        min_len = min(len(step_start_indices_right), len(step_start_indices_left))
+        # Calculate right-to-left step lengths
+        for i in range(min_len - 1):
+            right_step_start = step_start_indices_right[i]
+            left_step_next = step_start_indices_left[i + 1] if step_start_indices_left[0] < step_start_indices_right[0] else step_start_indices_left[i]
+            if right_step_start < len(foot_pos_r_x) and left_step_next < len(foot_pos_l_x):
+                right_step_pos_start = foot_pos_r_x[right_step_start]
+                left_step_pos_next = foot_pos_l_x[left_step_next]
+                step_length_right = abs(left_step_pos_next - right_step_pos_start)
+                step_lengths_right.append(step_length_right)
+        # Calculate left-to-right step lengths
+        for i in range(min_len - 1):
+            left_step_start = step_start_indices_left[i]
+            right_step_next = step_start_indices_right[i + 1] if step_start_indices_right[0] < step_start_indices_left[0] else step_start_indices_right[i]
+            if left_step_start < len(foot_pos_l_x) and right_step_next < len(foot_pos_r_x):
+                left_step_pos_start = foot_pos_l_x[left_step_start]
+                right_step_pos_next = foot_pos_r_x[right_step_next]
+                step_length_left = abs(right_step_pos_next - left_step_pos_start)
+                step_lengths_left.append(step_length_left)
+
+
+        return step_lengths_right, step_lengths_left
+
+    
+
+    def plot_body_pos_all_runs(self, all_loaded_data, body):
+        plt.figure(figsize=(12, 6))
+        for run_key, run_dict in all_loaded_data.items():
+            all_body_poses = np.array(run_dict["all_body_poses"])
+            pose_dict = all_body_poses.item()
+            body_pos_x = np.array([pose[0] for pose in pose_dict[body]])
+            body_pos_z = np.array([pose[1] for pose in pose_dict[body]])
+            body_pos_x = body_pos_x[:-1]
+            body_pos_z = body_pos_z[:-1]
+            # body_pos_x_norm = - body_pos_x + body_pos_x[0]
+            # body_pos_z_norm = -body_pos_z + body_pos_z[0]
+            # print('body_pos_x[0]: ', body_pos_x[-1])
+            # print('body_pos_z[0]: ', body_pos_z[-1])
+
+            plt.plot(body_pos_x,body_pos_z, label=run_key)
+            # # Plotting code for body positions
+            # # all_body_poses is a dict: {body_name: [Array([x, y, z]), ...]}
+            # pose_dict = all_body_poses.item() if hasattr(all_body_poses, "item") else all_body_poses
+            # if body not in pose_dict:
+            #     print(f"Body '{body}' not found in all_body_poses for run {run_key}")
+            #     continue
+            # poses = pose_dict[body]
+            # xs = [float(p[0]) for p in poses]
+            # xs = np.array([float(p[0]) for p in poses])
+            # # xs_norm = xs - xs[0]
+            # zs = np.array([float(p[2]) for p in poses])
+            # zs_norm = zs - zs[0]
+            # # plt.plot(xs_norm, zs_norm, label=run_key)
+            # plt.plot(zs, label=run_key)
+        plt.title(f"Body Position - {body}")
+        plt.xlabel("X Position")
+        plt.ylabel("Z Position")
+        plt.legend()
+        plt.show()

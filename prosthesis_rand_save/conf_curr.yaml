@@ -5,7 +5,7 @@ defaults:
 
 wandb:
   project: "deepmimic"
-  run_name: "SACHFoot_KneeLim0_SocketTySlack_ObsPosOriSocketTalus_RandPosOriSocketTalus_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal"
+  run_name: "SACHFoot_Gas_SlackRange002_AnkStiff1200_KneeLim0_SocketTySlack_ObsPosOriSocketTalus_RandPosOriSocketTalus_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal"
   
   
   #"SACHFoot_800e6Same_1600e6_RandPosSocketTalus_RandOriPylonSocket_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas" 
@@ -33,7 +33,7 @@ experiment:
     #joint_stiffness: 100 #100
     #joint_damping: 1 #10
     delete_joints: False
-    remove_joint_names: ['subtalar_angle','ankle_angle']
+    remove_joint_names: ['subtalar_angle'] #,'ankle_angle']
     tibia_socket_offset_z : 0
     tibia_socket_offset_x : 0 
     tibia_socket_overlap: 0.2 
@@ -42,9 +42,9 @@ experiment:
     knee_extension_limit: 0
     socket_ty_slack: True
     add_pos_ori_to_observation: True
-    # joint_stiffness: {'ankle_angle': 50} #, 'mtp_angle': 10}
+    joint_stiffness: {'ankle_angle': 1200} #, 'mtp_angle': 10}
     # joint_damping: {'ankle_angle': 0.1} #, 'mtp_angle': 0.01}
-    reattach_muscle: False #True
+    reattach_muscle: True
     reattach_muscles_offset: {'med_gas': [0,0,0]}
     use_2_box_per_foot: True
     headless: True
@@ -92,9 +92,9 @@ experiment:
   lr: 1e-4
   num_envs: 2048
   num_steps: 200
-  total_timesteps: 1500e6 #800e6 #600e6 #10e6 #60e6 #900e6 #1000e6 #1100e6 #900e6 #300e6
+  total_timesteps: 1500e6 #1500e6 #800e6 #600e6 #10e6 #60e6 #900e6 #1000e6 #1100e6 #900e6 #300e6
   result_dir: None
-  checkpoint_num: 8 #5
+  checkpoint_num: 9 #8 #5
   # checkpoint_interval: 2e6
   # checkpoint_global_steps_interval: 2e6 #20e6
   update_epochs: 4
@@ -161,10 +161,10 @@ randomization_config:
       #'subtalar_angle': [0,0.01]
       prosthesis_dof_damping_range: {'ankle_angle': [2, 10]} #,'mtp_angle': [0,0.1]} #[1,5]
 
-      randomize_prosthesis_joint_stiffness: False #True #True #True
+      randomize_prosthesis_joint_stiffness: False #False #True #True #True
       #randomization_joint_names: ['ankle_angle', 'subtalar_angle', 'mtp_angle' ]
       #, 'subtalar_angle': [10,50]
-      prosthesis_joint_stiffness_range: {'ankle_angle': [50, 100]} #,'mtp_angle': [5,50]}
+      prosthesis_joint_stiffness_range: {'ankle_angle': [1000, 1300]} #,'mtp_angle': [5,50]}
       #[50,100]
 
       # randomization_body_position_names: ['calcn']
@@ -202,4 +202,4 @@ randomization_config:
       adapt_tibia_socket_parameters: False
 
 
-checkpoint_path: ""
+# checkpoint_path: "/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2025-08-25/00-51-40/SavePPOJax_saved.pkl"

@@ -74,18 +74,259 @@ class Mjx(Mujoco):
         self._first_data = mjx.forward(self.sys, data)
         self.init_talus_pos = 0
         
-        #if hasattr(self,'socket_ty_slack') and self.socket_ty_slack: 
-        # Socket_ty hysterisis
-        high_stiffness = 43500 #70000 #30000 #43500
-        low_stiffness = 4350 #6000 #7000 #4350 #1000
-        a = 0.038 #0.02 #0.038
-        H = 0.025
-        delta_shift =  0 #0.01
-        self.xp = jnp.array([-a+delta_shift, 0+delta_shift, H+delta_shift, H+a+delta_shift])
-        self.fp = jnp.array([-high_stiffness*(a+delta_shift), 0+delta_shift, low_stiffness*(H+delta_shift), low_stiffness*(H+delta_shift)+high_stiffness*(a+delta_shift)])
-        # self.f_kp = jnp.interp(x,xp=[-a, 0, H, H+a], fp=[-high_stiffness*a, 0, low_stiffness*H, low_stiffness*H+high_stiffness*a], left="extrapolate", right="extrapolate") 
-        #else: 
-            #self.socket_ty_slack = False
+
+        if hasattr(self, 'socket_type'):
+            if self.socket_type=='Iceross Seal-In': #Iceross
+                # Gholizadeh, Hossein, et al. "A new approach for the pistoning measurement in transtibial prosthesis." Prosthetics and orthotics international 35.4 (2011): 360-364.
+                # stiffness_0N = 0
+                # stiffness_30N = 7500 #2143 
+                # stiffness_60N = 10000 #3750
+                # stiffness_90N = 11250 #5000
+                # stiffness_BW = 70877
+
+                # disp_BW = 0.01 #0.02 #0.01 #0.02 #0.01
+                # disp_0N = 0
+                # disp_30N = -0.004
+                # disp_60N = -0.006
+                # disp_90N = -0.008 #-0.02 #-0.008 #-0.02 #-0.008
+                # # disp_BW = -0.01
+
+                # BW_force = 400 #750 
+                # # self.xp = jnp.array([-0.01, 0.0,  0.004, 0.006, 0.008]) #-0.008, -0.006, -0.004, 0.0, 0.01])   # displacement [m]
+                
+                # # self.xp = jnp.array([-0.008, -0.006, -0.004, 0.0, 0.01])   # displacement [m]
+                
+                # # self.fp = jnp.array([ 90.0,  60.0,  30.0, 0.0, BW_force])  # force [N]
+                # # self.fp = jnp.array([ -90.0,  -60.0,  -30.0, 0.0, BW_force])  # force [N]
+                
+                # # self.fp = jnp.array([ -90.0,  -60.0,  -30.0, 0.0, BW_force])  # force [N]
+                
+                # # self.fp = jnp.array([ 90.0,  60.0,  30.0, 0.0, -BW_force])  # force [N]
+                # # self.fp = jnp.array([ -BW_force, 0.0, 30.0, 60.0, 90.0])  # force [N]
+
+                # # self.xp = jnp.array([-0.03,-0.008, -0.006, -0.004, 0.0, 0.004, 0.006,0.008, 0.03])
+                # # self.fp = jnp.array([-750.0, -90.0, -60.0, -30.0, 0.0, 30.0,60.0,90.0, 750.0])
+
+                # # self.xp = jnp.array([-0.03,-0.008, -0.006, -0.004, 0.0, 0.004, 0.006,0.008, 0.03])
+                # # self.fp = jnp.array([-750.0, -90.0, -60.0, -30.0, 0.0, 30.0,60.0,90.0, 750.0])
+                
+                # # self.xp = jnp.array([-0.01, 0.0, 0.004, 0.006,0.008, 0.03])
+                # # self.fp = jnp.array([-750.0, 0.0, 30.0,60.0,90.0, 750.0])
+
+
+                # high_stiffness = 43500
+                # low_stiffness = 4350
+                # a=0.02 #0.012 #0.01
+                # a_x = 0.005
+
+
+                # self.xp = jnp.array([-0.01, 0, a_x,0.02])
+                # # self.xp = jnp.array([-0.01, 0, 0.08, 0.01])
+                # self.fp = jnp.array([-high_stiffness*a, 0, low_stiffness*a, low_stiffness*a+high_stiffness*a])
+
+
+                # self.xp = jnp.array([disp_90N, disp_60N, disp_30N, disp_0N, disp_BW])
+                # self.fp = jnp.array([stiffness_90N*disp_90N, stiffness_60N*disp_60N, stiffness_30N*disp_30N, stiffness_0N*disp_0N, -stiffness_BW*disp_BW])
+                # self.fp = jnp.array([-stiffness_90N*disp_90N, -stiffness_60N*disp_60N, -stiffness_30N*disp_30N, -stiffness_0N*disp_0N, -stiffness_BW*disp_BW])
+                # high_stiffness = 43500
+                # low_stiffness = 4350
+                # min_pos = -0.01  # Your new minimum position
+                # max_pos = 0.01   # Your new maximum position
+                # dead_zone = 0.005 # The central region where forces are minimal
+
+                # # Define the interpolation points for a smoother, centered force profile
+                # # x-positions (qpos)
+                # self.xp = jnp.array([min_pos - dead_zone, min_pos, -dead_zone, 0, dead_zone, max_pos, max_pos + dead_zone])
+
+                # # y-forces (qfrc_applied)
+                # # The forces should smoothly guide the joint back to zero or a central point
+                # self.fp = jnp.array([
+                #     high_stiffness * (min_pos - (min_pos - dead_zone)), # Strong restoring force at the negative limit
+                #     high_stiffness * (min_pos - min_pos),              # Force is zero at the limit
+                #     -low_stiffness * dead_zone,                        # Slight negative force just outside the dead zone
+                #     0,                                                 # No force at the center
+                #     low_stiffness * dead_zone,                         # Slight positive force just outside the dead zone
+                #     0,                                                 # Force is zero at the positive limit
+                #     -high_stiffness * (max_pos + dead_zone - max_pos)  # Strong restoring force at the positive limit
+                # ])
+
+                # # Full weight-bearing displacement is our new reference (0 m)
+                # disp_BW = 0.0
+
+                # # Non-weight bearing (0N) occurs at a displacement of ~0.1mm relative to BW
+                # # This is our "slack" region.
+                # disp_0N = 0.0001 # 0.1 mm
+
+                # # The paper's data points are relative to the 0N state.
+                # # We shift them to be relative to the BW state.
+                # disp_30N = (0.0125 - 0.0001)  # 12.5mm from 0N, shifted by 0.1mm
+                # disp_60N = (0.014 - 0.0001)   # 14mm from 0N, shifted by 0.1mm
+                # disp_90N = (0.016 - 0.0001)   # 16mm from 0N, shifted by 0.1mm
+
+                # # Define the forces (the y-coordinates of our interpolation)
+                # # These are the forces applied to the joint at the corresponding displacements.
+                # force_BW = 750.0 # Force at full weight bearing
+                # force_0N = 0.0   # Force at non-weight bearing (slack)
+                # force_30N = 30.0
+                # force_60N = 60.0
+                # force_90N = 90.0
+
+                # # Define a slack zone for the transition from compression to extension
+                # # This ensures a smooth transition and models the "slack" behavior.
+                # slack_disp_pos = disp_0N + 0.005 # A small displacement into the slack zone
+                # slack_disp_neg = disp_0N - 0.005 # The other end of the slack zone
+
+                # # Create the interpolation arrays. They MUST be sorted by displacement.
+                # # The force must be positive for negative displacements (compression) and
+                # # negative for positive displacements (extension) to pull the joint back.
+                # self.xp = jnp.array([disp_90N, disp_60N, disp_30N, slack_disp_neg, disp_0N, slack_disp_pos, disp_BW])
+                # self.fp = jnp.array([force_90N, force_60N, force_30N, 0.0, 0.0, 0.0, force_BW])
+
+
+                # Tuned parameters for stability
+                # Reduce the stiffness significantly to prevent overcorrection.
+                self.smooth_stiffness = 5000.0 # A much lower, more stable stiffness value
+                # Introduce a strong damping value to prevent oscillations.
+                self.damping_constant = 500.0 # Tune this value as needed
+
+                # Displacement and force data points from the paper
+                disp_30N = -0.004
+                disp_60N = -0.006
+                disp_90N = -0.008
+                disp_0N = 0.0
+                disp_BW = 0.0001 # 0.1 mm relative to 0N point
+
+                force_90N = 90.0
+                force_60N = 60.0
+                force_30N = 30.0
+                force_0N = 0.0
+                force_BW = 750.0
+
+                # Interpolation points for a stable force profile
+                # We'll use a smoother transition, as previously discussed, but with lower stiffness.
+                self.xp = jnp.array([
+                    disp_90N,
+                    disp_60N,
+                    disp_30N,
+                    disp_0N,
+                    disp_BW
+                ])
+                self.fp = jnp.array([
+                    force_90N,
+                    force_60N,
+                    force_30N,
+                    force_0N,
+                    force_BW
+                ])
+
+                jax.debug.print('socket_type: {socket_type} ', socket_type=self.socket_type)
+            elif self.socket_type=='Auto':
+                high_stiffness = self.socket_ty_joint_stiffness
+                # middle_stiffness = high_stiffness/10
+                low_stiffness = high_stiffness/100 #0
+                lim_low = self.socket_ty_joint_range[0]
+                lim_high = self.socket_ty_joint_range[1]
+
+                H = 0.02 #a_high
+                a = 0.02
+
+                self.xp = jnp.array([
+                    -lim_low,
+                    0,
+                    H,
+                    H + lim_high
+                ])
+                self.fp = jnp.array([
+                    # middle_stiffness * a,
+                    high_stiffness * a,
+                    0,
+                    low_stiffness * H,
+                    low_stiffness * H + high_stiffness * a
+                ])
+                jax.debug.print('socket_type: {socket_type} ', socket_type=self.socket_type)
+            
+            elif self.socket_type=='Test':
+                high_stiffness = 50000
+                # middle_stiffness = 50000
+                low_stiffness = 5000
+                H = 0.02 
+                a = 0.02 
+                shift = 0 #0.005 #0.005 #0.01
+                lim_low = self.socket_ty_joint_range[0]
+                lim_high = self.socket_ty_joint_range[1]
+
+                self.xp = jnp.array([
+                    -lim_low+shift,
+                    0 + shift,
+                    H + shift,
+                    H + shift + lim_high
+                ])
+                self.fp = jnp.array([
+                    # middle_stiffness * a,
+                    high_stiffness * (a + shift),
+                    0,# + shift*low_stiffness,
+                    low_stiffness * (H + shift),#+ shift*low_stiffness,
+                    low_stiffness * (H + shift) + high_stiffness * (a + shift)# + shift*low_stiffness
+                ])
+                jax.debug.print('socket_type: {socket_type} ', socket_type=self.socket_type)
+
+        else:
+
+            #if hasattr(self,'socket_ty_slack') and self.socket_ty_slack: 
+            # Socket_ty hysterisis
+            high_stiffness = 43500 #50000 #46000 #43500 #46000 #43500 #70000 #30000 #43500
+            # middle_stiffness = 2000 #10000 #8000
+            low_stiffness = 4350 #10000 #4350 #6000 #7000 #4350 #1000
+            a = 0.02 #0.038 #0.2 #0.02 #0.038#2 #0.038 #0.02 #0.038
+            H = 0.02 #0.025 #0.02 #0.025
+            delta_shift =  0 #0.01
+            self.xp = jnp.array([-a+delta_shift, 0+delta_shift, H+delta_shift, H+a+delta_shift])
+            self.fp = jnp.array([-high_stiffness*(a+delta_shift), 0+delta_shift, low_stiffness*(H+delta_shift), low_stiffness*(H+delta_shift)+high_stiffness*(a+delta_shift)])
+            
+            # self.fp = jnp.array([middle_stiffness*(a+delta_shift), # At the negative end, force is positive to push up
+            #              0+delta_shift,
+            #              -low_stiffness*(H+delta_shift),
+            #              -(low_stiffness*(H+delta_shift)+high_stiffness*(a+delta_shift))
+            #             ])
+
+
+            # self.xp = jnp.array([-a-a+delta_shift, -a+delta_shift, 0+delta_shift, H+delta_shift, H+a+delta_shift])
+            # self.fp = jnp.array([high_stiffness*(-a+delta_shift)+middle_stiffness*(-a+delta_shift),middle_stiffness*(-a+delta_shift), 0+delta_shift, low_stiffness*(H+delta_shift), low_stiffness*(H+delta_shift)+high_stiffness*(a+delta_shift)])
+            # self.f_kp = jnp.interp(x,xp=[-a, 0, H, H+a], fp=[-high_stiffness*a, 0, low_stiffness*H, low_stiffness*H+high_stiffness*a], left="extrapolate", right="extrapolate") 
+            #else: 
+                #self.socket_ty_slack = False
+
+            # # Test
+            # H = 0.02
+            # high_stiffness = 50000
+            # middle_stiffness = 2000
+            # slack_zone = 0.005
+            # transition_zone = 0.005 # A small value for the slack zone
+            # # Define the position points (xp)
+            # self.xp = jnp.array([
+            #     -a,
+            #     -(slack_zone + transition_zone),
+            #     -slack_zone,
+            #     slack_zone,
+            #     slack_zone + transition_zone,
+            #     H + a
+            # ])
+
+            # # Define the corresponding force points (fp)
+            # self.fp = jnp.array([
+            #     -high_stiffness * a,
+            #     -middle_stiffness * transition_zone, # Force ramps down to zero
+            #     0,                               # Zero force in the slack zone
+            #     0,                               # Zero force in the slack zone
+            #     high_stiffness * transition_zone, # Force ramps up from zero
+            #     high_stiffness * (H + a)
+            # ])
+        
+
+
+        
+
+
 
     def mjx_reset(self, key: jax.random.PRNGKey) -> MjxState:
         """
@@ -189,9 +430,17 @@ class Mjx(Mujoco):
             pistoning_qpos_adr = qpos_address
             pistoning_dof_adr = self._model.jnt_dofadr[joint_id]
             # jax.debug.print("pistoning_dof_adr: {pistoning_dof_adr}", pistoning_dof_adr = pistoning_dof_adr)
-            f_kp = jnp.interp(data.qpos[pistoning_qpos_adr],xp=self.xp, fp=self.fp, left="extrapolate", right="extrapolate")
+            f_kp = jnp.interp(data.qpos[pistoning_qpos_adr],xp=self.xp, fp=self.fp, left="extrapolate", right="extrapolate")#self.fp[-1]) #"extrapolate")
             _data = _data.replace(qfrc_applied=_data.qfrc_applied.at[pistoning_dof_adr].set(f_kp))
-        
+            # damping_force = -self.damping_constant * data.qvel[pistoning_dof_adr]
+            # # Combine the stiffness force and the damping force
+            # total_force = f_kp + damping_force
+
+            # # Apply the total force to the joint
+            # _data = _data.replace(qfrc_applied=_data.qfrc_applied.at[pistoning_dof_adr].set(total_force))
+            # _data = _data.replace(qfrc_applied=_data.qfrc_applied.at[pistoning_dof_adr].set(total_force))
+            # jax.debug.print('self.xp: {xp}', xp=self.xp)
+
             return _data
 
         def _no_adaptation(_data):
@@ -564,6 +813,8 @@ class Mjx(Mujoco):
                 del self._viewer_params['limit_knee_extension']
             if 'knee_extension_limit' in self._viewer_params.keys():
                 del self._viewer_params['knee_extension_limit']
+            if 'socket_type' in self._viewer_params.keys():
+                del self._viewer_params['socket_type']
             self._viewer = MujocoViewer(self._model, self.dt, record=record, **self._viewer_params)
 
         if self._terrain.is_dynamic:
@@ -604,6 +855,8 @@ class Mjx(Mujoco):
                 del self._viewer_params['limit_knee_extension']
             if 'knee_extension_limit' in self._viewer_params.keys():
                 del self._viewer_params['knee_extension_limit']
+            if 'socket_type' in self._viewer_params.keys():
+                del self._viewer_params['socket_type']
             self._viewer = MujocoViewer(model, self.dt, record=record, **self._viewer_params)
 
         if self._terrain.is_dynamic:

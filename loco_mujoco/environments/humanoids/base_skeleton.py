@@ -90,7 +90,7 @@ class BaseSkeleton(LocoEnv):
                 spec = self._reorient_arms(spec)
 
         # # Adapted for using 2 box geometries in foot
-        if hasattr(kwargs,"ignore_modify_mjx_contact") and not kwargs["ignore_modify_mjx_contact"]:
+        if "ignore_modify_mjx_contact" in kwargs and not kwargs["ignore_modify_mjx_contact"]:
             if self.mjx_enabled:
                 assert use_box_feet
                 spec = self._modify_spec_for_mjx(spec)

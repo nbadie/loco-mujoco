@@ -26,7 +26,7 @@ from loco_mujoco.algorithms import PPOJax
 from omegaconf import OmegaConf
 
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "/home/nadinebadie/loco-mujoco/prosthesis_test"))
+# sys.path.append(os.path.join(os.path.dirname(__file__), "/home/nadinebadie/loco-mujoco/prosthesis_test"))
 from loco_mujoco.evaluation.evaluation_prosthesis import ProsthesisMetricsHandler
 
 from loco_mujoco.core.control_functions.skeleton_muscle import SkeletonMuscleControlFunction
@@ -74,18 +74,19 @@ randomization_params_eval = {
     "prosthesis_side": "left_side",
     "randomize_prosthesis_dof_damping": False,
     "prosthesis_dof_damping_range": {'ankle_angle': [2, 10]},
-    "randomize_prosthesis_joint_stiffness": True, #False,
-    "prosthesis_joint_stiffness_range": {'ankle_angle': [50, 100]}, #[14924, 24924]}, #{'ankle_angle': [50, 100]},
-    "randomize_prosthesis_body_position": False, #True, #False, #True,
-    "prosthesis_body_position_range": {'pylon_socket': {'x': [-0.1, 0.1]}},
-    "randomize_prosthesis_body_orientation": False, #True, #False, #True, #False,
-    "prosthesis_body_orientation_range": {'pylon_socket': {'z': [-0.1, 0.1]}},
+    "randomize_prosthesis_joint_stiffness": False,
+    "prosthesis_joint_stiffness_range": {'ankle_angle': [1000, 1300]}, #[14924, 24924]}, #{'ankle_angle': [50, 100]},
+    "randomize_prosthesis_body_position": True, #False, #True, #False, #True,
+    "prosthesis_body_position_range": {'talus': {'x': [-0.02, 0.020]}}, #{'pylon_socket': {'x': [-0.1, 0.1]}},
+    "randomize_prosthesis_body_orientation": False, #False, #True, #False, #True, #False, #True, #False,
+    "prosthesis_body_orientation_range": {'talus': {'z': [-0.175, 0.175]}},
+    # "prosthesis_body_orientation_range": {'pylon_socket': {'z': [-0.1, 0.1]}},
 }
 randomization_increments = {
-    "prosthesis_joint_stiffness": 25, #10,
+    "prosthesis_joint_stiffness": 100, #10,
     "prosthesis_dof_damping": 5,
-    "prosthesis_body_position": 0.05,
-    "prosthesis_body_orientation": 0.2
+    "prosthesis_body_position": 0.04, #0.05,
+    "prosthesis_body_orientation": 0.35 #0.001 #0.2
 }
 
 os.environ["MUJOCO_GL"] = "egl"  # Use EGL for rendering, which is more compatible with headless environments
@@ -133,7 +134,8 @@ env = factory.make(domain_randomization_type=randomization_type, domain_randomiz
                    **config.experiment.env_params, **config.experiment.task_factory.params)
 env.th.to_jax()
 env = VecEnv(env)
-jit_step  = jax.jit(jax.vmap(env.mjx_step_test))  #env.step)
+# jit_step  = jax.jit(jax.vmap(env.mjx_step_test))  #env.step)
+jit_step  = jax.jit(jax.vmap(env.mjx_step)) #_test))  #env.step)
 jit_reset  = jax.jit(jax.vmap(env.mjx_reset)) #env.reset)
 model = env.get_model()
 
@@ -343,7 +345,8 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
         action = jnp.atleast_2d(action)
 
 
-        env_state, sys = jit_step(env_state, action)  #env.step(env_state, action)
+        # env_state, sys = jit_step(env_state, action)  #env.step(env_state, action)
+        env_state = jit_step(env_state, action)  #env.step(env_state, action)
         obs = env_state.observation
 
         # print('pylon_socket xpos: ', env_state.data.body('pylon_socket_l').xpos )

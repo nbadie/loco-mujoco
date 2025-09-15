@@ -50,7 +50,7 @@ if args.use_mujoco:
                               train_state_seed=0)
 else:
     # run eval mjx
-    PPOJax.play_policy(env, agent_conf, agent_state, deterministic=False, n_steps=1000, n_envs=1, record=True,
+    PPOJax.play_policy(env, agent_conf, agent_state, deterministic=False, n_steps=1000, n_envs=3, record=True,
                        train_state_seed=0)
 
 

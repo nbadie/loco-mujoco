@@ -1,0 +1,211 @@
+defaults:
+  - override hydra/job_logging: default
+  - override hydra/launcher: basic
+
+
+wandb:
+  project: "deepmimic"
+  run_name: "SACHFoot_TalusX2cm_LatRange05Coeff01_ActPenSquare003_Gas_SlackRange002_AnkStiff1200_KneeLim0_SocketTySlack_ObsPosOriSocketTalus_RandPosOriSocketTalus_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal"
+  
+  
+  #"SACHFoot_800e6Same_1600e6_RandPosSocketTalus_RandOriPylonSocket_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas" 
+  #"800CurrMimTorsoJointTorque003_800Curr_test_checkpoint_saving_withoutRand"
+  #"TT_REW"
+  #SACHFoot_GPU600Same_NoRand_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri"
+  #"TT"
+  #"SACHFoot_GPU300_CurrHeadTorsoMimTorque0003_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri"
+  #"SACHFoot_NoRand_KneeMimic_LaPreStiffDampSolimpMarginTy_BothSideToeSameStiffDamp_NoAnkleSubTal_ReAttachMedGas_PylonTalusOri" #"MjxSkeletonPros_AdaptSigmd5_NoMotorTanh_stiff50_damp1"
+
+experiment:
+  task_factory:
+    name: ImitationFactory
+    params:
+      default_dataset_conf:
+          task: walk
+      # lafan1_dataset_conf:
+      #   dataset_name:
+      #     - walk1_subject1
+  env_params:
+    env_name: MjxSkeletonMuscleProsthesis #MjxSkeletonMuscleProsthesis #SkeletonMuscle #MjxMyoSkeleton
+    prosthesis_side : 'left_side' #'right_side' #'left_side' # 'left_side' or 'right_side'
+    prosthesis_type: 'transtibial'
+    prosthesis_subtype: 'SACH'
+    #joint_stiffness: 100 #100
+    #joint_damping: 1 #10
+    delete_joints: False
+    remove_joint_names: ['subtalar_angle'] #,'ankle_angle']
+    tibia_socket_offset_z : 0
+    tibia_socket_offset_x : 0 
+    tibia_socket_overlap: 0.2 
+    amputated_tibia_length: 0.2
+    limit_knee_extension: True
+    knee_extension_limit: 0
+    socket_ty_slack: True
+    add_pos_ori_to_observation: True
+    joint_stiffness: {'ankle_angle': 1200} #, 'mtp_angle': 10}
+    # joint_damping: {'ankle_angle': 0.1} #, 'mtp_angle': 0.01}
+    reattach_muscle: True
+    reattach_muscles_offset: {'med_gas': [0,0,0]}
+    use_2_box_per_foot: True
+    headless: True
+    disable_arms: false
+    horizon: 1000
+    goal_type: GoalTrajMimic #GoalRootWalk #GoalTrajMimic #GoalRootWalk #GoalTrajMimic
+    goal_params:
+      visualize_goal: true
+    control_type: ${control_config.torque_control.control_type}
+    control_params: ${control_config.torque_control.control_params}
+    reward_type: MimicRewardVelArm #TargetVelocityGoalRewardCross #MimicReward #TargetVelocityGoalReward #MimicReward
+    reward_params:
+      qpos_w_sum: 0.4
+      qvel_w_sum: 0.2
+      rpos_w_sum: 0.5
+      rquat_w_sum: 0.3
+      rvel_w_sum: 0.1
+      action_coeff: 0.03
+      lateral_range_coeff: 0.1
+      lateral_pos_reward_range: 0.5
+      # # joint_torque_vel_arm_coeff: 0.002
+      # # joint_torque_vel_nonarm_coeff: 0.001
+      # # joint_torque_vel_coeff: 0.003
+      # # # leg_cross_coeff: 0.1
+      # # joint_torque_coeff: 0.003 #0.002 #0.003
+      # # # action_out_of_bounds_coeff: 0.01
+      # # # joint_torque_coeff: 0.003 #4
+      sites_for_mimic:
+        - upper_body_mimic
+        # # - head_mimic
+        # # - pelvis_mimic
+        # - left_hand_mimic
+        # # ##- left_elbow_mimic
+        # # #- left_shoulder_mimic
+        # # #- left_hip_mimic
+        # - left_knee_mimic
+        # - left_foot_mimic
+        # - right_hand_mimic
+        # # #- right_elbow_mimic
+        # # #- right_shoulder_mimic
+        # # #- right_hip_mimic
+        # - right_knee_mimic
+        # - right_foot_mimic
+  hidden_layers: [512, 256]
+  lr: 1e-4
+  num_envs: 2048
+  num_steps: 200
+  total_timesteps: 600e6 #800e6 #600e6 #10e6 #60e6 #900e6 #1000e6 #1100e6 #900e6 #300e6
+  result_dir: None
+  checkpoint_num: 6 #5
+  # checkpoint_interval: 2e6
+  # checkpoint_global_steps_interval: 2e6 #20e6
+  update_epochs: 4
+  proportion_env_reward: 0.0
+  num_minibatches: 32
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.2
+  init_std: 0.2
+  learnable_std: true
+  ent_coef: 0.0
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  activation: tanh 
+  anneal_lr: false
+  weight_decay: 0.0
+  normalize_env: true
+  debug: false
+  n_seeds: 1 #2 #1  # will automatically take seeds from 1 to n_seeds
+  vmap_across_seeds: true
+  validation: 
+    active: true 
+    num_steps: 100
+    num_envs: 100
+    num: 10 # set to 0 to disable validation
+    # if none of the following is set, only the mean reward and episode length is logged
+    quantities: # quantities to be used for the distance measures below
+      - JointPosition
+      - JointVelocity
+      - RelSitePosition
+      - RelSiteVelocity
+      - RelSiteOrientation
+    measures:
+      - EuclideanDistance
+      - DynamicTimeWarping
+      - DiscreteFrechetDistance
+    rel_site_names:
+      - upper_body_mimic
+      # - head_mimic
+      - left_hand_mimic
+    #   - left_knee_mimic
+      - left_foot_mimic
+      - right_hand_mimic
+    #   - right_knee_mimic
+      - right_foot_mimic
+    # # joints_to_ignore:
+    # #   - lumbar5
+    # #   - lumbar4
+    # #   - lumbar3
+    # #   - lumbar2
+    # #   - lumbar1
+
+# Define control subconfigs
+control_config:
+ torque_control:
+    control_type: SkeletonMuscleControlFunction #DefaultControl
+    control_params:
+
+randomization_config:
+    randomization_type: ProsthesisRandomizer
+    randomization_params:
+      randomize_prosthesis_dof_damping: False #True #True #True
+      # randomization_dof_names: ['ankle_angle', 'subtalar_angle', 'mtp_angle' ]
+      #'subtalar_angle': [0,0.01]
+      prosthesis_dof_damping_range: {'ankle_angle': [2, 10]} #,'mtp_angle': [0,0.1]} #[1,5]
+
+      randomize_prosthesis_joint_stiffness: False #True #True #True
+      #randomization_joint_names: ['ankle_angle', 'subtalar_angle', 'mtp_angle' ]
+      #, 'subtalar_angle': [10,50]
+      prosthesis_joint_stiffness_range: {'ankle_angle': [1000, 1300]} #{'ankle_angle': [50, 100]} #,'mtp_angle': [5,50]}
+      #[50,100]
+
+      # randomization_body_position_names: ['calcn']
+      # randomize_prosthesis_body_position: True
+      # # prosthesis_body_position_range: {'x': [-0.001, 0.001], 'y': [-0.02, 0.001], 'z': [-0.001, 0.001]} # range for randomizing the position of the prosthesis body
+      # prosthesis_body_position_range: {} # range for randomizing the position of the prosthesis body
+      # # prosthesis_body_position_range: {'z': [0.1, 0.5]} 
+      # #'x': [-0.001, 0.001], 'y': [0.015, 0.02], 'z': [-0.001, 0.001]
+
+      randomize_prosthesis_body_position: True #True
+      prosthesis_body_position_range: {'talus': {'x': [0.0200,0.0201]}}
+      
+      # prosthesis_body_position_range: {'pylon_socket': {'x': [-0.01,0.01],'z': [-0.01,0.01]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
+      #{'calcn': {'x': [0.3, 0.4],'y': [0.4, 0.5]}}
+
+      randomize_prosthesis_body_orientation: False #True #True #True #False #True #True
+      # randomization_body_orientation_names: ['calcn']
+      # prosthesis_body_orientation_range: {'pylon_socket': {'y': [-0.1,-0.1]}}
+      # prosthesis_body_orientation_range: {'y': [-0.09, 0.09]} #[-0.1, 0.1]
+      
+      # prosthesis_body_orientation_range: {'talus': {'z': [0.174,0.175]}}
+
+      prosthesis_body_orientation_range: {'pylon_socket': {'x': [-0.1,0.1],'y': [-0.1,0.1],'z': [-0.1,0.1]},'talus': {'x': [-0.1,0.1],'y': [-0.1,0.1],'z': [-0.1,0.1]}}
+      
+      # prosthesis_body_orientation_range: {'pylon_socket': {'x': [-0.1,0.1],'y': [-0.3,0.3],'z': [-0.1,0.1]},'talus': {'x': [-0.1,0.1],'y': [-0.3,0.3],'z': [-0.1,0.1]}}
+      # prosthesis_body_orientation_range: {'pylon_socket': {'x': [-0.01,0.01],'z': [-0.01,0.01]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
+      #[-0.1, 0.1]
+      # prosthesis_body_orientation_range: {'x': [0.1, 0.2], 'y': [0.15, 0.3], 'z': [0.1, 0.2]} #[-0.1, 0.1]
+      # randomize_feet_geom_solref: True
+      # feet_geom_solref_range: {'other_side': [0.02, 0.1], 'prosthesis_side': [0.02, 0.1]}
+      # randomization_feet_geom_names: ['foot_box']
+      randomize_prosthesis_socket_joint: False #True #True #False, 
+      socket_joint_range: {
+          # 'socket_flexion': [],
+          # 'socket_adduction': [],
+          # 'socket_rotation': [],
+          # 'socket_tx': [1,1.1], 
+          'socket_ty': [-0.25,0.025]  # if negative cannot be bigger than talus pos
+          # 'socket_tz': []
+      }
+      adapt_tibia_socket_parameters: False
+
+
+checkpoint_path: "/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2025-08-26/23-28-37/SavePPOJax_saved.pkl"
