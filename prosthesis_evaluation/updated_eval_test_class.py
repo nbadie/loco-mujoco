@@ -8,6 +8,8 @@ import jax.numpy as jnp
 
 import pickle
 
+import numpy as np
+
 
 import argparse
 
@@ -55,6 +57,7 @@ OmegaConf.set_struct(config, False)  # Allow modifications
 config.experiment.env_params["headless"] = True #False
 config.experiment.env_params["goal_type"] = "GoalTrajMimicv2"   # nicer looking than GoalTrajMimic
 config.experiment.env_params["add_sensors"] = True
+# config.experiment.env_params["socket_ty_slack"] = False
 
 randomization_type = config.randomization_config["randomization_type"]
 # Convert to plain dict to allow adding new keys
@@ -63,6 +66,10 @@ randomization_params = OmegaConf.to_container(config.randomization_config["rando
 # add prosthesis side to randomization params if it exists in config.experiment.env_params
 if "prosthesis_side" in config.experiment.env_params:
     randomization_params["prosthesis_side"] = config.experiment.env_params["prosthesis_side"]
+
+
+ori_ang = np.deg2rad(3)
+randomization_params['prosthesis_body_orientation_range'] = {'pylon_socket': {'z': [-ori_ang, -ori_ang]}, 'talus': {'z': [ori_ang, ori_ang]}}
 
 # randomization_params["randomize_prosthesis_body_position"] = True
 # randomization_params["prosthesis_body_position_range"] = {'pylon_socket': {'x': [0.05,0.05]}} #[-0.01,-0.01]}} 
@@ -141,6 +148,7 @@ for i in range(model.njnt):
         "forces_smooth": [],
         "forces_applied": [],
         "torques": [],
+        # "torques_unactuated": [],
         "energy_exp": [],
     }
     # Per-step data
@@ -152,6 +160,7 @@ for i in range(model.njnt):
             "forces_smooth_per_step": [],
             "forces_applied_per_step": [],
             "torques_per_step": [],
+            # "torques_unactuated_per_step": [],
             "energy_exp_per_step": [],
         })
     else:
@@ -168,6 +177,8 @@ for i in range(model.njnt):
             "forces_applied_per_step_right": [],
             "torques_per_step_left": [],
             "torques_per_step_right": [],
+            # "torques_unactuated_per_step_left": [],
+            # "torques_unactuated_per_step_right": [],
             "energy_exp_per_step_left": [],
             "energy_exp_per_step_right": [],
         })
@@ -273,6 +284,7 @@ for i in range(n_steps):
     joint_velocities = prosthesis_metrics_handler.get_joint_vels(env_state.data)
     joint_forces_constraint, joint_forces_smooth,joint_forces_applied = prosthesis_metrics_handler.get_joint_frces(env_state.data)
     joint_torques = prosthesis_metrics_handler.get_joint_trques(env_state.data)
+    # joint_torques_unactuated = prosthesis_metrics_handler.get_joint_torques_including_unactuated(env_state.data)
     joint_energy_exp = prosthesis_metrics_handler.calc_joint_energy_exp(joint_torques, joint_velocities)
     # Append all joint data to the joint_data dictionary
     for joint_name, angle in joint_angles.items():
@@ -287,6 +299,8 @@ for i in range(n_steps):
         joint_data[joint_name]["forces_applied"].append(force)
     for joint_name, torque in joint_torques.items():
         joint_data[joint_name]["torques"].append(torque)
+    # for joint_name, torque in joint_torques_unactuated.items():
+    #     joint_data[joint_name]["torques_unactuated"].append(torque)
     for joint_name, energy_exp in joint_energy_exp.items():
         joint_data[joint_name]["energy_exp"].append(energy_exp)
 

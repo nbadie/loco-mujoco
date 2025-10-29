@@ -657,14 +657,22 @@ class MimicRewardVelArm(MimicReward):
         if self._lateral_range_coeff>0.0:
             # z_pos_reward_range = 0.3
             lateral_free_pos = data.qpos[1]
-            condition = jnp.logical_and(lateral_free_pos > -self._lateral_pos_reward_range, lateral_free_pos < self._lateral_pos_reward_range)
-            lateral_pos_reward = jnp.where(condition, self._lateral_range_coeff, 0.0)
+            # jax.debug.print('lateral_free_pos: {lateral_free_pos}', lateral_free_pos = lateral_free_pos)
+
+            # give lateral_pos_reward if out of range so not between -range and +range
+            lateral_pos_reward = jnp.where(jnp.logical_or(lateral_free_pos < -self._lateral_pos_reward_range, lateral_free_pos > self._lateral_pos_reward_range), self._lateral_range_coeff, 0.0)
+            # jax.debug.print('lateral_pos_reward: {lateral_pos_reward}', lateral_pos_reward=lateral_pos_reward)
+
+            # condition = jnp.logical_and(lateral_free_pos > -self._lateral_pos_reward_range, lateral_free_pos < self._lateral_pos_reward_range)
+            # jax.debug.print('condition: {condition}', condition=condition)
+            # lateral_pos_reward = jnp.where(condition, self._lateral_range_coeff, 0.0)
+            # jax.debug.print('lateral_pos_reward: {lateral_pos_reward}', lateral_pos_reward=lateral_pos_reward)
         else: 
             lateral_pos_reward = 0.0
 
         # jax.debug.print('z_pos_reward: {total_reward}', total_reward=lateral_pos_reward)
 
-        total_reward = total_reward + total_penalities + lateral_pos_reward
+        total_reward = total_reward + total_penalities - lateral_pos_reward
 
         # jax.debug.print('total_reward - pen: {total_reward}', total_reward=total_reward)
 

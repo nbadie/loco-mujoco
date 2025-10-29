@@ -21,7 +21,7 @@ from loco_mujoco.utils.metrics import QuantityContainer
 from omegaconf import DictConfig, OmegaConf #OmegaConf is a YAML based hierarchical configuration system, with support for merging configurations from multiple sources
 
 from loco_mujoco import TaskFactory
-from loco_mujoco.algorithms import SavePPOJax
+from loco_mujoco.algorithms import PPOJax
 from loco_mujoco.utils import MetricsHandler
 from loco_mujoco import ImitationFactory
 
@@ -68,12 +68,11 @@ def experiment(config: DictConfig):
 
         # create env
         env = factory.make(domain_randomization_type=randomization_type, domain_randomization_params=randomization_params,
-                # terrain_type="RoughTerrain", terrain_params=dict(random_min_height=-0.05, random_max_height=0.05,), 
             **config.experiment.env_params, **config.experiment.task_factory.params)
 
         config.experiment.result_dir = result_dir
         # get initial agent configuration
-        agent_conf = SavePPOJax.init_agent_conf(env, config) #PPOJax.init_agent_conf(env, config)
+        agent_conf = PPOJax.init_agent_conf(env, config) #PPOJax.init_agent_conf(env, config)
         # Store serialized version on the class (before JIT)
         # SavePPOJax._serialized_agent_conf = agent_conf.serialize()
 
@@ -85,31 +84,31 @@ def experiment(config: DictConfig):
         #     pickle.dump(serialized_conf, file)
         # print(f"\nSaved conf")
 
-        save_path = SavePPOJax.save_conf(result_dir, agent_conf)
-        run.config.update({"agent_conf_save_path": save_path})
+        # save_path = PPOJax.save_conf(result_dir, agent_conf)
+        # run.config.update({"agent_conf_save_path": save_path})
         
         
         # setup metric handler (optional)
         mh = MetricsHandler(config, env) if config.experiment.validation.active else None
 
         # build training function
-        train_fn = SavePPOJax.build_train_fn(env, agent_conf, mh=mh) 
+        train_fn = PPOJax.build_train_fn(env, agent_conf, mh=mh) 
 
 
         # jit and vmap training function
-        train_fn = jax.jit(jax.vmap(train_fn, axis_name='batch')) if config.experiment.n_seeds > 1 else jax.jit(train_fn)
+        train_fn = jax.jit(jax.vmap(train_fn)) if config.experiment.n_seeds > 1 else jax.jit(train_fn)
 
         # get rng keys and run training
-        # skip_seed = 1
-        # rngs = [jax.random.PRNGKey(i) for i in range(skip_seed,config.experiment.n_seeds+1)]  # create rngs from seed
-        rngs = [jax.random.PRNGKey(i) for i in range(config.experiment.n_seeds+1)]  # create rngs from seed
+        skip_seed = 1
+        rngs = [jax.random.PRNGKey(i) for i in range(skip_seed,config.experiment.n_seeds+1)]  # create rngs from seed
+        # rngs = [jax.random.PRNGKey(i) for i in range(config.experiment.n_seeds+1)]  # create rngs from seed
         rng, _rng = rngs[0], jnp.squeeze(jnp.vstack(rngs[1:]))
         out = train_fn(_rng)
 
 
         # save agent state
         agent_state = out["agent_state"]
-        save_path = SavePPOJax.save_agent(result_dir, agent_conf, agent_state) #PPOJax.save_agent(result_dir, agent_conf, agent_state)
+        save_path = PPOJax.save_agent(result_dir, agent_conf, agent_state) #PPOJax.save_agent(result_dir, agent_conf, agent_state)
         run.config.update({"agent_save_path": save_path})
 
         print(f"CHECKPOINT_PATH:{save_path}") # To set to continue training
@@ -160,7 +159,7 @@ def experiment(config: DictConfig):
         print(f"Time taken to log metrics: {time.time() - t_start}s")
 
         # run the environment with the trained agent to record video
-        SavePPOJax.play_policy(env, agent_conf, agent_state.train_state, deterministic=True, n_steps=200, n_envs=20, record=True,
+        PPOJax.play_policy(env, agent_conf, agent_state.train_state, deterministic=True, n_steps=200, n_envs=20, record=True,
                            train_state_seed=0)
         # PPOJax.play_policy(env, agent_conf, agent_state, deterministic=True, n_steps=200, n_envs=20, record=True,
         #                    train_state_seed=0)

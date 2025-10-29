@@ -2,7 +2,8 @@
 # os.environ["CUDA_VISIBLE_DEVICES"] = "" 
 # os.environ["JAX_PLATFORMS"] = "cpu"
 import time 
-
+import matplotlib
+from scipy.ndimage import gaussian_filter1d
 
 import jax 
 import jax.numpy as jnp
@@ -15,6 +16,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from mujoco import mjx
+
+from datetime import datetime
+from matplotlib import colors as mcolors
 
 # from omegaconf import OmegaConf, DictConfig
 
@@ -32,6 +36,9 @@ from mujoco import mjx
 from loco_mujoco.utils import MetricsHandler
 import numpy as np
 import itertools
+
+import re
+import os
 
 
 
@@ -155,7 +162,6 @@ class ProsthesisMetricsHandler(): #MetricsHandler): #MetricsHandler):
             joint_torque = mjx_data.qfrc_actuator[...,dof_address]
             joint_torques[joint_name] = joint_torque
         return joint_torques
-
     
     
 
@@ -1250,7 +1256,7 @@ class PostProcessMetricsHandler():
         Returns:
             list: Lengths of valid contact segments.
         """
-        import numpy as np
+
 
         grfZ = np.array(grfZ)
         above_threshold = grfZ > threshold
@@ -2921,6 +2927,1518 @@ class PostProcessMetricsHandler():
                 plt.close()
 
 
+
+    @staticmethod
+    def plot_joint_angle_steps_and_mean(
+        joint_names_list,
+        all_loaded_data,
+        run_step_data,
+        parameter_name="angle",
+        convert_to_deg=False,
+        interp_mode="interp",
+        interp_len=100,
+        body_weight_to_normalize=1,
+        plot_baseline=False, 
+        baseline_data=None, 
+    ):
+        """
+        Plots joint angle/velocity/etc. data. For each run, it creates a separate figure 
+        showing all individual steps, the run's mean (with std), and the difference 
+        between the left and right side means.
+        """
+
+        joint_pairs = [(name + "_l", name + "_r") for name in joint_names_list]
+        color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        # We need a function to get run keys, which was missing but implied for sorting/iteration
+        def get_sorted_run_keys(data):
+            run_keys = list(data.keys())
+            # Assuming a helper function like the one in previous examples exists for sorting
+            # If not, simply use: return run_keys
+            try:
+                # Placeholder for numeric run key extraction logic if needed for sorting
+                return sorted(run_keys)
+            except:
+                 return run_keys
+        
+        # Helper function to collect steps (modified to also return steps)
+        def collect_steps(data, indices):
+            steps = []
+            if indices and len(indices) > 1:
+                for j in range(len(indices) - 1):
+                    start, end = indices[j], indices[j + 1]
+                    # Ensure data is handled correctly (e.g., if it's a 1D array or list of single values)
+                    y = [float(np.array(a).squeeze()) for a in data[start:end]]
+                    if len(y) < 2:
+                        continue
+                    if interp_mode == "interp":
+                        x_old = np.linspace(0, 1, len(y))
+                        x_new = np.linspace(0, 1, interp_len)
+                        y = np.interp(x_new, x_old, y)
+                    if convert_to_deg and parameter_name in ("angle", "velocity"):
+                        y = np.rad2deg(y)
+                    steps.append(y)
+            return steps
+
+        # Determine y-axis unit
+        if convert_to_deg and parameter_name in ('angle', 'velocity'):
+            unit = 'deg' if parameter_name == 'angle' else 'deg/s'
+        else:
+            unit = 'rad' if parameter_name == 'angle' else 'rad/s'
+
+        for left_joint, right_joint in joint_pairs:
+            
+            # --- COLLECT DATA FOR ALL RUNS ---
+            # We collect all individual steps, means, and diffs run by run first
+            all_run_data = {}
+            run_keys = get_sorted_run_keys(all_loaded_data)
+
+            for run_key in run_keys:
+                run_dict = all_loaded_data.get(run_key, {})
+                
+                # Retrieve joint data (simplified as it was verbose in original)
+                left_data = run_dict.get(f"{left_joint}_{parameter_name}", None)
+                right_data = run_dict.get(f"{right_joint}_{parameter_name}", None)
+                
+                # Check for alternative data structure (as in original function body)
+                if left_data is None or right_data is None:
+                    try:
+                        # Attempt to find data within the nested joint_data structure (like in original)
+                        evaluation_joint_names = run_dict.get("evaluation_joint_names", [])
+                        joint_data = {}
+                        for jn in evaluation_joint_names:
+                             joint_data[jn] = {p: run_dict.get(f"{jn}_{p}") for p in ["angle", "velocity", "forces_constraint", "forces_smooth","forces_applied", "torques", "energy_exp"] if run_dict.get(f"{jn}_{p}") is not None}
+                        
+                        left_data = joint_data.get(left_joint, {}).get(parameter_name, None)
+                        right_data = joint_data.get(right_joint, {}).get(parameter_name, None)
+                    except:
+                        pass # Continue if data retrieval fails
+
+                if left_data is None or right_data is None:
+                    continue
+                
+                step_indices_left = run_step_data.get(run_key, {}).get("step_start_left", [])
+                step_indices_right = run_step_data.get(run_key, {}).get("step_start_right", [])
+
+                left_steps = collect_steps(left_data, step_indices_left)
+                right_steps = collect_steps(right_data, step_indices_right)
+
+                if left_steps and right_steps:
+                    mean_left = np.mean(left_steps, axis=0) / body_weight_to_normalize
+                    std_left = np.std(left_steps, axis=0) / body_weight_to_normalize
+                    mean_right = np.mean(right_steps, axis=0) / body_weight_to_normalize
+                    std_right = np.std(right_steps, axis=0) / body_weight_to_normalize
+                    
+                    # if 'knee' in left_joint: # Apply sign switch
+                    #     mean_left, std_left = -mean_left, -std_left
+                    #     mean_right, std_right = -mean_right, -std_right
+                        
+                    diff = mean_left - mean_right # Changed to (L-R) difference for steps plot
+                    
+                    all_run_data[run_key] = {
+                        'left_steps': left_steps,
+                        'right_steps': right_steps,
+                        'mean_left': mean_left,
+                        'std_left': std_left,
+                        'mean_right': mean_right,
+                        'std_right': std_right,
+                        'diff': diff,
+                        'num_steps': len(left_steps) # Assuming left and right have equal steps
+                    }
+
+            x = np.linspace(0, 100, interp_len)
+            
+            # --- PLOT INDIVIDUAL RUNS ---
+            for run_key, data in all_run_data.items():
+                
+                fig, axes = plt.subplots(1, 2, figsize=(18, 4), sharex=True)
+                
+                num_steps = data['num_steps']
+                steps_left = data['left_steps']
+                steps_right = data['right_steps']
+                mean_left = data['mean_left']
+                std_left = data['std_left']
+                mean_right = data['mean_right']
+                std_right = data['std_right']
+                diff = data['diff']
+                
+                # --- Subplot 1: Left Side Steps and Mean ---
+                color_iter = itertools.cycle(color_cycle)
+                mean_color = next(color_iter)
+                
+                # Plot individual steps
+                for i, step in enumerate(steps_left):
+                    step_color = color_cycle[i % len(color_cycle)]
+                    axes[0].plot(x, step, color=step_color, alpha=0.3, linewidth=1, label=f"Step {i+1}" if i < 10 else None) 
+                
+                # Plot mean and std
+                axes[0].plot(x, mean_left, label=f"Mean (N={num_steps})", color='black', linestyle='-', linewidth=2)
+                axes[0].fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.9, color='gray')
+                
+                axes[0].set_title(f"{run_key} - {left_joint} (All Steps)")
+                axes[0].set_xlabel("Interpolated Step (%)")
+                axes[0].set_ylabel(f"{parameter_name} ({unit})")
+                axes[0].legend(ncol=2, title="Steps (L)", fontsize='small')
+
+
+                # --- Subplot 2: Right Side Steps and Mean ---
+                # Reset color cycle for steps in this plot for clear distinction
+                color_iter = itertools.cycle(color_cycle) 
+                
+                # Plot individual steps
+                for i, step in enumerate(steps_right):
+                    step_color = color_cycle[i % len(color_cycle)]
+                    axes[1].plot(x, step, color=step_color, alpha=0.3, linewidth=1, label=f"Step {i+1}" if i < 10 else None)
+                
+                # Plot mean and std
+                axes[1].plot(x, mean_right, label=f"Mean (N={num_steps})", color='black', linestyle='-', linewidth=2)
+                axes[1].fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.9, color='gray')
+
+                axes[1].set_title(f"{run_key} - {right_joint} (All Steps)")
+                axes[1].set_xlabel("Interpolated Step (%)")
+                axes[1].set_ylabel(f"{parameter_name} ({unit})")
+                axes[1].legend(ncol=2, title="Steps (R)", fontsize='small')
+
+
+                # # --- Subplot 3: Difference ---
+                # axes[2].plot(x, diff, label=f"{run_key} Diff (L Mean - R Mean)", color='red', linewidth=2)
+                # axes[2].axhline(0, color='gray', linestyle=':', linewidth=1)
+                
+                # axes[2].set_title(f"Difference ({left_joint} - {right_joint})")
+                # axes[2].set_xlabel("Interpolated Step (%)")
+                # axes[2].set_ylabel(f"{parameter_name} Difference ({unit})")
+                # axes[2].legend(loc='best', fontsize='small')
+                
+                # --- Finalize Figure ---
+                fig.suptitle(f"Joint Parameter Analysis for Joint: {left_joint[:-2]} | Run: {run_key}", fontsize=16)
+                plt.tight_layout(rect=[0, 0, 1, 0.96]) # Adjust for suptitle
+                plt.show()
+                plt.close()
+
+
+
+    @staticmethod
+    def plot_joint_angle_symmetry_all_runs_prosthesis_baseline(
+        joint_names_list,
+        all_loaded_data,
+        run_step_data,
+        baseline_file,
+        parameter_name="angle",
+        convert_to_deg=False,
+        interp_mode="interp",
+        interp_len=100,
+        body_weight_to_normalize=1,
+        mass_baseline = 75*10,
+    ):
+        """
+        Plot mean of right of all runs, mean of left, and the difference, side by side in one figure.
+        Only plot runs where both left and right data are available.
+        Also plot baseline data from baseline_file.
+        """
+
+        joint_pairs = [(name + "_l", name + "_r") for name in joint_names_list]
+        color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        color_iter = itertools.cycle(color_cycle)
+
+        # Load baseline data from file
+        baseline_data = {}
+        current_label = None
+        with open(baseline_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if 'Schmalz' in baseline_file:
+                    label_match = re.match(r'^([A-Z_]+)\s*=\s*\[?', line)
+                else:
+                    label_match = re.match(r'^([A-Za-z_]+)\s*=\s*\[?', line)
+                if label_match:
+                    current_label = label_match.group(1)
+                    baseline_data[current_label] = []
+                    continue
+                if current_label:
+                    vals = line.split(';')
+                    if len(vals) == 2:
+                        try:
+                            x, y = map(float, vals)
+                            baseline_data[current_label].append((x, y))
+                        except ValueError:
+                            continue
+
+        for left_joint, right_joint in joint_pairs:
+            run_keys = list(all_loaded_data.keys())
+            mean_left_all = []
+            std_left_all = []
+            mean_right_all = []
+            std_right_all = []
+            diff_all = []
+            for run_key in run_keys:
+                run_dict = all_loaded_data[run_key]
+                joint_data = {}
+                evaluation_joint_names = run_dict.get("evaluation_joint_names")
+                joint_parameters = ["angle", "velocity", "forces_constraint", "forces_smooth", "forces_applied", "torques", "energy_exp"]
+                for joint_name in evaluation_joint_names:
+                    joint_data[joint_name] = {}
+                    for key in joint_parameters:
+                        param = run_dict.get(f"{joint_name}_{key}")
+                        if param is not None:
+                            joint_data[joint_name][key] = param
+
+                step_indices_left = run_step_data[run_key]["step_start_left"]
+                step_indices_right = run_step_data[run_key]["step_start_right"]
+                left_data = joint_data.get(left_joint, {}).get(parameter_name, None)
+                right_data = joint_data.get(right_joint, {}).get(parameter_name, None)
+                if left_data is None or right_data is None:
+                    continue
+
+                def collect_steps(data, indices):
+                    steps = []
+                    if indices and len(indices) > 1:
+                        for j in range(len(indices) - 1):
+                            start, end = indices[j], indices[j + 1]
+                            y = [float(np.array(a).squeeze()) for a in data[start:end]]
+                            if len(y) < 2:
+                                continue
+                            if interp_mode == "interp":
+                                x_old = np.linspace(0, 1, len(y))
+                                x_new = np.linspace(0, 1, interp_len)
+                                y = np.interp(x_new, x_old, y)
+                            if convert_to_deg and parameter_name in ("angle", "velocity"):
+                                y = np.rad2deg(y)
+                            steps.append(y)
+                    return steps
+
+                left_steps = collect_steps(left_data, step_indices_left)
+                right_steps = collect_steps(right_data, step_indices_right)
+
+                if left_steps and right_steps:
+                    mean_left = np.mean(left_steps, axis=0) / body_weight_to_normalize
+                    std_left = np.std(left_steps, axis=0) / body_weight_to_normalize
+                    mean_right = np.mean(right_steps, axis=0) / body_weight_to_normalize
+                    std_right = np.std(right_steps, axis=0) / body_weight_to_normalize
+                    if 'knee' in left_joint:
+                        mean_left = -mean_left
+                        mean_right = -mean_right
+                        std_left = -std_left
+                        std_right = -std_right
+                    diff = np.abs(mean_left) - np.abs(mean_right)
+                    mean_left_all.append((run_key, mean_left, std_left))
+                    mean_right_all.append((run_key, mean_right, std_right))
+                    diff_all.append((run_key, diff))
+
+            x = np.linspace(0, 100, interp_len)
+            if mean_left_all or mean_right_all or diff_all:
+                fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharex=True)
+                # Plot mean of right of all runs
+                if mean_right_all:
+                    for run_key, mean_right, std_right in mean_right_all:
+                        axes[0].plot(x, mean_right, label=f"{run_key} {right_joint} mean")
+                        axes[0].fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.15)
+                    # Plot baseline data for right_joint if available
+                    for label, points in baseline_data.items():
+                        if label.lower() in right_joint.lower() and points:
+                            xs, ys = zip(*points)
+                            if 'torques' in parameter_name:
+                                ys = np.array(ys) * -1
+                            axes[0].plot(xs, ys, marker='o', linestyle='-', color='black', label=f"Baseline {label}")
+                    axes[0].set_title(f"{right_joint} mean (all runs)")
+                    axes[0].set_xlabel("Interpolated Step (%)")
+                    axes[0].set_ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
+                # Plot mean of left of all runs
+                if mean_left_all:
+                    for run_key, mean_left, std_left in mean_left_all:
+                        axes[1].plot(x, mean_left, label=f"{run_key} {left_joint} mean")
+                        axes[1].fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.15)
+                    # Plot baseline data for left_joint if available
+                    for label, points in baseline_data.items():
+                        if label.lower() in left_joint.lower() and points:
+                            xs, ys = zip(*points)
+                            if 'torques' in parameter_name:
+                                ys = np.array(ys) * -1
+                            axes[1].plot(xs, ys, marker='o', linestyle='-', color='black', label=f"Baseline {label}")
+                    axes[1].set_title(f"{left_joint} mean (all runs)")
+                    axes[1].set_xlabel("Interpolated Step (%)")
+                    axes[1].set_ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
+                # Plot difference (left - right) of all runs
+                if diff_all:
+                    for run_key, diff in diff_all:
+                        axes[2].plot(x, diff, label=f"{run_key} Diff (L-R)")
+                    axes[2].axhline(0, color='gray', linestyle=':', linewidth=1)
+                    axes[2].set_title(f"Abs {left_joint} - Abs {right_joint} difference (all runs)")
+                    axes[2].set_xlabel("Interpolated Step (%)")
+                    axes[2].set_ylabel(f"{parameter_name} difference ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
+                    axes[2].legend()
+                plt.tight_layout()
+                plt.show()
+                plt.close()
+
+
+
+
+    @staticmethod
+    def plot_joint_angle_symmetry_all_runs_prosthesis_intact_baseline(
+        joint_names_list,
+        all_loaded_data,
+        run_step_data,
+        baseline_file,
+        parameter_name="angle",
+        convert_to_deg=False,
+        interp_mode="interp",
+        interp_len=100,
+        body_weight_to_normalize=1,
+        mass_baseline = 75*10,
+    ):
+        """
+        Plot mean of right of all runs, mean of left, and the difference, side by side in one figure.
+        Only plot runs where both left and right data are available.
+        Also plot baseline data from baseline_file.
+        """
+
+        joint_pairs = [(name + "_l", name + "_r") for name in joint_names_list]
+        color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        color_iter = itertools.cycle(color_cycle)
+
+        # Load baseline data from file
+        baseline_data = {}
+        current_label = None
+        with open(baseline_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if 'Schmalz' in baseline_file:
+                    label_match = re.match(r'^([A-Z_]+)\s*=\s*\[?', line)
+                else:
+                    label_match = re.match(r'^([A-Za-z_]+)\s*=\s*\[?', line)
+                if label_match:
+                    current_label = label_match.group(1)
+                    baseline_data[current_label] = []
+                    continue
+                if current_label:
+                    vals = line.split(';')
+                    if len(vals) == 2:
+                        try:
+                            x, y = map(float, vals)
+                            baseline_data[current_label].append((x, y))
+                        except ValueError:
+                            continue
+
+        for left_joint, right_joint in joint_pairs:
+            run_keys = list(all_loaded_data.keys())
+            mean_left_all = []
+            std_left_all = []
+            mean_right_all = []
+            std_right_all = []
+            diff_all = []
+            for run_key in run_keys:
+                run_dict = all_loaded_data[run_key]
+                joint_data = {}
+                evaluation_joint_names = run_dict.get("evaluation_joint_names")
+                joint_parameters = ["angle", "velocity", "forces_constraint", "forces_smooth", "forces_applied", "torques", "energy_exp"]
+                for joint_name in evaluation_joint_names:
+                    joint_data[joint_name] = {}
+                    for key in joint_parameters:
+                        param = run_dict.get(f"{joint_name}_{key}")
+                        if param is not None:
+                            joint_data[joint_name][key] = param
+
+                step_indices_left = run_step_data[run_key]["step_start_left"]
+                step_indices_right = run_step_data[run_key]["step_start_right"]
+                left_data = joint_data.get(left_joint, {}).get(parameter_name, None)
+                right_data = joint_data.get(right_joint, {}).get(parameter_name, None)
+                if left_data is None or right_data is None:
+                    continue
+
+                def collect_steps(data, indices):
+                    steps = []
+                    if indices and len(indices) > 1:
+                        for j in range(len(indices) - 1):
+                            start, end = indices[j], indices[j + 1]
+                            y = [float(np.array(a).squeeze()) for a in data[start:end]]
+                            if len(y) < 2:
+                                continue
+                            if interp_mode == "interp":
+                                x_old = np.linspace(0, 1, len(y))
+                                x_new = np.linspace(0, 1, interp_len)
+                                y = np.interp(x_new, x_old, y)
+                            if convert_to_deg and parameter_name in ("angle", "velocity"):
+                                y = np.rad2deg(y)
+                            steps.append(y)
+                    return steps
+
+                left_steps = collect_steps(left_data, step_indices_left)
+                right_steps = collect_steps(right_data, step_indices_right)
+
+                if left_steps and right_steps:
+                    mean_left = np.mean(left_steps, axis=0) / body_weight_to_normalize
+                    std_left = np.std(left_steps, axis=0) / body_weight_to_normalize
+                    mean_right = np.mean(right_steps, axis=0) / body_weight_to_normalize
+                    std_right = np.std(right_steps, axis=0) / body_weight_to_normalize
+                    if 'knee' in left_joint:
+                        mean_left = -mean_left
+                        mean_right = -mean_right
+                        std_left = -std_left
+                        std_right = -std_right
+                    diff = np.abs(mean_left) - np.abs(mean_right)
+                    mean_left_all.append((run_key, mean_left, std_left))
+                    mean_right_all.append((run_key, mean_right, std_right))
+                    diff_all.append((run_key, diff))
+
+            x = np.linspace(0, 100, interp_len)
+            if mean_left_all or mean_right_all or diff_all:
+                fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharex=True)
+                # Plot mean of right of all runs
+                if mean_right_all:
+                    for run_key, mean_right, std_right in mean_right_all:
+                        axes[0].plot(x, mean_right, label=f"{run_key} {right_joint} mean")
+                        axes[0].fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.15)
+                    # Plot baseline data for right_joint if available
+                    for label, points in baseline_data.items():
+                        if '_' in label:
+                            label_joint = label.split('_')[0]  # e.g., 'KNEE_INT' -> 'KNEE'
+                            if label_joint.lower() in right_joint.lower() and 'intact' in label.lower() and points:
+                                xs, ys = zip(*points)
+                                if 'torques' in parameter_name:
+                                    ys = np.array(ys) * -1
+                                    if 'Banks' in baseline_file: 
+                                        ys = np.array(ys)/ mass_baseline
+                                        if not 'knee' in right_joint:
+                                            ys = np.array(ys)* -1
+                                if 'angle' in parameter_name: 
+                                    if 'Banks' in baseline_file and 'knee' in right_joint:
+                                        ys = np.array(ys)* -1
+                                axes[0].plot(xs, ys, marker='o', linestyle='-', color='black', label=f"Baseline {label}")
+                    axes[0].set_title(f"{right_joint} mean (all runs)")
+                    axes[0].set_xlabel("Interpolated Step (%)")
+                    axes[0].set_ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
+                # Plot mean of left of all runs
+                if mean_left_all:
+                    for run_key, mean_left, std_left in mean_left_all:
+                        axes[1].plot(x, mean_left, label=f"{run_key} {left_joint} mean")
+                        axes[1].fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.15)
+                    # Plot baseline data for left_joint if available
+                    for label, points in baseline_data.items():
+                        if label.lower() in left_joint.lower() and points:
+                            xs, ys = zip(*points)
+                            if 'torques' in parameter_name:
+                                ys = np.array(ys) * -1
+                                if 'Banks' in baseline_file: 
+                                    ys = np.array(ys)/ mass_baseline
+                                    if not 'knee' in right_joint:
+                                        ys = np.array(ys)* -1
+                            if 'angle' in parameter_name: 
+                                if 'Banks' in baseline_file and 'knee' in left_joint:
+                                    ys = np.array(ys)* -1
+                            axes[1].plot(xs, ys, marker='o', linestyle='-', color='black', label=f"Baseline {label}")
+                    axes[1].set_title(f"{left_joint} mean (all runs)")
+                    axes[1].set_xlabel("Interpolated Step (%)")
+                    axes[1].set_ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
+                # Plot difference (left - right) of all runs
+                if diff_all:
+                    for run_key, diff in diff_all:
+                        axes[2].plot(x, diff, label=f"{run_key} Diff (L-R)")
+                    axes[2].axhline(0, color='gray', linestyle=':', linewidth=1)
+                    axes[2].set_title(f"Abs {left_joint} - Abs {right_joint} difference (all runs)")
+                    axes[2].set_xlabel("Interpolated Step (%)")
+                    axes[2].set_ylabel(f"{parameter_name} difference ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
+                    axes[2].legend()
+                plt.tight_layout()
+                plt.show()
+                plt.close()
+
+
+
+
+
+    @staticmethod 
+    def plot_joint_angle_symmetry_all_runs_prosthesis_intact_baseline_comp(
+        joint_names_list,
+        all_loaded_data,
+        run_step_data,
+        baseline_file,
+        baseline_file_2,
+        baseline_data_3 = 'None',
+        parameter_name="angle",
+        convert_to_deg=False,
+        interp_mode="interp",
+        interp_len=100,
+        body_weight_to_normalize=1,
+        mass_baseline = 75*10,
+        mass_baseline_2 = 75*10,
+    ):
+        """
+        Plot mean of right of all runs, mean of left, and the difference, side by side in one figure.
+        Only plot runs where both left and right data are available.
+        Also plot baseline data from baseline_file.
+        """
+
+        joint_pairs = [(name + "_l", name + "_r") for name in joint_names_list]
+        color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        color_iter = itertools.cycle(color_cycle)
+
+        # Load baseline data from file
+        baseline_data = {}
+        current_label = None
+        baseline_data_2 = {}
+        with open(baseline_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if 'Schmalz' in baseline_file:
+                    label_match = re.match(r'^([A-Z_]+)\s*=\s*\[?', line)
+                else:
+                    label_match = re.match(r'^([A-Za-z_]+)\s*=\s*\[?', line)
+                if label_match:
+                    current_label = label_match.group(1)
+                    baseline_data[current_label] = []
+                    continue
+                if current_label:
+                    vals = line.split(';')
+                    if len(vals) == 2:
+                        try:
+                            x, y = map(float, vals)
+                            baseline_data[current_label].append((x, y))
+                        except ValueError:
+                            continue
+
+        with open(baseline_file_2, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if 'Schmalz' in baseline_file_2:
+                    label_match = re.match(r'^([A-Z_]+)\s*=\s*\[?', line)
+                else:
+                    label_match = re.match(r'^([A-Za-z_]+)\s*=\s*\[?', line)
+                if label_match:
+                    current_label = label_match.group(1)
+                    baseline_data_2[current_label] = []
+                    continue
+                if current_label:
+                    vals = line.split(';')
+                    if len(vals) == 2:
+                        try:
+                            x, y = map(float, vals)
+                            baseline_data_2[current_label].append((x, y))
+                        except ValueError:
+                            continue
+
+        for left_joint, right_joint in joint_pairs:
+            run_keys = list(all_loaded_data.keys())
+            mean_left_all = []
+            std_left_all = []
+            mean_right_all = []
+            std_right_all = []
+            diff_all = []
+            for run_key in run_keys:
+                run_dict = all_loaded_data[run_key]
+                joint_data = {}
+                evaluation_joint_names = run_dict.get("evaluation_joint_names")
+                joint_parameters = ["angle", "velocity", "forces_constraint", "forces_smooth", "forces_applied", "torques", "energy_exp"]
+                for joint_name in evaluation_joint_names:
+                    joint_data[joint_name] = {}
+                    for key in joint_parameters:
+                        param = run_dict.get(f"{joint_name}_{key}")
+                        if param is not None:
+                            joint_data[joint_name][key] = param
+
+                step_indices_left = run_step_data[run_key]["step_start_left"]
+                step_indices_right = run_step_data[run_key]["step_start_right"]
+                left_data = joint_data.get(left_joint, {}).get(parameter_name, None)
+                right_data = joint_data.get(right_joint, {}).get(parameter_name, None)
+                if left_data is None or right_data is None:
+                    continue
+
+                def collect_steps(data, indices):
+                    steps = []
+                    if indices and len(indices) > 1:
+                        for j in range(len(indices) - 1):
+                            start, end = indices[j], indices[j + 1]
+                            y = [float(np.array(a).squeeze()) for a in data[start:end]]
+                            if len(y) < 2:
+                                continue
+                            if interp_mode == "interp":
+                                x_old = np.linspace(0, 1, len(y))
+                                x_new = np.linspace(0, 1, interp_len)
+                                y = np.interp(x_new, x_old, y)
+                            if convert_to_deg and parameter_name in ("angle", "velocity"):
+                                y = np.rad2deg(y)
+                            steps.append(y)
+                    return steps
+
+                left_steps = collect_steps(left_data, step_indices_left)
+                right_steps = collect_steps(right_data, step_indices_right)
+
+                if left_steps and right_steps:
+                    mean_left = np.mean(left_steps, axis=0) / body_weight_to_normalize
+                    std_left = np.std(left_steps, axis=0) / body_weight_to_normalize
+                    mean_right = np.mean(right_steps, axis=0) / body_weight_to_normalize
+                    std_right = np.std(right_steps, axis=0) / body_weight_to_normalize
+                    if 'knee' in left_joint:
+                        mean_left = -mean_left
+                        mean_right = -mean_right
+                        std_left = -std_left
+                        std_right = -std_right
+                    diff = np.abs(mean_left) - np.abs(mean_right)
+                    mean_left_all.append((run_key, mean_left, std_left))
+                    mean_right_all.append((run_key, mean_right, std_right))
+                    diff_all.append((run_key, diff))
+
+            x = np.linspace(0, 100, interp_len)
+            if mean_left_all or mean_right_all or diff_all:
+                fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharex=True)
+                # Plot mean of right of all runs
+                if mean_right_all:
+                    for run_key, mean_right, std_right in mean_right_all:
+                        axes[0].plot(x, mean_right, label=f"{run_key}")
+                        axes[0].fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.15)
+                    # Plot baseline data for right_joint if available
+                    for label, points in baseline_data.items():
+                        if '_' in label:
+                            label_joint = label.split('_')[0]  # e.g., 'KNEE_INT' -> 'KNEE'
+                            if label_joint.lower() in right_joint.lower() and 'intact' in label.lower() and points:
+                                xs, ys = zip(*points)
+                                if 'torques' in parameter_name:
+                                    ys = np.array(ys) * -1
+                                    if 'Banks' in baseline_file: 
+                                        ys = np.array(ys)/ mass_baseline
+                                        if not 'knee' in right_joint:
+                                            ys = np.array(ys)* -1
+                                if 'angle' in parameter_name: 
+                                    if 'Banks' in baseline_file and 'knee' in right_joint:
+                                        ys = np.array(ys)* -1
+                                if 'Turcot' in baseline_file: 
+                                    baseline_label = 'Turcot et al.'
+                                elif 'Banks' in baseline_file:
+                                    baseline_label = 'Banks et al.'
+                                axes[0].plot(xs, ys, marker='o', linestyle='-', color='black', label=f"Baseline {baseline_label}")
+                    if parameter_name in ["angle", "velocity"] and baseline_data_3 is not None:
+                        if right_joint in baseline_data_3 and parameter_name in baseline_data_3[right_joint]:#if np.any(baseline_data[right_joint][parameter_name]):
+                            if 'knee' in right_joint: # Switch sign (-1) for knee sensors to match flexion/extension convention
+                                axes[0].plot(x, -baseline_data_3[right_joint][parameter_name], label=f"Baseline Healthy", color='grey')
+                            else:
+                                axes[0].plot(x, baseline_data_3[right_joint][parameter_name], label=f"Baseline Healthy", color='grey')
+                    axes[0].set_title(f"{right_joint} mean (all runs)")
+                    axes[0].set_xlabel("Interpolated Step (%)")
+                    axes[0].set_ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
+                    axes[0].legend()
+                # Plot mean of left of all runs
+                if mean_left_all:
+                    for run_key, mean_left, std_left in mean_left_all:
+                        axes[1].plot(x, mean_left, label=f"{run_key}")
+                        axes[1].fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.15)
+                    # Plot baseline data for left_joint if available
+                    for label, points in baseline_data.items():
+                        if label.lower() in left_joint.lower() and points:
+                            xs, ys = zip(*points)
+                            if 'torques' in parameter_name:
+                                ys = np.array(ys) * -1
+                                if 'Banks' in baseline_file: 
+                                    ys = np.array(ys)/ mass_baseline
+                                    if not 'knee' in right_joint:
+                                        ys = np.array(ys)* -1
+                            if 'angle' in parameter_name: 
+                                if 'Banks' in baseline_file and 'knee' in left_joint:
+                                    ys = np.array(ys)* -1
+                            if 'Turcot' in baseline_file: 
+                                baseline_label = 'Turcot et al.'
+                            elif 'Banks' in baseline_file:
+                                baseline_label = 'Banks et al.'
+                            axes[1].plot(xs, ys, marker='o', linestyle='-', color='black', label=f"Baseline {baseline_label}")
+
+                    for label, points in baseline_data_2.items():
+                        if label.lower() in left_joint.lower() and points:
+                            xs, ys = zip(*points)
+                            if 'torques' in parameter_name:
+                                ys = np.array(ys) * -1
+                                if 'Banks' in baseline_file_2: 
+                                    ys = np.array(ys)/ mass_baseline_2
+                                    if not 'knee' in right_joint:
+                                        ys = np.array(ys)* -1
+                            if 'angle' in parameter_name: 
+                                if 'Banks' in baseline_file_2 and 'knee' in left_joint:
+                                    ys = np.array(ys)* -1
+                            if 'Turcot' in baseline_file_2: 
+                                baseline_label = 'Turcot et al.'
+                            elif 'Banks' in baseline_file_2:
+                                baseline_label = 'Banks et al.'
+                            axes[1].plot(xs, ys, marker='o', linestyle='-', color='grey', label=f"Baseline {baseline_label}")
+
+
+                    if parameter_name in ["angle", "velocity"] and baseline_data_3 is not None:
+                        if right_joint in baseline_data_3 and parameter_name in baseline_data_3[right_joint]:#if np.any(baseline_data[right_joint][parameter_name]):
+                            if 'knee' in right_joint: # Switch sign (-1) for knee sensors to match flexion/extension convention
+                                axes[1].plot(x, -baseline_data_3[right_joint][parameter_name], label=f"Baseline Healthy", color='grey')
+                            else:
+                                axes[1].plot(x, baseline_data_3[right_joint][parameter_name], label=f"Baseline Healthy", color='grey')
+
+                    axes[1].set_title(f"{left_joint} mean (all runs)")
+                    axes[1].set_xlabel("Interpolated Step (%)")
+                    axes[1].set_ylabel(f"{parameter_name} ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
+                    axes[1].legend()
+                # Plot difference (left - right) of all runs
+                if diff_all:
+                    for run_key, diff in diff_all:
+                        axes[2].plot(x, diff, label=f"{run_key} Diff (L-R)")
+                    axes[2].axhline(0, color='gray', linestyle=':', linewidth=1)
+                    axes[2].set_title(f"Abs {left_joint} - Abs {right_joint} difference (all runs)")
+                    axes[2].set_xlabel("Interpolated Step (%)")
+                    axes[2].set_ylabel(f"{parameter_name} difference ({'deg' if convert_to_deg and parameter_name in ('angle', 'velocity') else 'rad'})")
+                    axes[2].legend()
+                plt.tight_layout()
+                plt.show()
+                plt.close()
+
+
+
+
+    @staticmethod
+    def _load_baseline_file(baseline_file):
+        """Loads data points from text files."""
+        baseline_data = {}
+        current_label = None
+        with open(baseline_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line: continue
+                # Use regex to handle various label formats
+                label_match = re.match(r'^([A-Z_]+)\s*=\s*\[?', line) or re.match(r'^([A-Za-z_]+)\s*=\s*\[?', line)
+                if label_match:
+                    current_label = label_match.group(1)
+                    baseline_data[current_label] = []
+                    continue
+                if current_label and '[' not in line and ']' not in line: # Avoid processing bracket lines as data
+                    vals = line.split(';')
+                    if len(vals) == 2:
+                        try:
+                            x, y = map(float, vals)
+                            baseline_data[current_label].append((x, y))
+                        except ValueError: continue
+        return baseline_data
+
+
+    @staticmethod
+    def plot_joint_angle_symmetry_all_runs_prosthesis_intact_baseline_comp_helper(
+        joint_names_list,
+        all_loaded_data,
+        run_step_data,
+        baseline_file,
+        baseline_file_2,
+        baseline_data_3='None',
+        parameter_name="angle",
+        convert_to_deg=False,
+        interp_mode="interp",
+        interp_len=100,
+        body_weight_to_normalize=1,
+        mass_baseline=75*10,
+        mass_baseline_2=75*10,
+        adjust_talus_offset=False,
+    ):
+        """
+        Processes and aggregates mean curves for all runs and all baselines.
+        """
+        
+        # --- 1. Load Baseline Files (Baseline 1 and 2) ---
+        baseline_data_1 = PostProcessMetricsHandler._load_baseline_file(baseline_file)
+        baseline_data_2 = PostProcessMetricsHandler._load_baseline_file(baseline_file_2)
+        
+        joint_pairs = [(name + "_l", name + "_r") for name in joint_names_list]
+        aggregated_mean_data = {} 
+
+        # Define collect_steps helper function (for run data)
+        def collect_steps(data, indices):
+            steps = []
+            if indices and len(indices) > 1:
+                for j in range(len(indices) - 1):
+                    start, end = indices[j], indices[j + 1]
+                    y = [float(np.array(a).squeeze()) for a in data[start:end]]
+                    if len(y) < 2: continue
+                    if interp_mode == "interp":
+                        x_old = np.linspace(0, 1, len(y)); x_new = np.linspace(0, 1, interp_len)
+                        y = np.interp(x_new, x_old, y)
+                    if convert_to_deg and parameter_name in ("angle", "velocity"):
+                        y = np.rad2deg(y)
+                    steps.append(y)
+            return steps
+
+        for left_joint, right_joint in joint_pairs:
+            # joint_base_name is e.g. 'hip_flexion'
+            joint_base_name = left_joint.rsplit('_', 1)[0]
+            if joint_base_name not in aggregated_mean_data:
+                aggregated_mean_data[joint_base_name] = {}
+            
+            # --- 2. Process Runs (Existing Logic) ---
+            run_keys = list(all_loaded_data.keys())
+            for run_key in run_keys:
+                # ... (Run data extraction logic as provided in the prompt) ...
+                run_dict = all_loaded_data[run_key]
+                joint_data = {}
+                evaluation_joint_names = run_dict.get("evaluation_joint_names", [])
+                joint_parameters = ["angle", "velocity", "forces_constraint", "forces_smooth", "forces_applied", "torques", "energy_exp"]
+                for joint_name in evaluation_joint_names:
+                    joint_data[joint_name] = {key: run_dict.get(f"{joint_name}_{key}") 
+                                              for key in joint_parameters if run_dict.get(f"{joint_name}_{key}") is not None}
+
+                step_indices_left = run_step_data.get(run_key, {}).get("step_start_left", [])
+                step_indices_right = run_step_data.get(run_key, {}).get("step_start_right", [])
+                left_data = joint_data.get(left_joint, {}).get(parameter_name, None)
+                right_data = joint_data.get(right_joint, {}).get(parameter_name, None)
+                if left_data is None or right_data is None: continue
+                
+                left_steps = collect_steps(left_data, step_indices_left)
+                right_steps = collect_steps(right_data, step_indices_right)
+
+                if left_steps and right_steps:
+                    mean_left = np.mean(left_steps, axis=0) / body_weight_to_normalize
+                    mean_right = np.mean(right_steps, axis=0) / body_weight_to_normalize
+                    
+                    if 'knee' in joint_base_name:
+                        mean_left, mean_right = -mean_left, -mean_right
+                    if 'ankle' in joint_base_name and adjust_talus_offset: 
+                        if 'deg' in run_key: 
+                            # Look for offset in the run_key, e.g., '-5deg' or '5deg'
+                            match = re.search(r'(-?\d+)\s*deg', run_key)
+                            if match:
+                                offset = float(match.group(1))
+                                mean_left -= offset
+                                # mean_right += offset
+                    # Store mean curves for features 
+                    aggregated_mean_data[joint_base_name][run_key] = {
+                        'mean_l': mean_left, 
+                        'mean_r': mean_right,
+                        # ... (std, steps, diff data can remain here if needed elsewhere)
+                    }
+
+            for i, (b_data, b_label, b_mass, b_file) in enumerate(zip(
+                [baseline_data_1, baseline_data_2], 
+                ['Baseline_1', 'Baseline_2'], 
+                [mass_baseline, mass_baseline_2],
+                [baseline_file, baseline_file_2])):
+                
+                if 'Banks' in b_file: 
+                    baseline_key = 'Banks' #b_label
+                elif 'Turcot' in b_file:
+                    baseline_key = 'Turcot' #b_label
+                
+                # Default to zero array if data is missing, which is safe for plotting/extraction
+                zero_curve = np.zeros(interp_len)
+                mean_curve_l = zero_curve
+                mean_curve_r = zero_curve
+                data_found = False
+
+                # ⚠️ CORRECTED LABEL SEARCH: Use only the simplified base joint name
+                simple_joint_name = joint_base_name.split('_')[0].upper() # e.g., 'HIP' from 'hip_flexion'
+
+                # --- Search for Intact and Non-Intact labels ---
+                # Search for label containing the simple joint name AND '_INTACT'
+                label_intact = next((label for label in b_data 
+                                     if simple_joint_name in label.upper() and '_INTACT' in label.upper() and b_data[label]), None)
+                
+                # Search for label containing the simple joint name BUT NOT '_INTACT' (the generic curve)
+                label_non_intact = next((label for label in b_data 
+                                         if simple_joint_name in label.upper() and '_INTACT' not in label.upper() and b_data[label]), None)
+                
+                # --- Baseline 1: Intact (Right) and Non-Intact (Left) ---
+                if baseline_key == 'Banks':
+                    
+                    # 1. Process Intact (Maps to Right side)
+                    if label_intact:
+                        xs, ys = zip(*b_data[label_intact])
+                        x_new = np.linspace(0, 100, interp_len)
+                        mean_curve_r = np.interp(x_new, xs, ys)
+                        data_found = True
+                    
+                    # 2. Process Non-Intact (Maps to Left side)
+                    if label_non_intact:
+                        xs, ys = zip(*b_data[label_non_intact])
+                        x_new = np.linspace(0, 100, interp_len)
+                        mean_curve_l = np.interp(x_new, xs, ys)
+                        data_found = True
+
+                    # Fallback: If only the Intact curve is found, assume symmetry for BL1
+                    if data_found and not label_non_intact and label_intact:
+                        mean_curve_l = mean_curve_r
+                        
+                # --- Baseline 2: Only Left Side Data Available ---
+                elif baseline_key == 'Turcot':
+                    # For BL2, use the most relevant curve found and map it to Left
+                    target_label = None
+                    if label_non_intact:
+                        target_label = label_non_intact
+                    elif label_intact:
+                        target_label = label_intact
+                        
+                    if target_label:
+                        xs, ys = zip(*b_data[target_label])
+                        x_new = np.linspace(0, 100, interp_len)
+                        mean_curve_l = np.interp(x_new, xs, ys)
+                        # mean_curve_r remains zero_curve as requested
+                        data_found = True
+
+
+                # --- Apply Normalization and Sign Corrections (Applied to the resulting curves) ---
+                if data_found:
+                    
+                    # --- Normalization and Sign Switch for Torques/Angles (must be applied to L and R) ---
+                    for side_curve in [mean_curve_l, mean_curve_r]:
+                        if side_curve is not zero_curve: # Only apply to curves that actually have data
+                            if 'torques' in parameter_name.lower(): 
+                                side_curve *= -1
+                                if 'Banks' in b_file: side_curve /= b_mass
+                                if 'Banks' in b_file and 'knee' not in joint_base_name: side_curve *= -1
+
+                            if 'angle' in parameter_name.lower() and 'Banks' in b_file and 'knee' in joint_base_name:
+                                side_curve *= -1
+                            
+                    # --- Store the results ---
+                    aggregated_mean_data[joint_base_name][baseline_key] = {
+                        'mean_l': mean_curve_l, 
+                        'mean_r': mean_curve_r,
+                    }
+
+            # --- 4. Process Baseline 3 (Curve Array Data - CORRECTED) ---
+            # Correct SyntaxWarning: use != 'None' for string comparison
+            if baseline_data_3 is not None and baseline_data_3 != 'None':
+                baseline_key = 'Baseline_Healthy'
+                
+                # Keys are the full joint name with side suffix (e.g., 'hip_flexion_l')
+                l_key = left_joint
+                r_key = right_joint
+                
+                # Check for existence and then retrieve the array
+                mean_curve_l = baseline_data_3.get(l_key, {}).get(parameter_name, None)
+                mean_curve_r = baseline_data_3.get(r_key, {}).get(parameter_name, None)
+                
+                if mean_curve_r is not None or mean_curve_l is not None:
+                    
+                    # Fallback: Use R curve for L if L is missing (common for healthy baselines)
+                    if mean_curve_r is not None and mean_curve_l is None:
+                        mean_curve_l = mean_curve_r
+                    
+                    # Ensure mean curve length is interpolated to interp_len if needed
+                    # Note: Need to handle the case where the curve might not be a NumPy array yet
+                    mean_curves = []
+                    for side_curve in [mean_curve_l, mean_curve_r]:
+                        if side_curve is not None:
+                             side_curve = np.array(side_curve).squeeze()
+                             if len(side_curve) != interp_len:
+                                x_new = np.linspace(0, 1, interp_len)
+                                x_old = np.linspace(0, 1, len(side_curve))
+                                side_curve = np.interp(x_new, x_old, side_curve)
+                        mean_curves.append(side_curve)
+                    mean_curve_l, mean_curve_r = mean_curves[0], mean_curves[1]
+                    
+                    # Apply knee sign correction (as shown in the plotting snippet)
+                    if 'knee' in joint_base_name:
+                         if mean_curve_l is not None: mean_curve_l = -mean_curve_l
+                         if mean_curve_r is not None: mean_curve_r = -mean_curve_r
+                
+                    # Store the data (only if at least one side was found/derived)
+                    if mean_curve_l is not None or mean_curve_r is not None:
+                        aggregated_mean_data[joint_base_name][baseline_key] = {
+                            'mean_l': mean_curve_l, 
+                            'mean_r': mean_curve_r,
+                        }
+
+        # The function logic for the original curve plotting goes here (omitted for brevity)
+        
+        return aggregated_mean_data
+    
+    # ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
+
+    # @staticmethod
+    # def extract_gait_parameters(processed_data, interp_len=100):
+    #     """
+    #     Extracts specific kinematic features (max/min/timing) for Hip, Knee, and Ankle 
+    #     from the processed mean joint angle data.
+    #     """
+    #     gait_features = {}
+    #     time_x = np.linspace(0, 100, interp_len)
+
+    #     for joint_name, run_data in processed_data.items():
+    #         gait_features[joint_name] = {}
+
+    #         for run_key, data in run_data.items():
+    #             gait_features[joint_name][run_key] = {}
+
+    #             for side in ['l', 'r']:
+    #                 mean_curve = data[f'mean_{side}']
+    #                 features = {}
+
+    #                 if 'hip' in joint_name.lower():
+    #                     # Hip: Timing and value of maximum
+    #                     max_val = np.max(mean_curve)
+    #                     max_idx = np.argmax(mean_curve)
+    #                     features['max_val'] = max_val
+    #                     features['t_max'] = time_x[max_idx]
+
+    #                 elif 'knee' in joint_name.lower():
+    #                     # Knee: Maximum in first 40% and its time, Minimum, Maximum value in second part and timing
+    #                     split_idx = int(0.40 * interp_len) # 40% of step cycle
+                        
+    #                     # Max in first 40%
+    #                     max1_val = np.max(mean_curve[:split_idx])
+    #                     max1_idx = np.argmax(mean_curve[:split_idx])
+    #                     features['max1_val'] = max1_val
+    #                     features['t_max1'] = time_x[max1_idx]
+
+    #                     # Global Minimum
+    #                     min_val = np.min(mean_curve)
+    #                     min_idx = np.argmin(mean_curve)
+    #                     features['min_val'] = min_val
+    #                     features['t_min'] = time_x[min_idx]
+
+    #                     # Max in second part (40% to 100%)
+    #                     max2_val = np.max(mean_curve[split_idx:])
+    #                     max2_idx = np.argmax(mean_curve[split_idx:]) + split_idx
+    #                     features['max2_val'] = max2_val
+    #                     features['t_max2'] = time_x[max2_idx]
+                        
+    #                 elif 'ankle' in joint_name.lower():
+    #                     # Ankle: Time and value of maximum, time and value of minimum
+    #                     max_val = np.max(mean_curve)
+    #                     max_idx = np.argmax(mean_curve)
+    #                     min_val = np.min(mean_curve)
+    #                     min_idx = np.argmin(mean_curve)
+                        
+    #                     features['max_val'] = max_val
+    #                     features['t_max'] = time_x[max_idx]
+    #                     features['min_val'] = min_val
+    #                     features['t_min'] = time_x[min_idx]
+
+    #                 gait_features[joint_name][run_key][side] = features
+    #     return gait_features
+
+    # # ----------------------------------------------------------------------
+    # # ----------------------------------------------------------------------
+
+    # @staticmethod
+    # def plot_gait_parameter_bars(gait_features, parameter_name):
+    #     """
+    #     Generates bar plots for each extracted kinematic feature, comparing runs.
+
+    #     ADAPTED: Correctly maps simplified joint names ('hip', 'knee', 'ankle') 
+    #     to the full keys in gait_features ('hip_flexion', 'knee_angle', etc.).
+    #     """
+    #     feature_names = {
+    #         'hip': [('max_val', 'Max. Value'), ('t_max', 'Time to Max. (%)')],
+    #         'knee': [('max1_val', 'Max. Value (0-40%)'), ('t_max1', 'Time to Max. 1 (%)'),
+    #                  ('min_val', 'Min. Value'), ('t_min', 'Time to Min. (%)'),
+    #                  ('max2_val', 'Max. Value (40-100%)'), ('t_max2', 'Time to Max. 2 (%)')],
+    #         'ankle': [('max_val', 'Max. Value'), ('t_max', 'Time to Max. (%)'),
+    #                   ('min_val', 'Min. Value'), ('t_min', 'Time to Min. (%)')]
+    #     }
+
+    #     # Iterate over the defined simplified joint names (hip, knee, ankle)
+    #     for joint_base_name, feature_list in feature_names.items():
+            
+    #         # --- FIX: Find the actual full key in gait_features ---
+    #         # Search gait_features keys for the one containing the simplified base name
+    #         # e.g., Find 'hip_flexion' from 'hip'
+    #         full_joint_key = None
+    #         for key in gait_features.keys():
+    #             if joint_base_name in key:
+    #                 full_joint_key = key
+    #                 break
+            
+    #         # If no matching joint data is found (e.g., 'hip' data wasn't extracted), skip.
+    #         if full_joint_key is None:
+    #             continue
+
+    #         # Plot each specific feature (e.g., Hip Max Value, Hip T_Max)
+    #         for feature_key, feature_label in feature_list:
+                
+    #             # --- Prepare data for a single bar plot (e.g., Hip Max Value) ---
+    #             # Use the now-found 'full_joint_key'
+    #             run_keys = list(gait_features[full_joint_key].keys())
+    #             num_runs = len(run_keys)
+                
+    #             # Collect data for left and right bars
+    #             left_values = [gait_features[full_joint_key][rk]['l'].get(feature_key, 0) for rk in run_keys]
+    #             right_values = [gait_features[full_joint_key][rk]['r'].get(feature_key, 0) for rk in run_keys]
+
+    #             # --- Plotting ---
+    #             x = np.arange(num_runs)
+    #             width = 0.35  # Width of the bars
+
+    #             fig, ax = plt.subplots(figsize=(10, 6))
+
+    #             # Plot Left Side
+    #             rects1 = ax.bar(x - width/2, left_values, width, label='Left Side', color='tab:blue')
+    #             # Plot Right Side
+    #             rects2 = ax.bar(x + width/2, right_values, width, label='Right Side', color='tab:red')
+
+    #             # --- Formatting ---
+    #             # Determine Y-label based on feature type
+    #             y_label = feature_label.split('(')[0].strip() 
+    #             if 'Time' in feature_label:
+    #                  y_unit = '(%)'
+    #             elif 'Value' in feature_label:
+    #                  # Check if original parameter was angle/velocity for unit clarity
+    #                  if 'angle' in parameter_name.lower() or 'velocity' in parameter_name.lower():
+    #                      y_unit = f"({parameter_name.split('_')[0]} {'(deg)' if 'angle' in parameter_name.lower() else 'unit'})"
+    #                  else:
+    #                       y_unit = f"({parameter_name} unit)"
+    #             else:
+    #                 y_unit = ''
+
+    #             ax.set_ylabel(f'{y_label} {y_unit}')
+    #             ax.set_title(f'{full_joint_key.replace("_", " ").title()} Kinematic Feature: {feature_label}')
+    #             ax.set_xticks(x)
+    #             ax.set_xticklabels(run_keys, rotation=45, ha="right")
+    #             ax.legend()
+    #             ax.grid(axis='y', linestyle='--', alpha=0.7)
+    #             plt.tight_layout()
+    #             plt.show()
+    #             plt.close()
+
+    
+
+    @staticmethod
+    def _calculate_joint_features(joint_base_name, mean_curve, time_x, interp_len):
+        """Internal helper to calculate features for a single mean curve (retained)."""
+        features = {}
+
+        if 'hip' in joint_base_name.lower():
+            # Hip: Timing and value of maximum
+            min_val = np.min(mean_curve); min_idx = np.argmin(mean_curve)
+            features['min_val'] = min_val; features['t_min'] = time_x[min_idx]
+
+        elif 'knee' in joint_base_name.lower():
+            # Knee features
+            split_idx = int(0.40 * interp_len)
+            max1_val = np.max(mean_curve[:split_idx]); max1_idx = np.argmax(mean_curve[:split_idx])
+            features['max1_val'] = max1_val; features['t_max1'] = time_x[max1_idx]
+            min_val = np.min(mean_curve); min_idx = np.argmin(mean_curve)
+            features['min_val'] = min_val; features['t_min'] = time_x[min_idx]
+            max2_val = np.max(mean_curve[split_idx:]); max2_idx = np.argmax(mean_curve[split_idx:]) + split_idx
+            features['max2_val'] = max2_val; features['t_max2'] = time_x[max2_idx]
+            
+        elif 'ankle' in joint_base_name.lower():
+            # Ankle features
+            max_val = np.max(mean_curve); max_idx = np.argmax(mean_curve)
+            min_val = np.min(mean_curve); min_idx = np.argmin(mean_curve)
+            features['max_val'] = max_val; features['t_max'] = time_x[max_idx]
+            features['min_val'] = min_val; features['t_min'] = time_x[min_idx]
+
+        return features
+
+    @staticmethod
+    def extract_gait_parameters(processed_data, parameter_name, interp_len=100):
+        """
+        Extracts kinematic features from ALL aggregated mean data (runs and baselines).
+        """
+        gait_features = {}
+        time_x = np.linspace(0, 100, interp_len)
+        
+        # Process all entries (Runs, Baseline_1, Baseline_2, Baseline_Healthy)
+        for joint_full_name, joint_data in processed_data.items():
+            gait_features[joint_full_name] = {}
+            joint_base_name = joint_full_name.split('_')[0] # e.g., 'hip'
+            
+            for run_key, data in joint_data.items():
+                gait_features[joint_full_name][run_key] = {}
+
+                for side in ['l', 'r']:
+                    mean_curve = data.get(f'mean_{side}')
+                    
+                    # Handle cases where a specific baseline side might be None (e.g., if data was missing)
+                    if mean_curve is None or len(mean_curve) == 0:
+                        # Use NaN for numerical results to indicate missing data
+                        features = {'max_val': np.nan, 't_max': np.nan, 'min_val': np.nan, 't_min': np.nan, 
+                                    'max1_val': np.nan, 't_max1': np.nan, 'max2_val': np.nan, 't_max2': np.nan}
+                    else:
+                        features = PostProcessMetricsHandler._calculate_joint_features(
+                            joint_base_name, mean_curve, time_x, interp_len
+                        )
+                    gait_features[joint_full_name][run_key][side] = features
+                    
+        return gait_features
+
+
+
+    @staticmethod
+    def plot_gait_parameter_bars(gait_features, parameter_name):
+        """
+        Generates bar plots for each extracted kinematic feature, comparing all runs 
+        and all three baselines (Banks, Turcot, Baseline_Healthy).
+        """
+        feature_names = {
+            'hip': [('min_val', 'Min. Value'), ('t_min', 'Time to Min. (%)')],
+            'knee': [('max1_val', 'Max. Value (0-40%)'), ('t_max1', 'Time to Max. 1 (%)'),
+                    ('min_val', 'Min. Value'), ('t_min', 'Time to Min. (%)'),
+                    ('max2_val', 'Max. Value (40-100%)'), ('t_max2', 'Time to Max. 2 (%)')],
+            'ankle': [('max_val', 'Max. Value'), ('t_max', 'Time to Max. (%)'),
+                    ('min_val', 'Min. Value'), ('t_min', 'Time to Min. (%)')]
+        }
+        
+        # Define unique colors and hatching for runs vs. baselines
+        RUN_COLOR_L, RUN_COLOR_R = 'tab:blue', 'tab:red'
+        # ⚠️ BL_COLOR_MAP is correctly defined with the new keys
+        BL_COLOR_MAP = {
+            'Banks': ('darkgreen', 'green'),
+            'Turcot': ('darkmagenta', 'purple'),
+            'Baseline_Healthy': ('saddlebrown', 'gold'), 
+        }
+        BL_HATCH = '///' # Hatch pattern for all baselines
+        
+        # Define the list of expected baseline keys for easy filtering/sorting
+        BASELINE_NAMES = list(BL_COLOR_MAP.keys())
+
+        for joint_base_name, feature_list in feature_names.items():
+            
+            full_joint_key = next((key for key in gait_features.keys() if joint_base_name in key), None)
+            if full_joint_key is None: continue
+
+            for feature_key, feature_label in feature_list:
+                
+                all_keys = list(gait_features[full_joint_key].keys())
+                
+                # ⚠️ CORRECTED BASELINE KEY SEPARATION
+                # Identify runs: keys not in the BASELINE_NAMES list
+                run_keys = [k for k in all_keys if k not in BASELINE_NAMES]
+                
+                # Identify baselines: keys that ARE in the BASELINE_NAMES list
+                baseline_keys = [k for k in all_keys if k in BASELINE_NAMES]
+                
+                # Sort baselines by a predefined order for consistency (Banks, Turcot, Healthy)
+                baseline_keys_sorted = sorted(baseline_keys, key=lambda k: BASELINE_NAMES.index(k))
+                
+                # Final plotting order
+                plotting_keys = run_keys + baseline_keys_sorted
+                num_groups = len(plotting_keys)
+                
+                # --- Plotting Setup ---
+                x = np.arange(num_groups)
+                width = 0.35
+
+                fig, ax = plt.subplots(figsize=(12, 6))
+                
+                # Dictionary to store unique handles/labels for the final legend
+                legend_handles_map = {}
+
+                # Iterate through all keys to plot
+                for i, key in enumerate(plotting_keys):
+                    data = gait_features[full_joint_key][key]
+                    x_pos = x[i]
+                    
+                    # Get the value, using 0 if NaN (which happens if data was missing)
+                    l_val = data['l'].get(feature_key, 0)
+                    r_val = data['r'].get(feature_key, 0)
+                    
+                    is_baseline = key in BASELINE_NAMES
+                    
+                    # --- Assign Colors and Labels ---
+                    if is_baseline:
+                        # Key matches the name in BL_COLOR_MAP directly (e.g., 'Banks')
+                        l_color, r_color = BL_COLOR_MAP.get(key, ('gray', 'darkgray'))
+                        hatch = BL_HATCH
+                        label_l = f"{key.replace('_', ' ')} L" # e.g., 'Banks L'
+                        label_r = f"{key.replace('_', ' ')} R" # e.g., 'Banks R'
+                    else:
+                        l_color, r_color = RUN_COLOR_L, RUN_COLOR_R
+                        hatch = None
+                        label_l = 'Run L'
+                        label_r = 'Run R'
+                    
+                    # Plot Left Side
+                    h_l = ax.bar(x_pos - width/2, l_val, width, color=l_color, hatch=hatch, label=label_l)
+                    # Plot Right Side
+                    h_r = ax.bar(x_pos + width/2, r_val, width, color=r_color, hatch=hatch, label=label_r)
+                    
+                    # Store the handles for the final legend
+                    # This correctly stores unique entries for Banks L, Banks R, Turcot L, etc.
+                    legend_handles_map[label_l] = h_l
+                    legend_handles_map[label_r] = h_r
+
+
+                # --- Formatting ---
+                y_label = feature_label.split('(')[0].strip() 
+                if 'Time' in feature_label: y_unit = '(%)'
+                elif 'Value' in feature_label:
+                    y_unit = f"({parameter_name.split('_')[0]} {'(deg)' if 'angle' in parameter_name.lower() else 'unit'})"
+                else: y_unit = ''
+
+                ax.set_ylabel(f'{y_label} {y_unit}')
+                ax.set_title(f'{full_joint_key.replace("_", " ").title()} Kinematic Feature: {feature_label}')
+                
+                # Set x-ticks to include all run and baseline keys
+                ax.set_xticks(x)
+                ax.set_xticklabels(plotting_keys, rotation=45, ha="right")
+                
+                # Create consolidated legend using the stored unique handles
+                labels = list(legend_handles_map.keys())
+                handles = [legend_handles_map[l] for l in labels]
+                
+                # Reorder labels to put runs first, then baselines (using the existing sorting key)
+                sorted_handles_labels = sorted(zip(handles, labels), key=lambda x: 0 if x[1].startswith('Run') else 1)
+
+                ax.legend(*zip(*sorted_handles_labels), loc='best', ncol=4, fontsize='small')
+                ax.grid(axis='y', linestyle='--', alpha=0.7)
+                plt.tight_layout()
+                plt.show()
+                plt.close()
+
+
+
+    @staticmethod
+    def plot_joint_angle_symmetry_baseline_vs_prosthesis(
+        joint_names_list,
+        all_loaded_data,
+        run_step_data,
+        baseline_file,
+        prosthesis_side="right",   # can be "right" or "left"
+        parameter_name="angle",
+        convert_to_deg=False,
+        interp_mode="interp",
+        interp_len=100,
+        body_weight_to_normalize=1,
+        mass_baseline = 1,
+    ):
+        """
+        Plot mean of prosthesis side across all runs against baseline data.
+        Only two curves: Baseline and SACH (prosthesis).
+        """
+
+        import re, itertools
+        import numpy as np
+        import matplotlib.pyplot as plt
+
+        joint_pairs = [(name + "_l", name + "_r") for name in joint_names_list]
+
+        # Load baseline data
+        baseline_data = {}
+        current_label = None
+        with open(baseline_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                label_match = re.match(r'^([A-Za-z_]+)\s*=\s*\[?', line)
+                if label_match:
+                    current_label = label_match.group(1)
+                    baseline_data[current_label] = []
+                    continue
+                if current_label:
+                    vals = line.split(';')
+                    if len(vals) == 2:
+                        try:
+                            x, y = map(float, vals)
+                            baseline_data[current_label].append((x, y))
+                        except ValueError:
+                            continue
+
+        for left_joint, right_joint in joint_pairs:
+            prosthesis_joint = right_joint if prosthesis_side.lower() == "right" else left_joint
+
+            run_keys = list(all_loaded_data.keys())
+            mean_prosth_all = []
+            std_prosth_all = []
+
+            # Collect prosthesis side data
+            for run_key in run_keys:
+                run_dict = all_loaded_data[run_key]
+                evaluation_joint_names = run_dict.get("evaluation_joint_names", [])
+                joint_data = {}
+                for joint_name in evaluation_joint_names:
+                    joint_data[joint_name] = {}
+                    for key in ["angle", "velocity", "forces_constraint",
+                                "forces_smooth", "forces_applied", "torques", "energy_exp"]:
+                        param = run_dict.get(f"{joint_name}_{key}")
+                        if param is not None:
+                            joint_data[joint_name][key] = param
+
+                step_indices = run_step_data[run_key].get(
+                    "step_start_" + ("right" if prosthesis_side.lower() == "right" else "left"), []
+                )
+                side_data = joint_data.get(prosthesis_joint, {}).get(parameter_name, None)
+                if side_data is None:
+                    continue
+
+                def collect_steps(data, indices):
+                    steps = []
+                    if indices and len(indices) > 1:
+                        for j in range(len(indices) - 1):
+                            start, end = indices[j], indices[j + 1]
+                            y = [float(np.array(a).squeeze()) for a in data[start:end]]
+                            if len(y) < 2:
+                                continue
+                            if interp_mode == "interp":
+                                x_old = np.linspace(0, 1, len(y))
+                                x_new = np.linspace(0, 1, interp_len)
+                                y = np.interp(x_new, x_old, y)
+                            if convert_to_deg and parameter_name in ("angle", "velocity"):
+                                y = np.rad2deg(y)
+                            steps.append(y)
+                    return steps
+
+                side_steps = collect_steps(side_data, step_indices)
+
+                if side_steps:
+                    mean_prosth = np.mean(side_steps, axis=0) / body_weight_to_normalize
+                    std_prosth = np.std(side_steps, axis=0) / body_weight_to_normalize
+                    # Flip sign for knees if needed
+                    if 'knee' in prosthesis_joint:
+                        mean_prosth = -mean_prosth
+                        std_prosth = -std_prosth
+                    mean_prosth_all.append(mean_prosth)
+                    std_prosth_all.append(std_prosth)
+
+            # Plot baseline vs prosthesis
+            if mean_prosth_all:
+                x = np.linspace(0, 100, interp_len)
+                mean_prosth = np.mean(mean_prosth_all, axis=0)
+                std_prosth = np.mean(std_prosth_all, axis=0)
+
+                plt.figure(figsize=(8, 5))
+                # Prosthesis side (SACH)
+                plt.plot(x, mean_prosth, label="SACH Sim", color="tab:red")
+                plt.fill_between(x, mean_prosth - std_prosth, mean_prosth + std_prosth,
+                                alpha=0.15, color="tab:red")
+
+                # Baseline
+                for label, points in baseline_data.items():
+                    if label.lower() in prosthesis_joint.lower() and points:
+                        xs, ys = zip(*points)
+                        if 'torques' in parameter_name:
+                            if 'Banks' in baseline_file:
+                                ys = np.array(ys)/mass_baseline
+                                if 'knee' in prosthesis_joint:
+                                    ys = np.array(ys) * -1
+                            # elif not 'knee' in prosthesis_joint and 'Turcot' in baseline_file: # CHANGED TO NOT HAVE KNEE
+                            #     pass
+                            else:
+                                ys = np.array(ys) * -1
+                        if 'angle' in parameter_name:
+                            if 'knee' in prosthesis_joint and 'Banks' in baseline_file: # CHANGED TO NOT HAVE KNEE
+                                ys = np.array(ys) * -1
+                        plt.plot(xs, ys, color="black", linestyle="-", marker="o", label="SACH Exp")
+
+                plt.title(f"{prosthesis_joint}", fontsize=18)
+                plt.xlabel("Gait Cycle (%)", fontsize=18)
+                if 'angle' in parameter_name: 
+                    if convert_to_deg:
+                        plt.ylabel(f"{parameter_name} in °", fontsize=20)
+                    else:
+                        plt.ylabel(f"{parameter_name} in rad", fontsize=18)
+                elif 'torques' in parameter_name:
+                    plt.ylabel(f"{parameter_name} in Nm/kg", fontsize=18)
+            
+                plt.xticks(fontsize=16)
+                plt.yticks(fontsize=16)
+                plt.legend(fontsize=16)
+                plt.tight_layout()
+                plt.show()
+                plt.close()
+
+
+
+
+    
+
+
+
     @staticmethod 
     def plot_joint_angle_single_side_all_runs(
         joint_names_list,
@@ -2996,7 +4514,7 @@ class PostProcessMetricsHandler():
             if mean_all:
                 plt.figure(figsize=(8, 5))
                 for run_key, mean_val, std_val in mean_all:
-                    plt.plot(x, mean_val, label=f"{run_key} {joint} mean")
+                    plt.plot(x, mean_val, label=f"{run_key}")
                     plt.fill_between(x, mean_val - std_val, mean_val + std_val, alpha=0.15)
                 if plot_baseline and parameter_name in ["angle", "velocity"] and baseline_data is not None:
                     if joint in baseline_data and parameter_name in baseline_data[joint]:
@@ -3446,6 +4964,2714 @@ class PostProcessMetricsHandler():
             plt.close()
 
 
+    
+    @staticmethod
+    def plot_sensor_force_pylon_all_runs(
+        all_loaded_data, run_step_data, direction, interp_len=100, body_weight_to_normalize=1, sensor_force_names=None
+    ):
+        """
+        Plot mean of all runs for pylon sensor data (prosthesis side only).
+        Only sensors with 'pylon' in their name are plotted.
+        direction: "x", "y", or "z" to specify the force direction. [0, 1, 2] for x, y, z respectively.
+        """
+        force_direction = {"x": 0, "y": 1, "z": 2}.get(direction, 0)
+
+        # Use sensor_force_names from the first run if not provided
+        if sensor_force_names is None:
+            # first_run = next(iter(all_loaded_data))
+            run_keys = list(all_loaded_data.keys())
+            if len(run_keys) > 1:
+                run = run_keys[1]
+            else:
+                run = run_keys[0]
+            sensor_force_names = all_loaded_data[run]["sensor_force_names"]
+            # sensor_force_names = all_loaded_data[run]["sensor_force_names"]
+
+        # Only keep sensors with 'pylon' in their name
+        pylon_sensors = [name for name in sensor_force_names if "pylon" in name or "socket" in name]
+
+        for sensor_name in pylon_sensors:
+            run_keys = list(all_loaded_data.keys())
+            mean_all = []
+            std_all = []
+            for run_key in run_keys:
+                run_dict = all_loaded_data[run_key]
+                step_data = run_step_data[run_key]
+                if sensor_name in run_dict.get("all_sensor_force", {}):
+                    sensor_data = run_dict["all_sensor_force"][sensor_name]
+                else:
+                    continue  # Skip this run if sensor data is missing
+                all_step_start = step_data["step_start_right"] if "right" in sensor_name else step_data["step_start_left"]
+
+                steps = []
+                if all_step_start and len(all_step_start) > 1:
+                    for j in range(len(all_step_start) - 1):
+                        start, end = all_step_start[j], all_step_start[j + 1]
+                        y = [float(np.array(a)[force_direction]) for a in sensor_data[start:end]]
+                        if len(y) < 2:
+                            continue
+                        x_old = np.linspace(0, 1, len(y))
+                        x_new = np.linspace(0, 1, interp_len)
+                        y_interp = np.interp(x_new, x_old, y)
+                        steps.append(y_interp)
+                if steps:
+                    mean_val = np.mean(steps, axis=0) / body_weight_to_normalize
+                    std_val = np.std(steps, axis=0) / body_weight_to_normalize
+                    if force_direction == 2:
+                        mean_val*= -1
+                        std_val *= -1
+                    mean_all.append((run_key, mean_val, std_val))
+
+            x = np.linspace(0, 100, interp_len)
+            if mean_all:
+                plt.figure(figsize=(8, 5))
+                for run_key, mean_val, std_val in mean_all:
+                    plt.plot(x, mean_val, label=f"{run_key}")
+                    plt.fill_between(x, mean_val - std_val, mean_val + std_val, alpha=0.15)
+                plt.title(f"{sensor_name} mean (all runs)")
+                plt.xlabel("Interpolated Step (%)")
+                plt.ylabel("Force Value")
+                plt.legend()
+                plt.tight_layout()
+                plt.show()
+                plt.close()
+
+
+    @staticmethod
+    def plot_sensor_force_pylon_all_runs_stance_sorted(
+        all_loaded_data, run_step_data, direction, left_switches, right_switches, interp_len=100, body_weight_to_normalize=1, sensor_force_names=None
+    ):
+        """
+        Plot mean of all runs for pylon sensor data (prosthesis side only).
+        Only sensors with 'pylon' in their name are plotted.
+        Interpolate each step to 100%, then take the part until left_switches or right_switches (depending on '_l' or '_r'),
+        then interpolate this part again to 100%.
+        direction: "x", "y", or "z" to specify the force direction. [0, 1, 2] for x, y, z respectively.
+        """
+        force_direction = {"x": 0, "y": 1, "z": 2}.get(direction, 0)
+
+        # Use sensor_force_names from the first run if not provided
+        if sensor_force_names is None:
+            run_keys = list(all_loaded_data.keys())
+            run = run_keys[1] if len(run_keys) > 1 else run_keys[0]
+            sensor_force_names = all_loaded_data[run]["sensor_force_names"]
+
+        # Only keep sensors with 'pylon' or 'socket' in their name
+        pylon_sensors = [name for name in sensor_force_names if "pylon" in name or "socket" in name]
+
+        for sensor_name in pylon_sensors:
+            if 'torque' in sensor_name:
+                run_keys = list(all_loaded_data.keys())
+                mean_all = []
+                std_all = []
+                for run_key in run_keys:
+                    run_dict = all_loaded_data[run_key]
+                    step_data = run_step_data[run_key]
+                    if sensor_name in run_dict.get("all_sensor_force", {}):
+                        sensor_data = run_dict["all_sensor_force"][sensor_name]
+                    else:
+                        continue  # Skip this run if sensor data is missing
+
+                    # Determine side and switches
+                    if sensor_name.endswith("_r"):
+                        all_step_start = step_data["step_start_right"]
+                        switches = right_switches.get(run_key, [])
+                    else:
+                        all_step_start = step_data["step_start_left"]
+                        switches = left_switches.get(run_key, [])
+
+                    steps = []
+                    if all_step_start and len(all_step_start) > 1 and switches:
+                        for j in range(len(all_step_start) - 1):
+                            start, end = all_step_start[j], all_step_start[j + 1]
+                            y = [float(np.array(a)[force_direction]) for a in sensor_data[start:end]]
+                            if len(y) < 2:
+                                continue
+                            # First interpolate to 100%
+                            x_old = np.linspace(0, 1, len(y))
+                            x_new = np.linspace(0, 1, interp_len)
+                            y_interp = np.interp(x_new, x_old, y)
+                            # Take part until switch index (stance phase)
+                            switch_idx = switches[0] if switches and switches[0] < interp_len else interp_len
+                            stance_phase = y_interp[:switch_idx]
+                            # Interpolate stance phase again to 100%
+                            if len(stance_phase) > 1:
+                                x_stance_old = np.linspace(0, 1, len(stance_phase))
+                                x_stance_new = np.linspace(0, 1, interp_len)
+                                stance_phase_interp = np.interp(x_stance_new, x_stance_old, stance_phase)
+                                steps.append(stance_phase_interp)
+                    if steps:
+                        mean_val = np.mean(steps, axis=0) / body_weight_to_normalize
+                        std_val = np.std(steps, axis=0) / body_weight_to_normalize
+                        if force_direction == 2:
+                            mean_val *= -1
+                            std_val *= -1
+                        mean_all.append((run_key, mean_val, std_val))
+
+                x = np.linspace(0, 100, interp_len)
+                if mean_all:
+                    plt.figure(figsize=(8, 5))
+                    for run_key, mean_val, std_val in mean_all:
+                        plt.plot(x, mean_val, label=f"{run_key}")
+                        plt.fill_between(x, mean_val - std_val, mean_val + std_val, alpha=0.15)
+                    plt.title(f"{sensor_name} mean (stance phase, all runs)")
+                    plt.xlabel("Interpolated Step (%)")
+                    plt.ylabel("Force Value")
+                    plt.legend()
+                    plt.tight_layout()
+                    plt.show()
+                    plt.close()
+
+
+
+    @staticmethod
+    def plot_sensor_force_pylon_all_runs_stance_sorted_flock(
+        all_loaded_data, run_step_data, direction, left_switches, right_switches,folder_name, interp_len=100, body_weight_to_normalize=1, sensor_force_names=None, smooth_data=False, 
+        body_in_sensor_names = ['pylon', 'socket'], knee_alignment_baseline_file= None, knee_alignment_data_mass= 85*9.81, prosthesis_side = 'left', pylon_optimal_alignment_baseline_file = None
+    ):
+        """
+        Plot mean of all runs for pylon sensor data (prosthesis side only).
+        Only sensors with 'pylon' in their name are plotted.
+        Interpolate each step to 100%, then take the part until left_switches or right_switches (depending on '_l' or '_r'),
+        then interpolate this part again to 100%.
+        direction: "x", "y", or "z" to specify the force direction. [0, 1, 2] for x, y, z respectively.
+        """
+        force_direction = {"x": 0, "y": 1, "z": 2}.get(direction, 0)
+        index_45_percent = int(np.round(0.45 * (interp_len - 1)))
+        index_30_percent = int(np.round(0.30 * (interp_len - 1))) 
+        index_75_percent = int(np.round(0.75 * (interp_len - 1))) 
+        # Use sensor_force_names from the first run if not provided
+        if sensor_force_names is None:
+            run_keys = list(all_loaded_data.keys())
+            run = run_keys[1] if len(run_keys) > 1 else run_keys[0]
+            sensor_force_names = all_loaded_data[run]["sensor_force_names"]
+
+        # Only keep sensors with 'pylon' or 'socket' in their name
+        pylon_sensors = [name for name in sensor_force_names if any(body_part in name for body_part in body_in_sensor_names)]
+        # pylon_sensors = [name for name in sensor_force_names if "pylon" in name or "socket" in name]
+
+        for sensor_name in pylon_sensors:
+            if 'torque' in sensor_name:
+                run_keys = list(all_loaded_data.keys())
+                mean_all = []
+                std_all = []
+                bar_plot_data = {} 
+                for run_key in run_keys:
+                    run_dict = all_loaded_data[run_key]
+                    step_data = run_step_data[run_key]
+                    if sensor_name in run_dict.get("all_sensor_force", {}):
+                        sensor_data = run_dict["all_sensor_force"][sensor_name]
+                    else:
+                        continue  # Skip this run if sensor data is missing
+
+                    # Determine side and switches
+                    if sensor_name.endswith("_r"):
+                        all_step_start = step_data["step_start_right"]
+                        switches = right_switches.get(run_key, [])
+                    else:
+                        all_step_start = step_data["step_start_left"]
+                        switches = left_switches.get(run_key, [])
+
+                    steps = []
+                    if all_step_start and len(all_step_start) > 1 and switches:
+                        for j in range(len(all_step_start) - 1):
+                            start, end = all_step_start[j], all_step_start[j + 1]
+                            y = [float(np.array(a)[force_direction]) for a in sensor_data[start:end]]
+                            if len(y) < 2:
+                                continue
+                            # First interpolate to 100%
+                            x_old = np.linspace(0, 1, len(y))
+                            x_new = np.linspace(0, 1, interp_len)
+                            y_interp = np.interp(x_new, x_old, y)
+                            # Take part until switch index (stance phase)
+                            switch_idx = switches[0] if switches and switches[0] < interp_len else interp_len
+                            stance_phase = y_interp[:switch_idx]
+                            # Interpolate stance phase again to 100%
+                            if len(stance_phase) > 1:
+                                x_stance_old = np.linspace(0, 1, len(stance_phase))
+                                x_stance_new = np.linspace(0, 1, interp_len)
+                                stance_phase_interp = np.interp(x_stance_new, x_stance_old, stance_phase)
+                                steps.append(stance_phase_interp)
+                    if steps:
+                        mean_val = np.mean(steps, axis=0) / body_weight_to_normalize
+                        std_val = np.std(steps, axis=0) / body_weight_to_normalize
+                        if force_direction == 2:
+                            mean_val *= -1
+                            std_val *= -1
+                        # Smooth mean and std if requested
+                        if smooth_data:
+                            mean_val = gaussian_filter1d(mean_val, sigma=3)
+                            std_val = gaussian_filter1d(std_val, sigma=3)
+                        mean_all.append((run_key, mean_val, std_val))
+
+                        # --- Collect Bar Plot Data if direction is 'z' (Sagittal Moment) ---
+                        if direction == 'z':
+                            min_moment = np.min(mean_val)
+                            max_moment = np.max(mean_val)
+                            moment_at_45 = mean_val[index_45_percent]
+                            
+                            bar_plot_data[run_key] = {
+                                'min': min_moment,
+                                'max': max_moment,
+                                'at_45': moment_at_45
+                            }
+                        # --- New Bar Plot Data Collection for direction == 'x' ---
+                        elif direction == 'x':
+                            moment_at_30 = mean_val[index_30_percent]
+                            moment_at_75 = mean_val[index_75_percent]
+                            
+                            bar_plot_data[run_key] = {
+                                'at_30': moment_at_30,
+                                'at_75': moment_at_75
+                            }
+
+                x = np.linspace(0, 100, interp_len)
+
+                # Helper: try to get a numeric value from run_key
+                def extract_numeric(run_key):
+                    try:
+                        return float(run_key)
+                    except Exception:
+                        # fallback: extract first number (with optional sign/decimal) via regex
+                        m = re.search(r'[-+]?\d*\.?\d+', str(run_key))
+                        if m:
+                            try:
+                                return float(m.group())
+                            except Exception:
+                                return None
+                        return None
+
+                # Sort by numeric value when possible, otherwise by string
+                def parse_run_key_for_sort(run_key):
+                    num = extract_numeric(run_key)
+                    return num if num is not None else str(run_key)
+
+                sorted_mean_all = sorted(mean_all, key=lambda tup: parse_run_key_for_sort(tup[0]))
+
+                # Filter sorted list to only include keys with data (important for color/linestyle mapping)
+                sorted_mean_all = [tup for tup in sorted_mean_all if tup[0] in bar_plot_data]
+
+                # ADDED CODE: direction is 'z', sort bar data to match line plot order
+                # if direction == 'z':
+                #     sorted_run_keys = [tup[0] for tup in sorted_mean_all]
+                    
+                #     min_moments = [bar_plot_data[rk]['min'] for rk in sorted_run_keys if rk in bar_plot_data]
+                #     max_moments = [bar_plot_data[rk]['max'] for rk in sorted_run_keys if rk in bar_plot_data]
+                #     moments_at_45 = [bar_plot_data[rk]['at_45'] for rk in sorted_run_keys if rk in bar_plot_data]
+                    
+                #     # Ensure only keys with data are used for bar labels/colors
+                #     bar_labels = [rk for rk in sorted_run_keys if rk in bar_plot_data]
+                    
+                #     # Update sorted_mean_all to only include entries with data (for consistent color mapping)
+                #     sorted_mean_all = [tup for tup in sorted_mean_all if tup[0] in bar_plot_data]
+                if bar_plot_data:
+                    sorted_run_keys = [tup[0] for tup in sorted_mean_all]
+                    bar_labels = [rk for rk in sorted_run_keys if rk in bar_plot_data]
+
+                    if direction == 'z':
+                        min_moments = [bar_plot_data[rk]['min'] for rk in bar_labels]
+                        max_moments = [bar_plot_data[rk]['max'] for rk in bar_labels]
+                        moments_at_45 = [bar_plot_data[rk]['at_45'] for rk in bar_labels]
+                    elif direction == 'x':
+                        moments_at_30 = [bar_plot_data[rk]['at_30'] for rk in bar_labels]
+                        moments_at_75 = [bar_plot_data[rk]['at_75'] for rk in bar_labels]
+
+
+                # Linestyles to cycle for the Blue/varied-linestyles group
+                linestyles = [ (0, (1, 1)), (0, (3, 1, 1, 1)), (0, (5, 2)), (0, (3, 5, 1, 5)),"--", "-.", ":", ]
+
+                # Helper to decide whether this run_key should have the reversed mapping
+                def _reverse_mapping_for_key(rk):
+                    rk_l = str(rk).lower()
+                    return (('z' in rk_l and 'mm' in rk_l) or ('x' in rk_l and 'deg' in rk_l)) or ('x' in rk_l and 'mm' in rk_l)
+
+                # Build visual groups (visual_negative == Blue group with varied linestyles)
+                visual_neg_keys = []  # keys that will be shown with Blues colormap + varied linestyles
+                visual_pos_keys = []  # keys that will be shown with Reds colormap + solid linestyle
+
+                # Gather numeric values for normalization according to the visual grouping
+                vis_neg_vals = []
+                vis_pos_vals = []
+
+                for run_key, _, _ in sorted_mean_all:
+                    rk_str = str(run_key)
+                    num = extract_numeric(run_key)
+                    # determine original sign presence
+                    original_neg = ('-' in rk_str)
+                    # compute per-key reverse flag
+                    reverse_flag = _reverse_mapping_for_key(rk_str)
+                    # visual group: XOR -> if True, key is treated as "negative" visual group
+                    visual_neg = (original_neg != reverse_flag)
+
+                    if (num is not None) and (num == 0):
+                        # skip zeros in normalization
+                        continue
+
+                    if visual_neg:
+                        visual_neg_keys.append(rk_str)
+                        if num is not None:
+                            vis_neg_vals.append(abs(num))
+                    else:
+                        visual_pos_keys.append(rk_str)
+                        # store absolute magnitude for consistent shading
+                        if num is not None:
+                            vis_pos_vals.append(abs(num))
+
+                # Map visual-negative (Blue) group keys to linestyles
+                # Sort visual_neg_keys by absolute numeric magnitude (ascending), then assign
+                # linestyles from the reversed list so the smallest magnitude gets the 'largest' linestyle
+                linestyle_map = {}
+                try:
+                    key_vals = []
+                    for k in visual_neg_keys:
+                        num = extract_numeric(k)
+                        key_vals.append((k, num))
+                    # sort by abs(num) ascending; put non-numeric at end
+                    key_vals_sorted = sorted(key_vals, key=lambda t: (float('inf') if t[1] is None else abs(t[1])))
+                    rev_styles = linestyles[::-1]
+                    for i, (k, _) in enumerate(key_vals_sorted):
+                        linestyle_map[k] = rev_styles[i % len(rev_styles)]
+                except Exception:
+                    # fallback: assign in original order
+                    linestyle_map = {k: linestyles[i % len(linestyles)] for i, k in enumerate(visual_neg_keys)}
+
+                # Fallback ranges if empty
+                min_neg, max_neg = (min(vis_neg_vals), max(vis_neg_vals)) if vis_neg_vals else (0.0, 1.0)
+                min_pos, max_pos = (min(vis_pos_vals), max(vis_pos_vals)) if vis_pos_vals else (0.0, 1.0)
+
+                color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+                color_idx = 0
+                run_colors = {} # Store colors for bar plots
+
+                plt.figure(figsize=(8, 5))
+
+                for run_key, mean_val, std_val in sorted_mean_all:
+                    run_key_str = str(run_key)
+                    num = extract_numeric(run_key)
+
+                    # default linewidth
+                    linewidth = 1.5
+
+                    # Zero: exact numeric zero or string "0" -> black solid
+                    if (num is not None and num == 0) or run_key_str in ("0", "0.0"):
+                        color = "black"
+                        linestyle = "-"
+                        alpha = 1.0
+
+                    else:
+                        # determine per-key visual group
+                        original_neg = ('-' in run_key_str)
+                        reverse_flag = _reverse_mapping_for_key(run_key_str)
+                        visual_neg = (original_neg != reverse_flag)
+
+                        # If not numeric, fallback to color cycle and a default linestyle
+                        if num is None:
+                            color = color_cycle[color_idx % len(color_cycle)]
+                            color_idx += 1
+                            # pick linestyle from map if in visual-neg group, else solid
+                            linestyle = linestyle_map.get(run_key_str, "-") if visual_neg else "-"
+                            alpha = 1.0
+
+                        else:
+                            # Numeric: pick colormap and normalize according to visual group
+                            if visual_neg:
+                                # Blue group (varied linestyles)
+                                abs_val = abs(num)
+                                if max_neg != min_neg:
+                                    norm = (abs_val - min_neg) / (max_neg - min_neg)
+                                else:
+                                    norm = 0.0
+                                # original inversion & clipping so larger abs -> lighter
+                                norm = 1.0 - np.clip(norm, 0.0, 0.6)
+                                cmap = matplotlib.cm.get_cmap('Blues')
+                                color = cmap(norm)
+                                linestyle = linestyle_map.get(run_key_str, "-")
+                                # keep constant linewidth
+                                alpha = 1.0
+                            else:
+                                # Red group (solid lines)
+                                # use absolute magnitude for red-group normalization so larger abs -> lighter shade
+                                abs_val = abs(num)
+                                if max_pos != min_pos:
+                                    norm = (abs_val - min_pos) / (max_pos - min_pos)
+                                else:
+                                    norm = 0.0
+                                # original inversion & clipping so larger abs -> lighter
+                                norm = 1.0 - np.clip(norm, 0, 0.6)
+                                cmap = matplotlib.cm.get_cmap('Reds')
+                                color = cmap(norm)
+                                linestyle = "-"
+                                # keep constant linewidth
+                                alpha = 1.0
+
+                    # Store color for bar plots
+                    run_colors[run_key_str] = color
+
+                    # Ensure arrays are numpy arrays
+                    mean_arr = np.asarray(mean_val)
+                    std_arr = np.asarray(std_val)
+
+                    # Plot mean and shaded std dev (use linewidth scaling)
+                    plt.plot(x, mean_arr, label=f"{run_key_str}", color=color, linestyle=linestyle, linewidth=linewidth, alpha=alpha)
+                    plt.fill_between(x, mean_arr - std_arr, mean_arr + std_arr, alpha=0.15, color=color)
+
+                if direction=='z':
+                    plane_name = 'Sagittal'
+                elif direction=='x':
+                    plane_name = 'Coronal'
+
+
+                # plot the alignment baseline data if left_knee in sensor_name and direction == 'z'
+                if 'knee' in sensor_name and prosthesis_side in sensor_name and direction == 'z':
+                    baseline_data = {}
+                    # read baseline_data from csv file
+                    if knee_alignment_baseline_file and os.path.isfile(knee_alignment_baseline_file):
+                        with open(knee_alignment_baseline_file, 'r') as f:
+                            for line in f:
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                if 'Schmalz' in knee_alignment_baseline_file:
+                                    label_match = re.match(r'^([A-Za-z+\-_]+)\s*=\s*\[?', line)
+                                if label_match:
+                                    current_label = label_match.group(1)
+                                    baseline_data[current_label] = []
+                                    continue
+                                if current_label:
+                                    vals = line.split(';')
+                                    if len(vals) == 2:
+                                        try:
+                                            x, y = map(float, vals)
+                                            baseline_data[current_label].append((x, y))
+                                        except ValueError:
+                                            continue   
+                    # if run_keys have z and deg then plot the FOOT_PLA, FOOT_DOR, OPT from baseline
+                    if 'z' in run_key and 'deg' in run_key:
+                        if baseline_data.get('FOOT_PLA', []):
+                            xs, ys = zip(*baseline_data.get('FOOT_PLA', []))
+                            ys = np.array(ys) / knee_alignment_data_mass
+                            plt.plot(xs, ys, label="Baseline PLA_-10°", color='lightgray', linestyle='--', linewidth=2)
+                        if baseline_data.get('FOOT_DOR', []):
+                            xs, ys = zip(*baseline_data.get('FOOT_DOR', []))
+                            ys = np.array(ys) / knee_alignment_data_mass
+                            plt.plot(xs, ys, label="Baseline DOR_10°", color='darkgrey', linestyle='--', linewidth=2)
+                        if baseline_data.get('OPT', []):
+                            xs, ys = zip(*baseline_data.get('OPT', []))
+                            ys = np.array(ys) / knee_alignment_data_mass
+                            plt.plot(xs, ys, label="Baseline OPT", color='dimgray', linestyle='--', linewidth=2)
+                    elif 'x' in run_key and 'mm' in run_key:
+                        if baseline_data.get('FOOT_ANT', []):
+                            xs, ys = zip(*baseline_data.get('FOOT_ANT', []))
+                            ys = np.array(ys) / knee_alignment_data_mass
+                            plt.plot(xs, ys, label="Baseline ANT_20mm", color='lightgray', linestyle='--', linewidth=2)
+                        if baseline_data.get('FOOT_POS', []):
+                            xs, ys = zip(*baseline_data.get('FOOT_POS', []))
+                            ys = np.array(ys) / knee_alignment_data_mass
+                            plt.plot(xs, ys, label="Baseline POS_-20mm", color='darkgrey', linestyle='--', linewidth=2)
+                        if baseline_data.get('OPT', []):
+                            xs, ys = zip(*baseline_data.get('OPT', []))
+                            ys = np.array(ys) / knee_alignment_data_mass
+                            plt.plot(xs, ys, label="Baseline OPT", color='dimgray', linestyle='--', linewidth=2)
+                    else: 
+                        if baseline_data.get('OPT', []):
+                            xs, ys = zip(*baseline_data.get('OPT', []))
+                            ys = np.array(ys) / knee_alignment_data_mass
+                            plt.plot(xs, ys, label="Baseline OPT", color='dimgray', linestyle='--', linewidth=2)
+
+
+                if 'pylon' in sensor_name and pylon_optimal_alignment_baseline_file:
+                    baseline_data = {}
+                    # read baseline_data from csv file
+                    if os.path.isfile(pylon_optimal_alignment_baseline_file):
+                        with open(pylon_optimal_alignment_baseline_file, 'r') as f:
+                            for line in f:
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                label_match = re.match(r'^([A-Za-z+\-_]+)\s*=\s*\[?', line)
+                                if label_match: 
+                                    current_label = label_match.group(1)
+                                    baseline_data[current_label] = []
+                                    continue
+                                if current_label:
+                                    vals = line.split(';')
+                                    if len(vals) == 2:
+                                        try:
+                                            x, y = map(float, vals)
+                                            baseline_data[current_label].append((x, y))
+                                        except ValueError:
+                                            continue   
+
+                    # Labels in pylon optimal alignment file are: Sagittal, Sagittal+std, Sagittal-std, or Coronal, Coronal+std, Coronal-std
+                    if direction == 'z' and baseline_data.get('Sagittal', []):
+                        xs, ys = zip(*baseline_data.get('Sagittal', []))
+                        # Sort data by x before plotting
+                        xs = np.array(xs) * 100  # Convert from 0-1 to 0-100
+                        ys = np.array(ys)
+                        sort_idx = np.argsort(xs)
+                        xs = xs[sort_idx]
+                        ys = ys[sort_idx]
+                        plt.plot(xs, ys, label="OPT", color='grey', linestyle='-', linewidth=2)
+                        if baseline_data.get('Sagittal+std', []) and baseline_data.get('Sagittal-std', []):
+                            xs_std_p, ys_std_p = zip(*baseline_data.get('Sagittal+std', []))
+                            xs_std_m, ys_std_m = zip(*baseline_data.get('Sagittal-std', []))
+                            xs_std_p = np.array(xs_std_p) * 100
+                            xs_std_m = np.array(xs_std_m) * 100
+                            ys_std_p = np.array(ys_std_p)
+                            ys_std_m = np.array(ys_std_m)
+                            # Sort std data by x before plotting
+                            sort_idx_p = np.argsort(xs_std_p)
+                            sort_idx_m = np.argsort(xs_std_m)
+                            xs_std_p = xs_std_p[sort_idx_p]
+                            ys_std_p = ys_std_p[sort_idx_p]
+                            xs_std_m = xs_std_m[sort_idx_m]
+                            ys_std_m = ys_std_m[sort_idx_m]
+                            # Interpolate ys_std_m and ys_std_p to xs_std_p if lengths mismatch
+                            if len(xs_std_p) != len(ys_std_m):
+                                ys_std_m_interp = np.interp(xs_std_p, xs_std_m, ys_std_m)
+                            else:
+                                ys_std_m_interp = ys_std_m
+                            if len(xs_std_p) != len(ys_std_p):
+                                ys_std_p_interp = np.interp(xs_std_p, xs_std_p, ys_std_p)
+                            else:
+                                ys_std_p_interp = ys_std_p
+                            plt.fill_between(xs_std_p, ys_std_m_interp, ys_std_p_interp, color='lightgrey', alpha=0.6)
+                    elif direction == 'x' and baseline_data.get('Coronal', []):
+                        xs, ys = zip(*baseline_data.get('Coronal', []))
+                        # Sort data by x before plotting
+                        xs = np.array(xs) * 100  # Convert from 0-1 to 0-100
+                        ys = np.array(ys)
+                        sort_idx = np.argsort(xs)
+                        xs = xs[sort_idx]
+                        ys = ys[sort_idx]
+                        plt.plot(xs, ys, label="OPT", color='grey', linestyle='-', linewidth=2)
+                        if baseline_data.get('Coronal+std', []) and baseline_data.get('Coronal-std', []):
+                            xs_std_p, ys_std_p = zip(*baseline_data.get('Coronal+std', []))
+                            xs_std_m, ys_std_m = zip(*baseline_data.get('Coronal-std', []))
+                            xs_std_p = np.array(xs_std_p) * 100
+                            xs_std_m = np.array(xs_std_m) * 100
+                            ys_std_p = np.array(ys_std_p)
+                            ys_std_m = np.array(ys_std_m)
+                            # Sort std data by x before plotting
+                            sort_idx_p = np.argsort(xs_std_p)
+                            sort_idx_m = np.argsort(xs_std_m)
+                            xs_std_p = xs_std_p[sort_idx_p]
+                            ys_std_p = ys_std_p[sort_idx_p]
+                            xs_std_m = xs_std_m[sort_idx_m]
+                            ys_std_m = ys_std_m[sort_idx_m]
+                            plt.fill_between(xs_std_p, ys_std_m, ys_std_p, color='lightgrey', alpha=0.6)
+
+
+                plt.title(f"{plane_name} Socket Moment")
+                plt.xlabel("Stance Phase (%)")
+                plt.ylabel("Normalized Socket Reaction Moment (Nm/kg)")
+                plt.legend()
+                plt.tight_layout()
+                date_str = datetime.now().strftime("%Y%m%d")
+                time_str = datetime.now().strftime("%H%M%S")
+                save_dir = os.path.join(folder_name)
+                # os.makedirs(save_dir, exist_ok=True)
+                plt.savefig(os.path.join(save_dir, f"{sensor_name}_moment_{plane_name.lower()}_{date_str}_{time_str}.png"), dpi=300)
+                plt.show()
+                plt.close()
+
+
+                # Add reference data to bar plots for pylon/socket sensors
+                # Reference values for different conditions (example values, replace with actual reference if needed)
+                # The reference arrays must match the length/order of bar_labels
+
+                # Helper: check for keywords in bar_labels
+                bar_labels_str = " ".join(str(lbl) for lbl in bar_labels).lower()
+                ref_plotted = False
+
+                if direction == 'z':
+                    if 'z' in bar_labels_str and 'deg' in bar_labels_str:
+                        # Example reference data for z direction, degrees
+                        moment_45_data = [0.160, 0.176, 0.217, 0.363, 0.396]
+                        moment_max_data = [0.793, 0.755, 0.719, 0.672, 0.609]
+                        moment_min_data = [-0.077, -0.104, -0.147, -0.144, -0.158]
+                        x_data = [-6,-3,0,3,6]
+                        ref_plotted = True
+                    elif 'z' in bar_labels_str and 'mm' in bar_labels_str:
+                        moment_min_data = [-0.137, -0.122, -0.147, -0.119, -0.132]
+                        moment_45_data = [0.217, 0.250, 0.217, 0.224, 0.304]
+                        moment_max_data = [0.735, 0.722, 0.719, 0.730, 0.718]
+                        x_data = [-10,-5,0,5,10]
+                        ref_plotted = True
+                    elif 'x' in bar_labels_str and 'mm' in bar_labels_str:
+                        moment_min_data = [-0.059, -0.095, -0.147, -0.163, -0.187]
+                        moment_45_data = [0.287, 0.252, 0.217, 0.227, 0.203]
+                        moment_max_data = [0.821, 0.776, 0.719, 0.693, 0.613]
+                        x_data = [-10,-5,0,5,10]
+                        ref_plotted = True
+                    elif 'x' in bar_labels_str and 'deg' in bar_labels_str:
+                        moment_min_data = [-0.142, -0.137, -0.147, -0.128, -0.142]
+                        moment_max_data = [0.729, 0.708, 0.719, 0.726, 0.722]
+                        moment_45_data = [0.249, 0.255, 0.217, 0.248, 0.269]
+                        x_data = [-6,-3,0,3,6]
+                        ref_plotted = True
+                elif direction == 'x':
+                    if 'x' in bar_labels_str and 'deg' in bar_labels_str:
+                        moment_30_data = [-0.174, -0.130, -0.077, -0.006, -0.074][::-1]
+                        moment_75_data = [-0.089, -0.046, 0.013, 0.049, 0.111][::-1]
+                        x_data = [-6,-3,0,3,6]
+                        ref_plotted = True
+                    elif 'z' in bar_labels_str and 'mm' in bar_labels_str:
+                        moment_30_data = [-0.163, -0.109, -0.077, -0.033, 0.025]
+                        moment_75_data = [-0.062, -0.023, 0.013, 0.054, 0.096]
+                        x_data = [-10,-5,0,5,10]
+                        ref_plotted = True
+                    elif 'z' in bar_labels_str and 'deg' in bar_labels_str:
+                        moment_30_data = [-0.029, -0.033,-0.077, -0.073, -0.072][::-1]
+                        moment_75_data = [-0.019, -0.006, 0.013,0.001, 0.003][::-1]
+                        x_data = [-6,-3,0,3,6]
+                        ref_plotted = True
+                    elif 'x' in bar_labels_str and 'mm' in bar_labels_str:
+                        moment_30_data = [-0.055, -0.067, -0.077,-0.060, -0.072][::-1]
+                        moment_75_data = [0.002, 0.010, 0.013,0.016, 0.021][::-1]
+                        x_data = [-10,-5,0,5,10]
+                        ref_plotted = True
+
+                # --- New Bar Plots for Z-Direction Moment ---
+                if direction == 'z' and bar_labels:
+                    bar_colors = [run_colors[label] for label in bar_labels]
+                    x_pos = np.arange(len(bar_labels))
+
+                    fig_bars, axes_bars = plt.subplots(1, 3, figsize=(15, 5))
+
+                    # 1. Minimum Moment
+                    axes_bars[0].bar(x_pos, min_moments, color=bar_colors, label="Simulation")
+                    axes_bars[0].axhline(0, color='grey', linewidth=0.8)
+                    axes_bars[0].set_xticks(x_pos)
+                    axes_bars[0].set_xticklabels(bar_labels, rotation=45, ha='right')
+                    axes_bars[0].set_title("Minimum Sagittal Moment")
+                    axes_bars[0].set_ylabel("Normalized Moment (Nm/kg)")
+                    axes_bars[0].tick_params(axis='x', which='major', labelsize=8)
+                    # Reference as dots
+                    if ref_plotted and 'moment_min_data' in locals() and len(moment_min_data) == len(x_pos):
+                        axes_bars[0].scatter(x_pos, moment_min_data, color='grey', marker='o', s=60, label="Reference")
+                        axes_bars[0].legend()
+                    # mismatched lengths
+                    elif ref_plotted and 'moment_min_data' in locals() and len(moment_min_data) != len(x_pos):
+                        # Only plot reference dots for x_pos values that match
+                        for idx, label in enumerate(bar_labels):
+                            try:
+                                label_num = float(label)
+                            except Exception:
+                                # fallback: extract first number via regex  
+                                m = re.search(r'[-+]?\d*\.?\d+', str(label))
+                                label_num = float(m.group()) if m else None
+                            if label_num is not None and label_num in x_data:
+                                ref_idx = x_data.index(label_num)
+                                axes_bars[0].scatter(x_pos[idx], moment_min_data[ref_idx], color='grey', marker='o', s=60, label="Reference" if idx == 0 else None)
+                        axes_bars[0].legend()
+
+                    # 2. Moment at 45% Stance
+                    axes_bars[1].bar(x_pos, moments_at_45, color=bar_colors, label="Simulation")
+                    axes_bars[1].axhline(0, color='grey', linewidth=0.8)
+                    axes_bars[1].set_xticks(x_pos)
+                    axes_bars[1].set_xticklabels(bar_labels, rotation=45, ha='right')
+                    axes_bars[1].set_title("Sagittal Moment at 45% Stance")
+                    axes_bars[1].set_ylabel("Normalized Moment (Nm/kg)")
+                    axes_bars[1].tick_params(axis='x', which='major', labelsize=8)
+                    # Reference as dots
+                    # if ref_plotted and 'moment_45_data' in locals() and len(moment_45_data) == len(x_pos):
+                    #     axes_bars[1].scatter(x_pos, moment_45_data, color='black', marker='o', s=60, label="Reference")
+                    #     axes_bars[1].legend()
+                    # if not the same length match the x_pos with x_data
+                    if ref_plotted and 'moment_45_data' in locals() and len(moment_45_data) == len(x_pos):
+                        axes_bars[1].scatter(x_pos, moment_45_data, color='grey', marker='o', s=60, label="Reference")
+                        axes_bars[1].legend()
+                    # mismatched lengths
+                    elif ref_plotted and 'moment_45_data' in locals() and len(moment_45_data) != len(x_pos):
+                        # Only plot reference dots for x_pos values that match
+                        for idx, label in enumerate(bar_labels):
+                            try:
+                                label_num = float(label)
+                            except Exception:
+                                # fallback: extract first number via regex  
+                                m = re.search(r'[-+]?\d*\.?\d+', str(label))
+                                label_num = float(m.group()) if m else None
+                            if label_num is not None and label_num in x_data:
+                                ref_idx = x_data.index(label_num)
+                                axes_bars[1].scatter(x_pos[idx], moment_45_data[ref_idx], color='grey', marker='o', s=60, label="Reference" if idx == 0 else None)
+                        axes_bars[1].legend()
+
+
+                    # 3. Maximum Moment
+                    axes_bars[2].bar(x_pos, max_moments, color=bar_colors, label="Simulation")
+                    axes_bars[2].axhline(0, color='grey', linewidth=0.8)
+                    axes_bars[2].set_xticks(x_pos)
+                    axes_bars[2].set_xticklabels(bar_labels, rotation=45, ha='right')
+                    axes_bars[2].set_title("Maximum Sagittal Moment")
+                    axes_bars[2].set_ylabel("Normalized Moment (Nm/kg)")
+                    axes_bars[2].tick_params(axis='x', which='major', labelsize=8)
+                    # Reference as dots
+                    if ref_plotted and 'moment_max_data' in locals() and len(moment_max_data) == len(x_pos):
+                        axes_bars[2].scatter(x_pos, moment_max_data, color='grey', marker='o', s=60, label="Reference")
+                        axes_bars[2].legend()
+                    # mismatched lengths
+                    elif ref_plotted and 'moment_max_data' in locals() and len(moment_max_data) != len(x_pos):
+                        # Only plot reference dots for x_pos values that match
+                        for idx, label in enumerate(bar_labels):
+                            try:
+                                label_num = float(label)
+                            except Exception:
+                                # fallback: extract first number via regex
+                                m = re.search(r'[-+]?\d*\.?\d+', str(label))
+                                label_num = float(m.group()) if m else None
+                            if label_num is not None and label_num in x_data:
+                                ref_idx = x_data.index(label_num)
+                                axes_bars[2].scatter(x_pos[idx], moment_max_data[ref_idx], color='grey', marker='o', s=60, label="Reference" if idx == 0 else None)
+                        axes_bars[2].legend()
+
+
+                    fig_bars.suptitle(f"{sensor_name} Key Moment Values", fontsize=14)
+                    fig_bars.tight_layout(rect=[0, 0.03, 1, 0.95])
+                    fig_bars.savefig(os.path.join(save_dir, f"{sensor_name}_z_bars_{date_str}_{time_str}.png"), dpi=300)
+                    plt.show()
+                    plt.close(fig_bars)
+
+                # --- New Bar Plots for X-Direction Moment (Coronal) ---
+                if direction == 'x' and bar_labels:
+                    bar_colors = [run_colors[label] for label in bar_labels]
+                    x_pos = np.arange(len(bar_labels))
+
+                    fig_bars_x, axes_bars_x = plt.subplots(1, 2, figsize=(10, 5))
+
+                    # 1. Moment at 30% Stance
+                    axes_bars_x[0].bar(x_pos, moments_at_30, color=bar_colors, label="Simulation")
+                    axes_bars_x[0].axhline(0, color='grey', linewidth=0.8)
+                    axes_bars_x[0].set_xticks(x_pos)
+                    axes_bars_x[0].set_xticklabels(bar_labels, rotation=45, ha='right')
+                    axes_bars_x[0].set_title("Coronal Moment at 30% Stance")
+                    axes_bars_x[0].set_ylabel("Normalized Moment (Nm/kg)")
+                    axes_bars_x[0].tick_params(axis='x', which='major', labelsize=8)
+                    # Reference as dots
+                    if ref_plotted and 'moment_30_data' in locals() and len(moment_30_data) == len(x_pos):
+                        axes_bars_x[0].scatter(x_pos, moment_30_data, color='grey', marker='o', s=60, label="Reference")
+                        axes_bars_x[0].legend()
+                    # mismatched lengths
+                    elif ref_plotted and 'moment_30_data' in locals() and len(moment_30_data) != len(x_pos):
+                        # Only plot reference dots for x_pos values that match
+                        for idx, label in enumerate(bar_labels):
+                            try:
+                                label_num = float(label)
+                            except Exception:
+                                # fallback: extract first number via regex
+                                m = re.search(r'[-+]?\d*\.?\d+', str(label))
+                                label_num = float(m.group()) if m else None
+                            if label_num is not None and label_num in x_data:
+                                ref_idx = x_data.index(label_num)
+                                axes_bars_x[0].scatter(x_pos[idx], moment_30_data[ref_idx], color='grey', marker='o', s=60, label="Reference" if idx == 0 else None)
+                        axes_bars_x[0].legend()
+
+                    # 2. Moment at 75% Stance
+                    axes_bars_x[1].bar(x_pos, moments_at_75, color=bar_colors, label="Simulation")
+                    axes_bars_x[1].axhline(0, color='grey', linewidth=0.8)
+                    axes_bars_x[1].set_xticks(x_pos)
+                    axes_bars_x[1].set_xticklabels(bar_labels, rotation=45, ha='right')
+                    axes_bars_x[1].set_title("Coronal Moment at 75% Stance")
+                    axes_bars_x[1].set_ylabel("Normalized Moment (Nm/kg)")
+                    axes_bars_x[1].tick_params(axis='x', which='major', labelsize=8)
+                    # Reference as dots
+                    if ref_plotted and 'moment_75_data' in locals() and len(moment_75_data) == len(x_pos):
+                        axes_bars_x[1].scatter(x_pos, moment_75_data, color='grey', marker='o', s=60, label="Reference")
+                        axes_bars_x[1].legend()
+                    # mismatched lengths
+                    elif ref_plotted and 'moment_75_data' in locals() and len(moment_75_data) != len(x_pos):
+                        # Only plot reference dots for x_pos values that match
+                        for idx, label in enumerate(bar_labels):
+                            try:
+                                label_num = float(label)
+                            except Exception:
+                                # fallback: extract first number via regex
+                                m = re.search(r'[-+]?\d*\.?\d+', str(label))
+                                label_num = float(m.group()) if m else None
+                            if label_num is not None and label_num in x_data:
+                                ref_idx = x_data.index(label_num)
+                                axes_bars_x[1].scatter(x_pos[idx], moment_75_data[ref_idx], color='grey', marker='o', s=60, label="Reference" if idx == 0 else None)
+                        axes_bars_x[1].legend()
+
+                    fig_bars_x.suptitle(f"{sensor_name} Key Coronal Moment Values", fontsize=14)
+                    fig_bars_x.tight_layout(rect=[0, 0.03, 1, 0.95])
+                    fig_bars_x.savefig(os.path.join(save_dir, f"socket_moment_x_bars_{date_str}_{time_str}.png"), dpi=300)
+                    plt.show()
+                    plt.close(fig_bars_x)
+
+
+
+                # # --- New Bar Plots for Z-Direction Moment ---
+                # if direction == 'z' and bar_labels:
+                #     # Get the colors in the correct order for the bars
+                #     bar_colors = [run_colors[label] for label in bar_labels]
+                #     x_pos = np.arange(len(bar_labels))
+                    
+                #     fig_bars, axes_bars = plt.subplots(1, 3, figsize=(15, 5))
+                    
+                #     # 1. Minimum Moment
+                #     axes_bars[0].bar(x_pos, min_moments, color=bar_colors)
+                #     axes_bars[0].axhline(0, color='grey', linewidth=0.8)
+                #     axes_bars[0].set_xticks(x_pos)
+                #     axes_bars[0].set_xticklabels(bar_labels, rotation=45, ha='right')
+                #     axes_bars[0].set_title("Minimum Sagittal Moment")
+                #     axes_bars[0].set_ylabel("Normalized Moment (Nm/kg)")
+                #     axes_bars[0].tick_params(axis='x', which='major', labelsize=8)
+
+                #     # 2. Moment at 45% Stance
+                #     axes_bars[1].bar(x_pos, moments_at_45, color=bar_colors)
+                #     axes_bars[1].axhline(0, color='grey', linewidth=0.8)
+                #     axes_bars[1].set_xticks(x_pos)
+                #     axes_bars[1].set_xticklabels(bar_labels, rotation=45, ha='right')
+                #     axes_bars[1].set_title("Sagittal Moment at 45% Stance")
+                #     axes_bars[1].set_ylabel("Normalized Moment (Nm/kg)")
+                #     axes_bars[1].tick_params(axis='x', which='major', labelsize=8)
+
+                #     # 3. Maximum Moment
+                #     axes_bars[2].bar(x_pos, max_moments, color=bar_colors)
+                #     axes_bars[2].axhline(0, color='grey', linewidth=0.8)
+                #     axes_bars[2].set_xticks(x_pos)
+                #     axes_bars[2].set_xticklabels(bar_labels, rotation=45, ha='right')
+                #     axes_bars[2].set_title("Maximum Sagittal Moment")
+                #     axes_bars[2].set_ylabel("Normalized Moment (Nm/kg)")
+                #     axes_bars[2].tick_params(axis='x', which='major', labelsize=8)
+                    
+                #     fig_bars.suptitle(f"{sensor_name} Key Moment Values", fontsize=14)
+                #     fig_bars.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust for suptitle
+                    
+                #     # Saving/Showing Bar Plot
+                #     fig_bars.savefig(os.path.join(save_dir, f"{sensor_name}_z_bars_{date_str}_{time_str}.png"), dpi=300)
+                #     plt.show()
+                #     plt.close(fig_bars)
+
+
+                # # --- New Bar Plots for X-Direction Moment (Coronal) ---
+                # if direction == 'x' and bar_labels:
+                #     bar_colors = [run_colors[label] for label in bar_labels]
+                #     x_pos = np.arange(len(bar_labels))
+                    
+                #     fig_bars_x, axes_bars_x = plt.subplots(1, 2, figsize=(10, 5))
+                    
+                #     # 1. Moment at 30% Stance
+                #     axes_bars_x[0].bar(x_pos, moments_at_30, color=bar_colors)
+                #     axes_bars_x[0].axhline(0, color='grey', linewidth=0.8)
+                #     axes_bars_x[0].set_xticks(x_pos)
+                #     axes_bars_x[0].set_xticklabels(bar_labels, rotation=45, ha='right')
+                #     axes_bars_x[0].set_title("Coronal Moment at 30% Stance")
+                #     axes_bars_x[0].set_ylabel("Normalized Moment (Nm/kg)")
+                #     axes_bars_x[0].tick_params(axis='x', which='major', labelsize=8)
+
+                #     # 2. Moment at 75% Stance
+                #     axes_bars_x[1].bar(x_pos, moments_at_75, color=bar_colors)
+                #     axes_bars_x[1].axhline(0, color='grey', linewidth=0.8)
+                #     axes_bars_x[1].set_xticks(x_pos)
+                #     axes_bars_x[1].set_xticklabels(bar_labels, rotation=45, ha='right')
+                #     axes_bars_x[1].set_title("Coronal Moment at 75% Stance")
+                #     axes_bars_x[1].set_ylabel("Normalized Moment (Nm/kg)")
+                #     axes_bars_x[1].tick_params(axis='x', which='major', labelsize=8)
+                    
+                #     fig_bars_x.suptitle(f"{sensor_name} Key Coronal Moment Values", fontsize=14)
+                #     fig_bars_x.tight_layout(rect=[0, 0.03, 1, 0.95])
+                    
+                #     fig_bars_x.savefig(os.path.join(save_dir, f"socket_moment_x_bars_{date_str}_{time_str}.png"), dpi=300)
+                #     plt.show()
+                #     plt.close(fig_bars_x)
+
+
+    # @staticmethod
+    # def plot_sensor_force_pylon_all_runs_stance_sorted_flock(
+    #     all_loaded_data, run_step_data, direction, left_switches, right_switches,folder_name, interp_len=100, body_weight_to_normalize=1, sensor_force_names=None, smooth_data=False, 
+    #     body_in_sensor_names = ['pylon', 'socket'], knee_alignment_baseline_file= None, knee_alignment_data_mass= 85*9.81, prosthesis_side = 'left'
+    # ):
+    #     """
+    #     Plot mean of all runs for pylon sensor data (prosthesis side only) with the revised 
+    #     Blue/Red, unique linestyle, and absolute-magnitude color progression scheme.
+    #     """
+    #     force_direction = {"x": 0, "y": 1, "z": 2}.get(direction, 0)
+    #     index_45_percent = int(np.round(0.45 * (interp_len - 1)))
+    #     index_30_percent = int(np.round(0.30 * (interp_len - 1))) 
+    #     index_75_percent = int(np.round(0.75 * (interp_len - 1))) 
+        
+    #     # Use sensor_force_names from the first run if not provided
+    #     if sensor_force_names is None:
+    #         run_keys = list(all_loaded_data.keys())
+    #         run = run_keys[1] if len(run_keys) > 1 else run_keys[0]
+    #         if run in all_loaded_data and "sensor_force_names" in all_loaded_data[run]:
+    #             sensor_force_names = all_loaded_data[run]["sensor_force_names"]
+    #         else:
+    #             # Fallback if initial run key structure is missing
+    #             print("Warning: Could not determine sensor_force_names. Skipping plot.")
+    #             return
+
+    #     # Only keep sensors with 'pylon' or 'socket' in their name
+    #     pylon_sensors = [name for name in sensor_force_names if any(body_part in name for body_part in body_in_sensor_names)]
+
+    #     for sensor_name in pylon_sensors:
+    #         if 'torque' in sensor_name:
+    #             run_keys = list(all_loaded_data.keys())
+    #             mean_all = []
+    #             std_all = []
+    #             bar_plot_data = {} 
+    #             for run_key in run_keys:
+    #                 run_dict = all_loaded_data[run_key]
+    #                 step_data = run_step_data[run_key]
+    #                 if sensor_name in run_dict.get("all_sensor_force", {}):
+    #                     sensor_data = run_dict["all_sensor_force"][sensor_name]
+    #                 else:
+    #                     continue  # Skip this run if sensor data is missing
+
+    #                 # Determine side and switches
+    #                 if sensor_name.endswith("_r"):
+    #                     all_step_start = step_data["step_start_right"]
+    #                     switches = right_switches.get(run_key, [])
+    #                 else:
+    #                     all_step_start = step_data["step_start_left"]
+    #                     switches = left_switches.get(run_key, [])
+
+    #                 steps = []
+    #                 if all_step_start and len(all_step_start) > 1 and switches:
+    #                     for j in range(len(all_step_start) - 1):
+    #                         start, end = all_step_start[j], all_step_start[j + 1]
+    #                         y = [float(np.array(a)[force_direction]) for a in sensor_data[start:end]]
+    #                         if len(y) < 2:
+    #                             continue
+    #                         # First interpolate to 100%
+    #                         x_old = np.linspace(0, 1, len(y))
+    #                         x_new = np.linspace(0, 1, interp_len)
+    #                         y_interp = np.interp(x_new, x_old, y)
+    #                         # Take part until switch index (stance phase)
+    #                         switch_idx = switches[0] if switches and switches[0] < interp_len else interp_len
+    #                         stance_phase = y_interp[:switch_idx]
+    #                         # Interpolate stance phase again to 100%
+    #                         if len(stance_phase) > 1:
+    #                             x_stance_old = np.linspace(0, 1, len(stance_phase))
+    #                             x_stance_new = np.linspace(0, 1, interp_len)
+    #                             stance_phase_interp = np.interp(x_stance_new, x_stance_old, stance_phase)
+    #                             steps.append(stance_phase_interp)
+    #                 if steps:
+    #                     # Normalize by body weight (assuming normalization factor is already applied)
+    #                     mean_val = np.mean(steps, axis=0) / body_weight_to_normalize
+    #                     std_val = np.std(steps, axis=0) / body_weight_to_normalize
+    #                     if force_direction == 2:
+    #                         mean_val *= -1
+    #                         std_val *= -1
+    #                     # Smooth mean and std if requested
+    #                     if smooth_data:
+    #                         mean_val = gaussian_filter1d(mean_val, sigma=3)
+    #                         std_val = gaussian_filter1d(std_val, sigma=3)
+    #                     mean_all.append((run_key, mean_val, std_val))
+
+    #                     # --- Collect Bar Plot Data if direction is 'z' or 'x' ---
+    #                     if direction == 'z':
+    #                         min_moment = np.min(mean_val)
+    #                         max_moment = np.max(mean_val)
+    #                         moment_at_45 = mean_val[index_45_percent]
+                            
+    #                         bar_plot_data[run_key] = {
+    #                             'min': min_moment,
+    #                             'max': max_moment,
+    #                             'at_45': moment_at_45
+    #                         }
+    #                     elif direction == 'x':
+    #                         moment_at_30 = mean_val[index_30_percent]
+    #                         moment_at_75 = mean_val[index_75_percent]
+                            
+    #                         bar_plot_data[run_key] = {
+    #                             'at_30': moment_at_30,
+    #                             'at_75': moment_at_75
+    #                         }
+
+    #             x = np.linspace(0, 100, interp_len)
+
+    #             # Helper: try to get a numeric value from run_key
+    #             def extract_numeric(run_key):
+    #                 try:
+    #                     return float(run_key)
+    #                 except Exception:
+    #                     # fallback: extract first number (with optional sign/decimal) via regex
+    #                     m = re.search(r'[-+]?\d*\.?\d+', str(run_key))
+    #                     if m:
+    #                         try:
+    #                             return float(m.group())
+    #                         except Exception:
+    #                             return None
+    #                     return None
+
+    #             # Sort by numeric value when possible, otherwise by string
+    #             def parse_run_key_for_sort(run_key):
+    #                 num = extract_numeric(run_key)
+    #                 return num if num is not None else str(run_key)
+
+    #             sorted_mean_all = sorted(mean_all, key=lambda tup: parse_run_key_for_sort(tup[0]))
+
+    #             # Filter sorted list to only include keys with data
+    #             sorted_mean_all = [tup for tup in sorted_mean_all if tup[0] in bar_plot_data]
+
+    #             if bar_plot_data:
+    #                 sorted_run_keys = [tup[0] for tup in sorted_mean_all]
+    #                 bar_labels = [rk for rk in sorted_run_keys if rk in bar_plot_data]
+
+    #                 if direction == 'z':
+    #                     min_moments = [bar_plot_data[rk]['min'] for rk in bar_labels]
+    #                     max_moments = [bar_plot_data[rk]['max'] for rk in bar_labels]
+    #                     moments_at_45 = [bar_plot_data[rk]['at_45'] for rk in bar_labels]
+    #                 elif direction == 'x':
+    #                     moments_at_30 = [bar_plot_data[rk]['at_30'] for rk in bar_labels]
+    #                     moments_at_75 = [bar_plot_data[rk]['at_75'] for rk in bar_labels]
+
+    #             # --------------------------------------------------------
+    #             # LOGIC FOR COLOR/LINESTYLE MAPPING SCHEMES
+    #             # --------------------------------------------------------
+
+    #             # Linestyles to cycle for the "Blue Group"
+    #             linestyles = [ (0, (1, 1)), (0, (3, 1, 1, 1)), (0, (5, 2)), (0, (3, 5, 1, 5)),"--", "-.", ":", ]
+
+    #             # Determine the Blue vs. Red assignment based on keywords
+    #             first_run_key = next((str(tup[0]) for tup in sorted_mean_all if str(tup[0]) not in ("0", "0.0")), None)
+
+    #             # positive_is_blue_group = True means POSITIVE values go to the Blue Group (unique linestyle)
+    #             positive_is_blue_group = False
+                
+    #             if first_run_key:
+    #                 has_z = 'z' in first_run_key.lower()
+    #                 has_x = 'x' in first_run_key.lower()
+    #                 has_mm = 'mm' in first_run_key.lower()
+    #                 has_deg = 'deg' in first_run_key.lower()
+
+    #                 # Blue Group Trigger: (z and mm) or (x and deg) -> POSITIVE is Blue Group
+    #                 if (has_z and has_mm) or (has_x and has_deg):
+    #                     positive_is_blue_group = True
+
+
+    #             # Gather absolute numeric values for normalization:
+    #             neg_vals = []   # absolute numeric values < 0
+    #             pos_vals = []   # numeric values > 0
+
+    #             for run_key, _, _ in sorted_mean_all:
+    #                 num = extract_numeric(run_key)
+    #                 if num is not None and num != 0:
+    #                     if num < 0:
+    #                         neg_vals.append(abs(num))
+    #                     else:
+    #                         pos_vals.append(num)
+
+    #             # Determine the min/max of the non-zero absolute values for normalization
+    #             min_neg, max_neg = (min(neg_vals), max(neg_vals)) if neg_vals else (0.0, 1.0)
+    #             min_pos, max_pos = (min(pos_vals), max(pos_vals)) if pos_vals else (0.0, 1.0)
+
+                
+    #             # Map run keys to linestyles for the Blue Group
+    #             blue_group_run_keys = []
+                
+    #             if positive_is_blue_group:
+    #                 # Keys with POSITIVE numeric value go to Blue Group
+    #                 blue_group_run_keys = [str(tup[0]) for tup in sorted_mean_all if extract_numeric(tup[0]) is not None and extract_numeric(tup[0]) > 0]
+    #             else:
+    #                 # Keys with NEGATIVE numeric value go to Blue Group
+    #                 blue_group_run_keys = [str(tup[0]) for tup in sorted_mean_all if extract_numeric(tup[0]) is not None and extract_numeric(tup[0]) < 0]
+
+    #             linestyle_map = {k: linestyles[i % len(linestyles)] for i, k in enumerate(blue_group_run_keys)}
+                
+    #             # --------------------------------------------------------
+    #             # PLOTTING LOOP WITH CORRECTED ABSOLUTE-MAGNITUDE SHADING
+    #             # --------------------------------------------------------
+
+    #             color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    #             run_colors = {} # Store colors for bar plots
+
+    #             plt.figure(figsize=(8, 5))
+
+    #             for run_key, mean_val, std_val in sorted_mean_all:
+    #                 run_key_str = str(run_key)
+    #                 num = extract_numeric(run_key)
+                    
+    #                 # Default to safe values
+    #                 color = "gray"
+    #                 linestyle = "-"
+    #                 alpha = 1.0
+
+    #                 # 1. Zero Run: Black and Solid
+    #                 if (num is not None and num == 0) or run_key_str in ("0", "0.0"):
+    #                     color = "black"
+    #                     linestyle = "-"
+    #                     alpha = 1.0
+                    
+    #                 # Check if the current run_key is in the unique-linestyle (Blue) group
+    #                 is_blue_group = run_key_str in blue_group_run_keys
+
+    #                 # 2. Numeric Positive Runs (num > 0)
+    #                 if num is not None and num > 0:
+                        
+    #                     if is_blue_group:
+    #                         cmap = matplotlib.cm.get_cmap('Blues')
+    #                         linestyle = linestyle_map.get(run_key_str, "-")
+    #                     else:
+    #                         cmap = matplotlib.cm.get_cmap('Reds')
+    #                         linestyle = "-" # Solid line
+
+    #                     # --- Color Calculation: Lighter for larger absolute value ---
+    #                     max_val, min_val = max_pos, min_pos
+    #                     if max_val > min_val:
+    #                         # Normalize to 0 (smallest absolute) to 1 (largest absolute)
+    #                         norm = (num - min_val) / (max_val - min_val) 
+    #                     else:
+    #                         norm = 0.0
+                        
+    #                     # Inverted Norm: Map 0.0 (smallest abs) to 1.0 (dark) 
+    #                     # and 1.0 (largest abs) to 0.0 (light). The color range is [0.6, 0.9]
+    #                     # This ensures runs close to zero are dark, and far from zero are light.
+    #                     inverted_norm = 1.0 - norm
+    #                     # Map [0,1] to [0.6, 0.9] - 0.9 is dark, 0.6 is light
+    #                     norm_clip = 0.6 + np.clip(inverted_norm, 0, 1) * 0.3 
+                        
+    #                     color = cmap(norm_clip)
+                    
+    #                 # 3. Numeric Negative Runs (num < 0)
+    #                 elif num is not None and num < 0:
+    #                     abs_val = abs(num)
+                        
+    #                     if is_blue_group:
+    #                         cmap = matplotlib.cm.get_cmap('Blues')
+    #                         linestyle = linestyle_map.get(run_key_str, "-")
+    #                     else:
+    #                         cmap = matplotlib.cm.get_cmap('Reds')
+    #                         linestyle = "-" # Solid line
+
+    #                     # --- Color Calculation: Lighter for larger absolute value ---
+    #                     max_val, min_val = max_neg, min_neg
+    #                     if max_val > min_val:
+    #                         # Normalize to 0 (smallest absolute) to 1 (largest absolute)
+    #                         norm = (abs_val - min_val) / (max_val - min_val)
+    #                     else:
+    #                         norm = 0.0
+                        
+    #                     # Inverted Norm: Map 0.0 (smallest abs) to 1.0 (dark) 
+    #                     # and 1.0 (largest abs) to 0.0 (light). The color range is [0.6, 0.9]
+    #                     inverted_norm = 1.0 - norm
+    #                     # Map [0,1] to [0.6, 0.9] - 0.9 is dark, 0.6 is light
+    #                     norm_clip = 0.6 + np.clip(inverted_norm, 0, 1) * 0.3 
+                        
+    #                     color = cmap(norm_clip)
+                    
+    #                 # 4. Non-numeric runs (fallback) - Fix for 'tab:blue' error
+    #                 else:
+    #                     color = "tab:blue" 
+    #                     linestyle = "-"
+
+
+    #                 # Store color for bar plots
+    #                 run_colors[run_key_str] = color
+
+    #                 # Ensure arrays are numpy arrays
+    #                 mean_arr = np.asarray(mean_val)
+    #                 std_arr = np.asarray(std_val)
+
+    #                 # Plot mean and shaded std dev
+    #                 plt.plot(x, mean_arr, label=f"{run_key_str}", color=color, linestyle=linestyle, alpha=alpha)
+    #                 plt.fill_between(x, mean_arr - std_arr, mean_arr + std_arr, alpha=0.15, color=color)
+
+    #             # --------------------------------------------------------
+    #             # PLOT DECORATION AND SAVING (Unchanged from previous versions)
+    #             # --------------------------------------------------------
+                
+    #             if direction=='z':
+    #                 plane_name = 'Sagittal'
+    #             elif direction=='x':
+    #                 plane_name = 'Coronal'
+
+    #             # plot the alignment baseline data if left_knee in sensor_name and direction == 'z'
+    #             if 'knee' in sensor_name and prosthesis_side in sensor_name and direction == 'z':
+    #                 baseline_data = {}
+    #                 # read baseline_data from csv file
+    #                 if knee_alignment_baseline_file and os.path.isfile(knee_alignment_baseline_file):
+    #                     current_label = None # Initialize current_label outside the loop
+    #                     with open(knee_alignment_baseline_file, 'r') as f:
+    #                         for line in f:
+    #                             line = line.strip()
+    #                             if not line:
+    #                                 continue
+    #                             if 'Schmalz' in knee_alignment_baseline_file:
+    #                                 label_match = re.match(r'^([A-Z_]+)\s*=\s*\[?', line)
+    #                             else:
+    #                                 # Generic matching for potential keys
+    #                                 label_match = re.match(r'^([A-Z_]+)\s*=\s*\[?', line)
+
+    #                             if label_match:
+    #                                 current_label = label_match.group(1)
+    #                                 baseline_data[current_label] = []
+    #                                 continue
+    #                             if current_label and not label_match: # Process data lines only if a label was found
+    #                                 vals = line.replace('[','').replace(']','').split(';')
+    #                                 if len(vals) == 2:
+    #                                     try:
+    #                                         x_val, y_val = map(float, vals)
+    #                                         # Normalize y_val by mass
+    #                                         y_val_normalized = y_val / (knee_alignment_data_mass * 9.81) if knee_alignment_data_mass != 0 else y_val
+    #                                         baseline_data[current_label].append((x_val, y_val_normalized))
+    #                                     except ValueError:
+    #                                         continue  
+                    
+    #                 # Apply baseline logic based on run key keywords
+    #                 if first_run_key:
+    #                     if 'z' in first_run_key and 'deg' in first_run_key:
+    #                         baseline_keys = {'FOOT_PLA': "Baseline PLA_-10°", 'FOOT_DOR': "Baseline DOR_10°", 'OPT': "Baseline OPT"}
+    #                     elif 'x' in first_run_key and 'mm' in first_run_key:
+    #                         baseline_keys = {'FOOT_ANT': "Baseline ANT_20mm", 'FOOT_POS': "Baseline POS_-20mm", 'OPT': "Baseline OPT"}
+    #                     else:
+    #                         baseline_keys = {}
+
+    #                     baseline_styles = {
+    #                         'FOOT_PLA': ('lightgray', '--'), 
+    #                         'FOOT_DOR': ('darkgrey', '--'), 
+    #                         'OPT': ('dimgray', '--'),
+    #                         'FOOT_ANT': ('lightgray', '--'), 
+    #                         'FOOT_POS': ('darkgrey', '--'),
+    #                     }
+
+    #                     for key, label in baseline_keys.items():
+    #                         if key in baseline_data and baseline_data[key]:
+    #                             xs, ys = zip(*baseline_data[key])
+    #                             color, linestyle = baseline_styles.get(key, ('gray', '--'))
+    #                             plt.plot(xs, ys, label=label, color=color, linestyle=linestyle, linewidth=2)
+
+
+    #             plt.title(f"{plane_name} Socket Moment")
+    #             plt.xlabel("Stance Phase (%)")
+    #             plt.ylabel("Normalized Socket Reaction Moment (Nm/kg)")
+    #             plt.legend()
+    #             plt.tight_layout()
+    #             date_str = datetime.now().strftime("%Y%m%d")
+    #             time_str = datetime.now().strftime("%H%M%S")
+    #             save_dir = os.path.join(folder_name)
+                
+    #             # Ensure folder exists
+    #             os.makedirs(save_dir, exist_ok=True) 
+
+    #             plt.savefig(os.path.join(save_dir, f"{sensor_name}_moment_{plane_name.lower()}_{date_str}_{time_str}.png"), dpi=300)
+    #             plt.show()
+    #             plt.close()
+
+
+    #             # --- Bar Plots for Z-Direction Moment ---
+    #             if direction == 'z' and bar_labels:
+    #                 # Get the colors in the correct order for the bars
+    #                 bar_colors = [run_colors[label] for label in bar_labels]
+    #                 x_pos = np.arange(len(bar_labels))
+                    
+    #                 fig_bars, axes_bars = plt.subplots(1, 3, figsize=(15, 5))
+                    
+    #                 # 1. Minimum Moment
+    #                 axes_bars[0].bar(x_pos, min_moments, color=bar_colors)
+    #                 axes_bars[0].axhline(0, color='grey', linewidth=0.8)
+    #                 axes_bars[0].set_xticks(x_pos)
+    #                 axes_bars[0].set_xticklabels(bar_labels, rotation=45, ha='right')
+    #                 axes_bars[0].set_title("Minimum Sagittal Moment")
+    #                 axes_bars[0].set_ylabel("Normalized Moment (Nm/kg)")
+    #                 axes_bars[0].tick_params(axis='x', which='major', labelsize=8)
+
+    #                 # 2. Moment at 45% Stance
+    #                 axes_bars[1].bar(x_pos, moments_at_45, color=bar_colors)
+    #                 axes_bars[1].axhline(0, color='grey', linewidth=0.8)
+    #                 axes_bars[1].set_xticks(x_pos)
+    #                 axes_bars[1].set_xticklabels(bar_labels, rotation=45, ha='right')
+    #                 axes_bars[1].set_title("Sagittal Moment at 45% Stance")
+    #                 axes_bars[1].set_ylabel("Normalized Moment (Nm/kg)")
+    #                 axes_bars[1].tick_params(axis='x', which='major', labelsize=8)
+
+    #                 # 3. Maximum Moment
+    #                 axes_bars[2].bar(x_pos, max_moments, color=bar_colors)
+    #                 axes_bars[2].axhline(0, color='grey', linewidth=0.8)
+    #                 axes_bars[2].set_xticks(x_pos)
+    #                 axes_bars[2].set_xticklabels(bar_labels, rotation=45, ha='right')
+    #                 axes_bars[2].set_title("Maximum Sagittal Moment")
+    #                 axes_bars[2].set_ylabel("Normalized Moment (Nm/kg)")
+    #                 axes_bars[2].tick_params(axis='x', which='major', labelsize=8)
+                    
+    #                 fig_bars.suptitle(f"{sensor_name} Key Moment Values", fontsize=14)
+    #                 fig_bars.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust for suptitle
+                    
+    #                 # Saving/Showing Bar Plot
+    #                 fig_bars.savefig(os.path.join(save_dir, f"{sensor_name}_z_bars_{date_str}_{time_str}.png"), dpi=300)
+    #                 plt.show()
+    #                 plt.close(fig_bars)
+
+
+    #             # --- Bar Plots for X-Direction Moment (Coronal) ---
+    #             if direction == 'x' and bar_labels:
+    #                 bar_colors = [run_colors[label] for label in bar_labels]
+    #                 x_pos = np.arange(len(bar_labels))
+                    
+    #                 fig_bars_x, axes_bars_x = plt.subplots(1, 2, figsize=(10, 5))
+                    
+    #                 # 1. Moment at 30% Stance
+    #                 axes_bars_x[0].bar(x_pos, moments_at_30, color=bar_colors)
+    #                 axes_bars_x[0].axhline(0, color='grey', linewidth=0.8)
+    #                 axes_bars_x[0].set_xticks(x_pos)
+    #                 axes_bars_x[0].set_xticklabels(bar_labels, rotation=45, ha='right')
+    #                 axes_bars_x[0].set_title("Coronal Moment at 30% Stance")
+    #                 axes_bars_x[0].set_ylabel("Normalized Moment (Nm/kg)")
+    #                 axes_bars_x[0].tick_params(axis='x', which='major', labelsize=8)
+
+    #                 # 2. Moment at 75% Stance
+    #                 axes_bars_x[1].bar(x_pos, moments_at_75, color=bar_colors)
+    #                 axes_bars_x[1].axhline(0, color='grey', linewidth=0.8)
+    #                 axes_bars_x[1].set_xticks(x_pos)
+    #                 axes_bars_x[1].set_xticklabels(bar_labels, rotation=45, ha='right')
+    #                 axes_bars_x[1].set_title("Coronal Moment at 75% Stance")
+    #                 axes_bars_x[1].set_ylabel("Normalized Moment (Nm/kg)")
+    #                 axes_bars_x[1].tick_params(axis='x', which='major', labelsize=8)
+                    
+    #                 fig_bars_x.suptitle(f"{sensor_name} Key Coronal Moment Values", fontsize=14)
+    #                 fig_bars_x.tight_layout(rect=[0, 0.03, 1, 0.95])
+                    
+    #                 fig_bars_x.savefig(os.path.join(save_dir, f"socket_moment_x_bars_{date_str}_{time_str}.png"), dpi=300)
+    #                 plt.show()
+    #                 plt.close(fig_bars_x)
+
+    @staticmethod
+    def plot_sensor_force_pylon_steps_per_run_stance(
+        all_loaded_data, run_step_data, direction, left_switches, right_switches, folder_name, interp_len=100, body_weight_to_normalize=1, sensor_force_names=None, smooth_data=False
+    ):
+        """
+        Plot moment data over the stance phase for each run in a separate plot.
+        Individual steps are shown in unique colors and are fully labeled
+        as "Step 1", "Step 2", etc., in the legend. (CAUTION: Legend may be large).
+
+        direction: "x", "y", or "z" to specify the force direction. [0, 1, 2] for x, y, z respectively.
+        """
+        
+        force_direction = {"x": 0, "y": 1, "z": 2}.get(direction, 0)
+        
+        # Helper: try to get a numeric value from run_key (kept from original)
+        def extract_numeric(run_key):
+            try:
+                return float(run_key)
+            except Exception:
+                m = re.search(r'[-+]?\d*\.?\d+', str(run_key))
+                if m:
+                    try:
+                        return float(m.group())
+                    except Exception:
+                        return None
+                return None
+
+        # Helper to parse run key for sorting (kept from original)
+        def parse_run_key_for_sort(run_key):
+            num = extract_numeric(run_key)
+            return num if num is not None else str(run_key)
+
+        # Use sensor_force_names from the first run if not provided
+        if sensor_force_names is None:
+            run_keys = list(all_loaded_data.keys())
+            if not run_keys:
+                 return # No data
+            run = run_keys[0]
+            sensor_force_names = all_loaded_data[run]["sensor_force_names"]
+
+        # Only keep sensors with 'pylon' or 'socket' AND 'torque' in their name
+        moment_sensors = [name for name in sensor_force_names if ("pylon" in name or "socket" in name) and "torque" in name]
+        
+        run_keys = list(all_loaded_data.keys())
+        sorted_run_keys = sorted(run_keys, key=parse_run_key_for_sort)
+
+        # Pre-define a large set of distinct colors for individual steps
+        tab20_colors = matplotlib.cm.get_cmap('tab20').colors
+        all_step_colors = list(tab20_colors) * 3 + list(mcolors.TABLEAU_COLORS.values())
+        
+        for sensor_name in moment_sensors:
+            
+            if direction == 'z':
+                plane_name = 'Sagittal'
+            elif direction == 'x':
+                plane_name = 'Coronal'
+            elif direction == 'y':
+                plane_name = 'Transverse'
+            else:
+                plane_name = 'Moment'
+
+            # --- Iterate over each run to create a separate plot ---
+            for run_key in sorted_run_keys:
+                run_dict = all_loaded_data.get(run_key, {})
+                step_data = run_step_data.get(run_key, {})
+
+                if sensor_name not in run_dict.get("all_sensor_force", {}):
+                    continue  # Skip this run if sensor data is missing
+
+                sensor_data = run_dict["all_sensor_force"][sensor_name]
+
+                # Determine side and switches
+                if sensor_name.endswith("_r"):
+                    all_step_start = step_data.get("step_start_right", [])
+                    switches = right_switches.get(run_key, [])
+                else:
+                    all_step_start = step_data.get("step_start_left", [])
+                    switches = left_switches.get(run_key, [])
+
+                steps = []
+                # List to hold the unique color for each step
+                step_colors = [] 
+                
+                if all_step_start and len(all_step_start) > 1 and switches:
+                    
+                    # 1. Process and interpolate steps to get stance phase data
+                    step_count = 0
+                    for j in range(len(all_step_start) - 1):
+                        start, end = all_step_start[j], all_step_start[j + 1]
+                        y = [float(np.array(a)[force_direction]) for a in sensor_data[start:end]]
+                        
+                        if len(y) < 2:
+                            continue
+
+                        # Interpolate to stance phase
+                        x_old = np.linspace(0, 1, len(y))
+                        x_new = np.linspace(0, 1, interp_len)
+                        y_interp = np.interp(x_new, x_old, y)
+                        switch_idx = switches[0] if switches and switches[0] < interp_len else interp_len
+                        stance_phase = y_interp[:switch_idx]
+                        
+                        if len(stance_phase) > 1:
+                            x_stance_old = np.linspace(0, 1, len(stance_phase))
+                            x_stance_new = np.linspace(0, 1, interp_len)
+                            stance_phase_interp = np.interp(x_stance_new, x_stance_old, stance_phase)
+                            
+                            normalized_step = stance_phase_interp / body_weight_to_normalize
+                            if force_direction == 2:
+                                normalized_step *= -1 
+
+                            steps.append(normalized_step)
+                            
+                            # Assign unique color for this step
+                            color_index = step_count % len(all_step_colors)
+                            step_colors.append(all_step_colors[color_index])
+                            step_count += 1
+
+
+                # 2. Plotting (if steps exist for this run)
+                if steps:
+                    
+                    steps_array = np.array(steps)
+                    mean_val = np.mean(steps_array, axis=0)
+                    std_val = np.std(steps_array, axis=0)
+
+                    # Smooth mean and std if requested
+                    if smooth_data:
+                        mean_val = gaussian_filter1d(mean_val, sigma=4)
+
+                    x = np.linspace(0, 100, interp_len)
+                    
+                    plt.figure(figsize=(10, 6))
+                    ax = plt.gca()
+                    
+                    # Plot all individual steps with unique colors AND the desired numerical label
+                    for i, step in enumerate(steps):
+                        # The label is set here as requested ("Step 1", "Step 2", etc.)
+                        ax.plot(x, step, color=step_colors[i], alpha=0.5, linewidth=1, 
+                                label=f"Step {i+1}") 
+                        
+                    # Plot mean and shaded std dev
+                    mean_color = 'black'
+                    ax.plot(x, mean_val, label=f"Mean (N={len(steps)})", color=mean_color, linestyle='-', linewidth=2)
+                    ax.fill_between(x, mean_val - std_val, mean_val + std_val, alpha=0.15, color=mean_color, label='± 1 SD')
+
+                    print(f"Run: {run_key}, Sensor: {sensor_name}, Std Median: {np.median(std_val):.3f}, Std Mean: {np.mean(std_val):.3f}, Std Max: {np.max(std_val):.3f}, Std Min: {np.min(std_val):.3f}")
+
+                    # Set titles and labels
+                    sensor_type = "Pylon" if "pylon" in sensor_name else "Socket"
+                    ax.set_title(f"Run: {run_key} - {plane_name} {sensor_type} Moment (N={len(steps)} Steps)")
+                    ax.set_xlabel("Stance Phase (%)")
+                    ax.set_ylabel(f"Normalized {plane_name} Moment (Nm/kg)")
+                    
+                    # ----------------------------------------------------------------------
+                    # NO LEGEND FILTERING HERE: Matplotlib will now display all individual 
+                    # step labels ("Step 1", "Step 2", etc.), Mean, and ± 1 SD.
+                    # ----------------------------------------------------------------------
+                    ax.legend(loc='best', title=f"Run: {run_key} Legend", ncol=2) # Use ncol to save space
+
+                    ax.grid(True, linestyle='--', alpha=0.6)
+                    plt.tight_layout()
+
+                    # Save figure
+                    date_str = datetime.now().strftime("%Y%m%d")
+                    time_str = datetime.now().strftime("%H%M%S")
+                    
+                    run_safe_name = run_key.replace('.', '_').replace('-', 'neg')
+                    save_dir = os.path.join(folder_name)
+                    os.makedirs(save_dir, exist_ok=True)
+                    
+                    filename = f"{sensor_type.lower()}_moment_{plane_name.lower()}_{run_safe_name}_{date_str}_{time_str}.png"
+                    plt.savefig(os.path.join(save_dir, filename), dpi=300)
+                    plt.show()
+                    plt.close()
+
+    
+
+
+    @staticmethod
+    def plot_sensor_force_symmetry_all_runs_stance(
+        all_loaded_data, run_step_data, direction, right_switches, left_switches, interp_len=100, body_weight_to_normalize=1, sensor_force_names=None
+    ):
+        """
+        Plot mean of right of all runs, mean of left, and the difference, side by side in one figure.
+        Each plot includes all runs.
+        Only plot the stance phase, i.e., interpolate each step from 0 to the first entry of left_switches/right_switches for each run.
+        direction: "x", "y", or "z" to specify the force direction. [0, 1, 2] for x, y, z respectively.
+        """
+        force_direction = {"x": 0, "y": 1, "z": 2}.get(direction, 0)
+
+        if sensor_force_names is None:
+            first_run = next(iter(all_loaded_data))
+            sensor_force_names = all_loaded_data[first_run]["sensor_force_names"]
+
+        # Find sensor pairs (left/right)
+        sensor_pairs = []
+        for name in sensor_force_names:
+            if name.startswith("left_"):
+                right_name = name.replace("left_", "right_")
+                if right_name in sensor_force_names:
+                    sensor_pairs.append((name, right_name))
+
+        for left_sensor, right_sensor in sensor_pairs:
+            run_keys = list(all_loaded_data.keys())
+            mean_left_all = []
+            std_left_all = []
+            mean_right_all = []
+            std_right_all = []
+            diff_all = []
+            max_len = 0
+            left_steps_all = []
+            right_steps_all = []
+            for run_key in run_keys:
+                run_dict = all_loaded_data[run_key]
+                step_data = run_step_data[run_key]
+                left_data = run_dict["all_sensor_force"][left_sensor]
+                right_data = run_dict["all_sensor_force"][right_sensor]
+                all_step_start_left = step_data["step_start_left"]
+                all_step_start_right = step_data["step_start_right"]
+
+                # Use first entry of left_switches/right_switches for stance phase
+                switches_left = left_switches.get(run_key, [])
+                switches_right = right_switches.get(run_key, [])
+
+                left_steps = []
+                if all_step_start_left and len(all_step_start_left) > 1 and switches_left:
+                    for j in range(len(all_step_start_left) - 1):
+                        start = all_step_start_left[j]
+                        end = all_step_start_left[j + 1]
+                        y = [float(np.array(a)[force_direction]) for a in left_data[start:end]]
+                        if len(y) < 2:
+                            continue
+                        x_old = np.linspace(0, 1, len(y))
+                        x_new = np.linspace(0, 1, interp_len)
+                        y_interp = np.interp(x_new, x_old, y)
+                        # Only plot up to the first entry of switches_left (stance phase)
+                        switch_idx = switches_left[0] if switches_left and switches_left[0] < interp_len else interp_len
+                        stance_phase = y_interp[:switch_idx]
+                        # Re-interpolate stance phase to interp_len
+                        if len(stance_phase) > 1:
+                            x_stance_old = np.linspace(0, 1, len(stance_phase))
+                            x_stance_new = np.linspace(0, 1, interp_len)
+                            stance_phase_interp = np.interp(x_stance_new, x_stance_old, stance_phase)
+                            left_steps.append(stance_phase_interp)
+                        max_len = interp_len
+                right_steps = []
+                if all_step_start_right and len(all_step_start_right) > 1 and switches_right:
+                    for j in range(len(all_step_start_right) - 1):
+                        start = all_step_start_right[j]
+                        end = all_step_start_right[j + 1]
+                        y = [float(np.array(a)[force_direction]) for a in right_data[start:end]]
+                        if len(y) < 2:
+                            continue
+                        x_old = np.linspace(0, 1, len(y))
+                        x_new = np.linspace(0, 1, interp_len)
+                        y_interp = np.interp(x_new, x_old, y)
+                        switch_idx = switches_right[0] if switches_right and switches_right[0] < interp_len else interp_len
+                        stance_phase = y_interp[:switch_idx]
+                        if len(stance_phase) > 1:
+                            x_stance_old = np.linspace(0, 1, len(stance_phase))
+                            x_stance_new = np.linspace(0, 1, interp_len)
+                            stance_phase_interp = np.interp(x_stance_new, x_stance_old, stance_phase)
+                            right_steps.append(stance_phase_interp)
+                        max_len = interp_len
+                # All stance phases are now re-interpolated to interp_len, so no need to pad
+                if left_steps and right_steps:
+                    mean_left = np.mean(left_steps, axis=0) / body_weight_to_normalize
+                    std_left = np.std(left_steps, axis=0) / body_weight_to_normalize
+                    mean_right = np.mean(right_steps, axis=0) / body_weight_to_normalize
+                    std_right = np.std(right_steps, axis=0) / body_weight_to_normalize
+                    if 'knee' in left_sensor:
+                        mean_left = -mean_left
+                        mean_right = -mean_right
+                        std_left = -std_left
+                        std_right = -std_right
+                    diff = mean_left - mean_right
+                    mean_left_all.append((run_key, mean_left, std_left))
+                    mean_right_all.append((run_key, mean_right, std_right))
+                    diff_all.append((run_key, diff))
+                else:
+                    mean_left_all.append((run_key, None, None))
+                    mean_right_all.append((run_key, None, None))
+                    diff_all.append((run_key, None))
+            # Plot with fixed interp_len for all runs
+            x = np.linspace(0, 100, interp_len)
+            fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharex=True)
+
+            # Plot mean of right of all runs
+            for run_key, mean_right, std_right in mean_right_all:
+                if mean_right is not None:
+                    axes[0].plot(x, mean_right, label=f"{run_key} {right_sensor} mean")
+                    axes[0].fill_between(x, mean_right - std_right, mean_right + std_right, alpha=1)
+            axes[0].set_title(f"{right_sensor} mean (stance phase, all runs)")
+            axes[0].set_xlabel("Interpolated Step (%)")
+            axes[0].set_ylabel("Force Value")
+
+            # Plot mean of left of all runs
+            for run_key, mean_left, std_left in mean_left_all:
+                if mean_left is not None:
+                    axes[1].plot(x, mean_left, label=f"{run_key} {left_sensor} mean")
+                    axes[1].fill_between(x, mean_left - std_left, mean_left + std_left, alpha=1)
+            axes[1].set_title(f"{left_sensor} mean (stance phase, all runs)")
+            axes[1].set_xlabel("Interpolated Step (%)")
+            axes[1].set_ylabel("Force Value")
+
+            # Plot difference (left - right) of all runs
+            for run_key, diff in diff_all:
+                if diff is not None:
+                    axes[2].plot(x, diff, label=f"{run_key} Left-Right")
+            axes[2].axhline(0, color='gray', linestyle=':', linewidth=1)
+            axes[2].set_title(f"{left_sensor} - {right_sensor} difference (stance phase, all runs)")
+            axes[2].set_xlabel("Interpolated Step (%)")
+            axes[2].set_ylabel("Force Value Difference")
+            axes[2].legend()
+
+            plt.tight_layout()
+            plt.show()
+            plt.close()
+
+
+
+    @staticmethod
+    def plot_sensor_force_symmetry_all_runs_stance_compare_baseline(
+        all_loaded_data, run_step_data, direction, right_switches, left_switches, interp_len=100, body_weight_to_normalize=1, sensor_force_names=None, baseline_data=None
+    ):
+        """
+        Plot mean of right of all runs, mean of left, and the difference, side by side in one figure.
+        Only plot the stance phase for the knee_mimic_torque sensor pair.
+        Optionally plot baseline_data for knee_z.
+        """
+        mass_norm = 85*10 # std 15
+
+        force_direction = {"x": 0, "y": 1, "z": 2}.get(direction, 0)
+
+        # Only plot knee_mimic_torque pair
+        left_sensor = "left_knee_mimic_torque_sensor"
+        right_sensor = "right_knee_mimic_torque_sensor"
+
+        run_keys = list(all_loaded_data.keys())
+        mean_left_all = []
+        std_left_all = []
+        mean_right_all = []
+        std_right_all = []
+        diff_all = []
+        max_len = 0
+        left_steps_all = []
+        right_steps_all = []
+        for run_key in run_keys:
+            run_dict = all_loaded_data[run_key]
+            step_data = run_step_data[run_key]
+            left_data = run_dict["all_sensor_force"][left_sensor]
+            right_data = run_dict["all_sensor_force"][right_sensor]
+            all_step_start_left = step_data["step_start_left"]
+            all_step_start_right = step_data["step_start_right"]
+
+            # Use first entry of left_switches/right_switches for stance phase
+            switches_left = left_switches.get(run_key, [])
+            switches_right = right_switches.get(run_key, [])
+
+            left_steps = []
+            if all_step_start_left and len(all_step_start_left) > 1 and switches_left:
+                for j in range(len(all_step_start_left) - 1):
+                    start = all_step_start_left[j]
+                    end = all_step_start_left[j + 1]
+                    y = [float(np.array(a)[force_direction]) for a in left_data[start:end]]
+                    if len(y) < 2:
+                        continue
+                    x_old = np.linspace(0, 1, len(y))
+                    x_new = np.linspace(0, 1, interp_len)
+                    y_interp = np.interp(x_new, x_old, y)
+                    switch_idx = switches_left[0] if switches_left and switches_left[0] < interp_len else interp_len
+                    stance_phase = y_interp[:switch_idx]
+                    if len(stance_phase) > 1:
+                        x_stance_old = np.linspace(0, 1, len(stance_phase))
+                        x_stance_new = np.linspace(0, 1, interp_len)
+                        stance_phase_interp = np.interp(x_stance_new, x_stance_old, stance_phase)
+                        left_steps.append(stance_phase_interp)
+                    max_len = interp_len
+            right_steps = []
+            if all_step_start_right and len(all_step_start_right) > 1 and switches_right:
+                for j in range(len(all_step_start_right) - 1):
+                    start = all_step_start_right[j]
+                    end = all_step_start_right[j + 1]
+                    y = [float(np.array(a)[force_direction]) for a in right_data[start:end]]
+                    if len(y) < 2:
+                        continue
+                    x_old = np.linspace(0, 1, len(y))
+                    x_new = np.linspace(0, 1, interp_len)
+                    y_interp = np.interp(x_new, x_old, y)
+                    switch_idx = switches_right[0] if switches_right and switches_right[0] < interp_len else interp_len
+                    stance_phase = y_interp[:switch_idx]
+                    if len(stance_phase) > 1:
+                        x_stance_old = np.linspace(0, 1, len(stance_phase))
+                        x_stance_new = np.linspace(0, 1, interp_len)
+                        stance_phase_interp = np.interp(x_stance_new, x_stance_old, stance_phase)
+                        right_steps.append(stance_phase_interp)
+                    max_len = interp_len
+            if left_steps and right_steps:
+                mean_left = np.mean(left_steps, axis=0) / body_weight_to_normalize
+                std_left = np.std(left_steps, axis=0) / body_weight_to_normalize
+                mean_right = np.mean(right_steps, axis=0) / body_weight_to_normalize
+                std_right = np.std(right_steps, axis=0) / body_weight_to_normalize
+                mean_left = -mean_left
+                mean_right = -mean_right
+                std_left = -std_left
+                std_right = -std_right
+                diff = mean_left - mean_right
+                mean_left_all.append((run_key, mean_left, std_left))
+                mean_right_all.append((run_key, mean_right, std_right))
+                diff_all.append((run_key, diff))
+            else:
+                mean_left_all.append((run_key, None, None))
+                mean_right_all.append((run_key, None, None))
+                diff_all.append((run_key, None))
+        x = np.linspace(0, 100, interp_len)
+        fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharex=True)
+
+        # Plot mean of right of all runs
+        for run_key, mean_right, std_right in mean_right_all:
+            if mean_right is not None:
+                axes[0].plot(x, mean_right, label=f"{run_key} {right_sensor} mean")
+                axes[0].fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.15)
+        axes[0].set_title(f"{right_sensor} mean (stance phase, all runs)")
+        axes[0].set_xlabel("Interpolated Step (%)")
+        axes[0].set_ylabel("Force Value")
+
+        # Plot mean of left of all runs
+        for run_key, mean_left, std_left in mean_left_all:
+            if mean_left is not None:
+                axes[1].plot(x, mean_left, label=f"{run_key} {left_sensor} mean")
+                axes[1].fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.15)
+        axes[1].set_title(f"{left_sensor} mean (stance phase, all runs)")
+        axes[1].set_xlabel("Interpolated Step (%)")
+        axes[1].set_ylabel("Force Value")
+
+        # Plot difference (left - right) of all runs
+        for run_key, diff in diff_all:
+            if diff is not None:
+                axes[2].plot(x, diff, label=f"{run_key} Left-Right")
+        axes[2].axhline(0, color='gray', linestyle=':', linewidth=1)
+        axes[2].set_title(f"{left_sensor} - {right_sensor} difference (stance phase, all runs)")
+        axes[2].set_xlabel("Interpolated Step (%)")
+        axes[2].set_ylabel("Force Value Difference")
+        axes[2].legend()
+
+        # Plot baseline_data for knee_z if provided
+        if baseline_data is not None and direction == "z":
+
+            data = {}
+            current_label = None
+            with open(baseline_data, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if 'Schmalz' in baseline_data:
+                        label_match = re.match(r'^([A-Z_]+)\s*=\s*\[?', line)
+                    else:
+                        label_match = re.match(r'^([A-Za-z_]+)\s*=\s*\[?', line)
+                    if label_match:
+                        current_label = label_match.group(1)
+                        data[current_label] = []
+                        continue
+                    if current_label:
+                        vals = line.split(';')
+                    if len(vals) == 2:
+                        try:
+                            x, y = map(float, vals)
+                            data[current_label].append((x, y))
+                        except ValueError:
+                            continue
+                for ax in axes:
+                    for label, points in data.items():
+                        if label == "OPT" and points:
+                            xs, ys = zip(*points)
+                            ys = np.array(ys)/mass_norm
+                            ax.plot(xs, ys, marker='.', linestyle='-', color='black', label=f"Baseline {label}")
+                ax.legend()
+
+        plt.tight_layout()
+        plt.show()
+        plt.close()
+
+
+
+
+
+    @staticmethod
+    def plot_sensor_torque_symmetry_baseline_comp(
+        all_loaded_data,
+        run_step_data,
+        direction,
+        baseline_file,
+        baseline_file_2,
+        baseline_file_3,
+        interp_len=100,
+        body_weight_to_normalize=1,
+        mass_baseline=97.5,
+        mass_baseline_2=75 * 9.81,
+        mass_baseline_3 = 85 * 9.81, 
+        sensor_force_names=None, # Optional, but good practice
+        right_switches = None, 
+        left_switches = None,
+    ):
+        """
+        Plot mean of right of all runs, mean of left, and the difference for TORQUE sensors,
+        side by side in one figure, including two external baselines.
+        direction: "x", "y", or "z" to specify the torque axis. [0, 1, 2] for x, y, z respectively.
+        """
+        # --- Initialization ---
+        direction_map = {"x": 0, "y": 1, "z": 2}
+        force_direction = direction_map.get(direction, 0)
+        
+        # Use sensor_force_names from the first run if not provided
+        if sensor_force_names is None:
+            first_run = next(iter(all_loaded_data))
+            sensor_force_names = all_loaded_data[first_run].get("sensor_force_names", [])
+
+        # Find sensor pairs, filtering for 'torque' in the name
+        sensor_pairs = []
+        for name in sensor_force_names:
+            if 'torque' in name.lower() and name.startswith("left_"):
+                right_name = name.replace("left_", "right_")
+                if right_name in sensor_force_names:
+                    sensor_pairs.append((name, right_name))
+
+        # --- Baseline Loading ---
+        baseline_data = {}
+        baseline_data_2 = {}
+        baseline_data_3 = {}
+        
+        # Helper for loading baseline (fixed for value stripping and error handling)
+        def load_baseline(file_path, data_dict):
+            current_label = None
+            with open(file_path, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    # Check for label start
+                    if 'Schmalz' in file_path:
+                        label_match = re.match(r'^([A-Z_]+)\s*=\s*\[?', line)
+                    else:
+                        label_match = re.match(r'^([A-Za-z_]+)\s*=\s*\[?', line)
+                    
+                    if label_match:
+                        current_label = label_match.group(1)
+                        data_dict[current_label] = []
+                        continue
+                        
+                    # Check for end of list (or just skip if no current_label)
+                    if line.endswith(']'):
+                        current_label = None
+                        continue
+
+                    if current_label:
+                        vals = line.split(';')
+                        if len(vals) == 2:
+                            try:
+                                x, y = map(float, [v.strip() for v in vals])
+                                data_dict[current_label].append((x, y))
+                            except ValueError:
+                                continue
+
+        load_baseline(baseline_file, baseline_data)
+        load_baseline(baseline_file_2, baseline_data_2)
+        load_baseline(baseline_file_3, baseline_data_3)
+        
+        # --- Main Plotting Loop (Iterates over torque sensor pairs) ---
+        for left_sensor, right_sensor in sensor_pairs:
+            base_sensor_name_lower = left_sensor.replace("left_", "").replace("_sensor", "").lower()
+            
+            # Prepare data for all runs
+            run_keys = list(all_loaded_data.keys())
+            mean_left_all, std_left_all, mean_right_all, std_right_all, diff_all = [], [], [], [], []
+            
+            # Helper function for data extraction and interpolation
+            def collect_steps(data, indices):
+                steps = []
+                if indices and len(indices) > 1:
+                    for j in range(len(indices) - 1):
+                        start, end = indices[j], indices[j + 1]
+                        # Extract data for the specified direction (torque is a vector)
+                        y = [float(np.array(a)[force_direction]) for a in data[start:end]]
+                        if len(y) < 2:
+                            continue
+                        
+                        # Interpolation logic
+                        x_old = np.linspace(0, 1, len(y))
+                        x_new = np.linspace(0, 1, interp_len)
+                        y_interp = np.interp(x_new, x_old, y)
+                        steps.append(y_interp)
+                return steps
+            
+            for run_key in run_keys:
+                run_dict = all_loaded_data[run_key]
+                step_data = run_step_data[run_key]
+                
+                # Access sensor data
+                left_data = run_dict.get("all_sensor_force", {}).get(left_sensor, None)
+                right_data = run_dict.get("all_sensor_force", {}).get(right_sensor, None)
+                
+                if left_data is None or right_data is None:
+                    continue
+                    
+                all_step_start_left = step_data["step_start_left"]
+                all_step_start_right = step_data["step_start_right"]
+
+                left_steps = collect_steps(left_data, all_step_start_left)
+                right_steps = collect_steps(right_data, all_step_start_right)
+                
+                # Compute means and stds
+                if left_steps and right_steps:
+                    mean_left = np.mean(left_steps, axis=0) / body_weight_to_normalize
+                    std_left = np.std(left_steps, axis=0) / body_weight_to_normalize
+                    mean_right = np.mean(right_steps, axis=0) / body_weight_to_normalize
+                    std_right = np.std(right_steps, axis=0) / body_weight_to_normalize
+                    
+                    # Apply sign convention for knee (or other specific sensors)
+                    if 'knee' in left_sensor.lower():
+                        mean_left = -mean_left
+                        mean_right = -mean_right
+                        # Note: Do not flip sign for standard deviation (std is always positive)
+                        
+                    diff = mean_left - mean_right # Symmetry difference
+                    
+                    mean_left_all.append((run_key, mean_left, std_left))
+                    mean_right_all.append((run_key, mean_right, std_right))
+                    diff_all.append((run_key, diff))
+                else:
+                    mean_left_all.append((run_key, None, None))
+                    mean_right_all.append((run_key, None, None))
+                    diff_all.append((run_key, None))
+
+            # --- Plotting ---
+            x = np.linspace(0, 100, interp_len)
+            
+            if mean_left_all or mean_right_all or diff_all:
+                fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharex=True)
+                
+                # Plot 1: Right Sensor (axes[0]) - Intact Baseline
+                for run_key, mean_right, std_right in mean_right_all:
+                    if mean_right is not None:
+                        axes[0].plot(x, mean_right, label=f"{run_key}")
+                        axes[0].fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.15)
+                
+                # Helper for plotting baseline data
+                def plot_baseline_torque(ax, data_dict, file_path, mass, label_suffix, line_style, line_color, side_label):
+                    for label, points in data_dict.items():
+                        label_lower = label.lower()
+                        if 'ankle' in label_lower:
+                            label_lower = label_lower.replace('ankle', 'foot')
+                        label_joint = label_lower.split('_')[0]
+                        # Match baseline: must contain base sensor name AND 'intact'
+                        if 'intact' in label_lower and label_joint in base_sensor_name_lower  and points:
+                            xs, ys = zip(*points)
+                            ys = np.array(ys) * -1 # Apply common torque sign flip
+                            if 'Banks' in file_path:
+                                ys = np.array(ys) / mass
+                                if 'knee' not in base_sensor_name_lower: # Apply specific normalization flip
+                                    ys = np.array(ys) * -1
+
+                            baseline_label = 'Turcot et al.' if 'Turcot' in file_path else 'Banks et al.'
+                            ax.plot(xs, ys, marker='o', linestyle=line_style, color=line_color,
+                                    label=f"{baseline_label} {label_suffix}")
+                
+
+                # Plot Baselines on Right Sensor (Intact side)
+                plot_baseline_torque(axes[0], baseline_data, baseline_file, mass_baseline, 
+                                     "(Intact Base 1)", '-', 'black', right_sensor)
+                plot_baseline_torque(axes[0], baseline_data_2, baseline_file_2, mass_baseline_2, 
+                                     "(Intact Base 2)", '--', 'grey', right_sensor)
+
+
+                axes[0].set_title(f"{right_sensor} ({direction}-axis) mean (all runs)")
+                axes[0].set_xlabel("Interpolated Step (%)")
+                axes[0].set_ylabel(f"Torque ({'Nm/kg' if body_weight_to_normalize != 1 else 'Nm'})")
+                
+                # Plot 2: Left Sensor (axes[1]) - Prosthetic Baseline
+                for run_key, mean_left, std_left in mean_left_all:
+                    if mean_left is not None:
+                        axes[1].plot(x, mean_left, label=f"{run_key}")
+                        axes[1].fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.15)
+
+                # Helper for plotting baseline data (Prosthesis/impaired Side)
+                def plot_baseline_torque_impaired(ax, data_dict, file_path, mass, label_suffix, line_style, line_color, side_label):
+                    for label, points in data_dict.items():
+                        label_lower = label.lower()
+                        if 'ankle' in label_lower:
+                            label_lower = label_lower.replace('ankle', 'foot')
+                        # Match baseline: must contain base sensor name AND NOT 'intact'
+                        if 'intact' not in label_lower and label_lower in base_sensor_name_lower and points:
+                            xs, ys = zip(*points)
+                            ys = np.array(ys) * -1 # Apply common torque sign flip
+                            if 'Banks' in file_path:
+                                ys = np.array(ys) / mass
+                                if 'knee' not in base_sensor_name_lower:
+                                    ys = np.array(ys) * -1
+                            
+                            baseline_label = 'Turcot et al.' if 'Turcot' in file_path else 'Banks et al.'
+                            ax.plot(xs, ys, marker='o', linestyle=line_style, color=line_color, 
+                                    label=f"{baseline_label} {label_suffix}")
+                
+                def plot_baseline_torque_Schmalz(ax, data_dict, file_path, mass, label_suffix, line_style, line_color, side_label):
+                    for label, points in data_dict.items():
+                        label_lower = label.lower()
+                        if 'knee' in label_lower:
+                            label_lower = label_lower.replace('knee', 'thigh')
+                        # Plot OPT for knee from Schmalz data
+                        if 'schmalz' in file_path.lower() and 'opt' in label_lower and 'knee' in base_sensor_name_lower and points:
+                            xs, ys = zip(*points)
+                            ys = np.array(ys) / mass  # Normalize by mass
+                            # Adapt Schmalz x-axis to match stance phase using left_switches
+                            # left_switches is a dict: {run_key: [indices]}
+                            # Use the first run's left_switches as reference for stance phase length
+                            stance_percent = 100  # Default to 100% if not found
+                            if left_switches and isinstance(left_switches, dict):
+                                # Try to get the first available stance switch index
+                                for switches in left_switches.values():
+                                    if switches and len(switches) > 0:
+                                        stance_percent = (switches[0] / interp_len) * 100
+                                        break
+                            # Rescale Schmalz xs from [0, 100] to [0, stance_percent]
+                            xs = np.array(xs)
+                            xs_scaled = xs / 100.0 * stance_percent
+                            ax.plot(xs_scaled, ys, marker='o', linestyle=line_style, color=line_color, label=f"Schmalz OPT {label_suffix}")
+                            # Plot a vertical line at the stance-to-swing transition (first switch index)
+                            if left_switches and isinstance(left_switches, dict):
+                                for switches in left_switches.values():
+                                    if switches and len(switches) > 0:
+                                        stance_percent = (switches[0] / interp_len) * 100
+                                        ax.axvline(stance_percent, color='red', linestyle=':', linewidth=2, label="Stance-to-Swing Transition")
+                                        break
+                        # Match baseline: must contain base sensor name AND 'intact'
+
+                # Plot Baselines on Left Sensor (Prosthetic/Unimpaired side - using non-Intact labels)
+                plot_baseline_torque_impaired(axes[1], baseline_data, baseline_file, mass_baseline, 
+                                                 "(Impaired Base 1)", '-', 'black', left_sensor)
+                plot_baseline_torque_impaired(axes[1], baseline_data_2, baseline_file_2, mass_baseline_2, 
+                                                 "(Impaired Base 2)", '--', 'grey', left_sensor)
+                plot_baseline_torque_Schmalz(axes[1], baseline_data_3, baseline_file_3, mass_baseline_3,
+                                             "(Impaired Base 3)", ':', 'blue', right_sensor)
+
+                axes[1].set_title(f"{left_sensor} ({direction}-axis) mean (all runs)")
+                axes[1].set_xlabel("Interpolated Step (%)")
+                axes[1].set_ylabel(f"Torque ({'Nm/kg' if body_weight_to_normalize != 1 else 'Nm'})")
+                
+                # Plot 3: Difference (axes[2])
+                for run_key, diff in diff_all:
+                    if diff is not None:
+                        axes[2].plot(x, diff, label=f"{run_key} Diff (L-R)")
+                        
+                axes[2].axhline(0, color='gray', linestyle=':', linewidth=1)
+                axes[2].set_title(f"{left_sensor} - {right_sensor} difference (all runs)")
+                axes[2].set_xlabel("Interpolated Step (%)")
+                axes[2].set_ylabel(f"Torque Difference ({'Nm/kg' if body_weight_to_normalize != 1 else 'Nm'})")
+                
+                # Legend consolidation
+                for ax in axes:
+                    if ax.get_lines() or ax.get_children():
+                        lines, labels = ax.get_legend_handles_labels()
+                        # Consolidate duplicate labels (e.g., from multiple runs/baselines)
+                        unique_labels = dict(zip(labels, lines))
+                        ax.legend(unique_labels.values(), unique_labels.keys(), loc='best')
+
+                plt.tight_layout()
+                plt.show()
+                plt.close()
+
+
+
+
+    @staticmethod
+    def plot_sensor_force_symmetry_four_panel_with_params(
+        all_loaded_data, run_step_data, right_switches, left_switches,
+        prosthesis_side='left', interp_len=100, body_weight_to_normalize=1, baseline_data_path=None
+    ):
+        """
+        Plots a 2x2 figure comparing specific runs to baseline data, with updated colors.
+        Each subplot shows the mean and standard deviation of a run against a baseline.
+        """
+        
+        # Define the configurations for each of the four subplots
+        plot_configs = [
+            {'baseline_label': 'FOOT_ANT', 'run_keys': ['P2', 'P2_X20mm'], 'title': 'FOOT_ANT vs. P2_X20mm'},
+            {'baseline_label': 'FOOT_POS', 'run_keys': ['P2', 'P2_X-20mm'], 'title': 'FOOT_POS vs. P2_X-20mm'},
+            {'baseline_label': 'FOOT_PLA', 'run_keys': ['P2', 'P2_Z-5°'], 'title': 'FOOT_PLA vs. P2_Z-5°'},
+            {'baseline_label': 'FOOT_DOR', 'run_keys': ['P2', 'P2_Z5°'], 'title': 'FOOT_DOR vs. P2_Z5°'},
+            # {'baseline_label': 'FOOT_PLA', 'run_keys': ['P2', 'P2_Z-10°'], 'title': 'FOOT_PLA vs. P2, P2_Z-10°'},
+            # {'baseline_label': 'FOOT_DOR', 'run_keys': ['P2', 'P2_Z10°'], 'title': 'FOOT_DOR vs. P2, P2_Z10°'},
+        ]
+
+        mass_norm = 85 * 9.81  # std 15
+        direction = 'z' # Assuming Z-axis force for all plots
+        force_direction = {"x": 0, "y": 1, "z": 2}.get(direction, 0)
+
+        # Create a figure with a 2x2 grid of subplots
+        fig, axs = plt.subplots(2, 2, figsize=(15, 12))
+        #fig, axs = plt.subplots(3, 2, figsize=(15, 12))
+        axs = axs.flatten()  # Flatten the 2D array of axes for easy iteration
+
+        # Load baseline data
+        baseline_data = {}
+        if baseline_data_path is not None:
+            with open(baseline_data_path, 'r') as f:
+                current_label = None
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if 'Schmalz' in baseline_data_path:
+                        label_match = re.match(r'^([A-Z_]+)\s*=\s*\[?', line)
+                    else:
+                        label_match = re.match(r'^([A-Za-z_]+)\s*=\s*\[?', line)
+                    
+                    if label_match:
+                        current_label = label_match.group(1)
+                        baseline_data[current_label] = []
+                        continue
+                    
+                    if current_label:
+                        vals = line.split(';')
+                        if len(vals) == 2:
+                            try:
+                                x_val, y_val = map(float, vals)
+                                baseline_data[current_label].append((x_val, y_val))
+                            except ValueError:
+                                continue
+        
+        # Iterate through each subplot configuration and plot the data
+        for i, config in enumerate(plot_configs):
+            ax = axs[i]
+            
+            # Plot baseline data
+            if baseline_data is not None:
+                baseline_label = config['baseline_label']
+                opt_label = "OPT"
+                if baseline_label in baseline_data and opt_label in baseline_data:
+                    # Plot 'FOOT_...' baseline in blue
+                    xs, ys = zip(*baseline_data[baseline_label])
+                    ys_norm = np.array(ys) / mass_norm
+                    ax.plot(xs, ys_norm, linestyle='-', color='blue', label=f"Baseline {baseline_label}")
+
+                    # Plot 'OPT' baseline in black
+                    xs, ys = zip(*baseline_data[opt_label])
+                    ys_norm = np.array(ys) / mass_norm
+                    ax.plot(xs, ys_norm, linestyle='-', color='black', label=f"Baseline {opt_label}")
+            
+            # Plot run data
+            for run_key in config['run_keys']:
+                if run_key in all_loaded_data:
+                    run_dict = all_loaded_data[run_key]
+                    step_data = run_step_data[run_key]
+                    
+                    # Use the passed prosthesis_side to select the correct sensor and data
+                    if prosthesis_side == "left":
+                        sensor = "left_knee_mimic_torque_sensor"
+                        all_step_start = step_data.get("step_start_left", [])
+                        switches = left_switches.get(run_key, [])
+                        data = run_dict["all_sensor_force"].get(sensor, [])
+                    else:  # "right"
+                        sensor = "right_knee_mimic_torque_sensor"
+                        all_step_start = step_data.get("step_start_right", [])
+                        switches = right_switches.get(run_key, [])
+                        data = run_dict["all_sensor_force"].get(sensor, [])
+                    
+                    steps = []
+                    if all_step_start and len(all_step_start) > 1 and switches:
+                        for j in range(len(all_step_start) - 1):
+                            start = all_step_start[j]
+                            end = all_step_start[j + 1]
+                            y = [float(np.array(a)[force_direction]) for a in data[start:end]]
+                            if len(y) < 2:
+                                continue
+                            
+                            # Apply the interp_len for interpolation
+                            x_old = np.linspace(0, 1, len(y))
+                            x_new = np.linspace(0, 1, interp_len)
+                            y_interp = np.interp(x_new, x_old, y)
+                            switch_idx = switches[0] if switches and switches[0] < interp_len else interp_len
+                            stance_phase = y_interp[:switch_idx]
+                            if len(stance_phase) > 1:
+                                x_stance_old = np.linspace(0, 1, len(stance_phase))
+                                x_stance_new = np.linspace(0, 1, interp_len)
+                                stance_phase_interp = np.interp(x_stance_new, x_stance_old, stance_phase)
+                                steps.append(stance_phase_interp)
+                    
+                    if steps:
+                        mean_val = np.mean(steps, axis=0) / body_weight_to_normalize
+                        std_val = np.std(steps, axis=0) / body_weight_to_normalize
+                        mean_val = -mean_val
+                        std_val = -std_val
+                        x = np.linspace(0, 100, interp_len)
+
+                        # Determine color based on run_key
+                        if run_key == 'P2':
+                            line_color = 'grey'
+                        else: # P2_X20mm, P2_X-20mm, etc.
+                            line_color = 'skyblue' # baby blue color
+                            
+                        ax.plot(x, mean_val, label=f"{run_key} {prosthesis_side} mean", color=line_color)
+                        ax.fill_between(x, mean_val - std_val, mean_val + std_val, alpha=0.15, color=line_color)
+            
+            # Set titles and labels for the subplot
+            ax.set_title(config['title'], fontsize=16)
+            ax.set_xlabel("Stance phase in %", fontsize=16)
+            ax.set_ylabel("Coronal Knee Moment in Nm/kg", fontsize=16)
+            ax.legend(fontsize=14)
+
+            # increase font size of ticks
+            ax.tick_params(axis='both', which='major', labelsize=16)
+
+            # add grid lines at y= 0
+            # ax.axhline(0, color='gray', linestyle=':', linewidth=1)
+            ax.grid(True, which='both') #, linestyle='--', linewidth=0.5)
+        
+        plt.tight_layout()
+        plt.show()
+        plt.close()
+
+
+
+
+
+    @staticmethod
+    def plot_sensor_force_by_run_and_couple(
+        all_loaded_data, run_step_data, direction, right_switches, left_switches,
+        prosthesis_side='left', interp_len=100, body_weight_to_normalize=1, baseline_data=None
+    ):
+        """
+        Plot stance-phase mean for the prosthesis side for each run_key.
+        Separate plot for each run_key. Each plot shows one of these couples:
+        Foot_Ant with 20mm, Foot_Pos with -20mm, Foot_Pla -5°, Foot_Dor 5°.
+        Overlay baseline P2 and OPT if provided.
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+        import re
+
+        mass_norm = 85 * 10
+        force_direction = {"x": 0, "y": 1, "z": 2}.get(direction, 0)
+
+        left_sensor = "left_knee_mimic_torque_sensor"
+        right_sensor = "right_knee_mimic_torque_sensor"
+
+        # Couples to plot
+        couples = {
+            "Foot_Ant": 20,
+            "Foot_Pos": -20,
+            "Foot_Pla": -5,
+            "Foot_Dor": 5
+        }
+
+        # Load baseline if provided
+        baseline_dict = {}
+        if baseline_data is not None:
+            current_label = None
+            with open(baseline_data, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if 'Schmalz' in baseline_data:
+                        label_match = re.match(r'^([A-Z_]+)\s*=\s*\[?', line)
+                    else:
+                        label_match = re.match(r'^([A-Za-z_]+)\s*=\s*\[?', line)
+                    if label_match:
+                        current_label = label_match.group(1)
+                        baseline_dict[current_label] = []
+                        continue
+                    if current_label:
+                        vals = line.split(';')
+                        if len(vals) == 2:
+                            try:
+                                x_val, y_val = map(float, vals)
+                                baseline_dict[current_label].append((x_val, y_val))
+                            except ValueError:
+                                continue
+
+        # Iterate over runs
+        for run_key in all_loaded_data.keys():
+            run_dict = all_loaded_data[run_key]
+            step_data = run_step_data[run_key]
+
+            if prosthesis_side == "left":
+                sensor = left_sensor
+                all_step_start = step_data["step_start_left"]
+                switches = left_switches.get(run_key, [])
+                data = run_dict[left_sensor] if left_sensor in run_dict else run_dict["all_sensor_force"][left_sensor]
+            else:
+                sensor = right_sensor
+                all_step_start = step_data["step_start_right"]
+                switches = right_switches.get(run_key, [])
+                data = run_dict[right_sensor] if right_sensor in run_dict else run_dict["all_sensor_force"][right_sensor]
+
+            steps = []
+            if all_step_start and len(all_step_start) > 1 and switches:
+                for j in range(len(all_step_start) - 1):
+                    start = all_step_start[j]
+                    end = all_step_start[j + 1]
+                    y = [float(np.array(a)[force_direction]) for a in data[start:end]]
+                    if len(y) < 2:
+                        continue
+                    x_old = np.linspace(0, 1, len(y))
+                    x_new = np.linspace(0, 1, interp_len)
+                    y_interp = np.interp(x_new, x_old, y)
+                    switch_idx = switches[0] if switches and switches[0] < interp_len else interp_len
+                    stance_phase = y_interp[:switch_idx]
+                    if len(stance_phase) > 1:
+                        x_stance_old = np.linspace(0, 1, len(stance_phase))
+                        x_stance_new = np.linspace(0, 1, interp_len)
+                        stance_phase_interp = np.interp(x_stance_new, x_stance_old, stance_phase)
+                        steps.append(stance_phase_interp)
+
+            if not steps:
+                continue
+
+            mean_val = -np.mean(steps, axis=0) / body_weight_to_normalize
+            std_val = -np.std(steps, axis=0) / body_weight_to_normalize
+            x = np.linspace(0, 100, interp_len)
+
+            # Plot for each couple
+            for couple_name, couple_value in couples.items():
+                fig, ax = plt.subplots(figsize=(8, 6))
+                ax.plot(x, mean_val, label=f"{run_key} mean ({couple_name} {couple_value})")
+                ax.fill_between(x, mean_val - std_val, mean_val + std_val, alpha=0.15)
+
+                # Overlay baseline P2 and OPT if available
+                for label in ["P2", "OPT"]:
+                    if label in baseline_dict:
+                        points = baseline_dict[label]
+                        xs, ys = zip(*points)
+                        ys = np.array(ys) / mass_norm
+                        ax.plot(xs, ys, marker='.', linestyle='-', label=f"Baseline {label}")
+
+                ax.set_title(f"{run_key} - {couple_name} ({couple_value})")
+                ax.set_xlabel("Interpolated Step (%)")
+                ax.set_ylabel("Force Value")
+                ax.legend()
+                plt.tight_layout()
+                plt.show()
+                plt.close()
+
+
+
+
+    @staticmethod
+    def plot_sensor_force_per_run_4subplots(
+        all_loaded_data, run_step_data, direction, right_switches, left_switches,
+        prosthesis_side='left', interp_len=100, body_weight_to_normalize=1, baseline_data=None
+    ):
+        """
+        For each run_key in all_loaded_data, create one figure with 4 subplots:
+        1) baseline: FOOT_ANT & OPT   + run: P2 and P2_X20mm
+        2) baseline: FOOT_POS & OPT   + run: P2 and P2_X-20mm
+        3) baseline: FOOT_PLA & OPT   + run: P2 and P2_Z5°
+        4) baseline: FOOT_DOR & OPT   + run: P2 and P2_Z-5°
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+        import re
+        import warnings
+
+        mass_norm = 85 * 10
+        force_direction = {"x": 0, "y": 1, "z": 2}.get(direction, 0)
+
+        # mapping: (p2_label_in_run_dict, foot_label_in_baseline, subplot_title)
+        subplot_configs = [
+            ("P2_X20mm", "FOOT_ANT", "ANT (X +20 mm)"),
+            ("P2_X-20mm", "FOOT_POS", "POS (X -20 mm)"),
+            ("P2_Z5°", "FOOT_PLA", "PLA (Z +5°)"),
+            ("P2_Z-5°", "FOOT_DOR", "DOR (Z -5°)"),
+        ]
+
+        # helper: read baseline file into dict(label -> list of (x,y))
+        baseline_dict = {}
+        if baseline_data is not None:
+            current_label = None
+            try:
+                with open(baseline_data, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        if 'Schmalz' in baseline_data:
+                            label_match = re.match(r'^([A-Z_]+)\s*=\s*\[?', line)
+                        else:
+                            label_match = re.match(r'^([A-Za-z_]+)\s*=\s*\[?', line)
+                        if label_match:
+                            current_label = label_match.group(1)
+                            baseline_dict[current_label] = []
+                            continue
+                        if current_label:
+                            vals = line.split(';')
+                            if len(vals) == 2:
+                                try:
+                                    x_val, y_val = map(float, vals)
+                                    baseline_dict[current_label].append((x_val, y_val))
+                                except ValueError:
+                                    continue
+            except FileNotFoundError:
+                warnings.warn(f"Baseline file not found: {baseline_data}")
+            except Exception as e:
+                warnings.warn(f"Error reading baseline file {baseline_data}: {e}")
+
+        # helper: get a time-series signal from run_dict for a given label
+        def get_run_signal(run_dict, label):
+            # 1) direct top-level key
+            if label in run_dict:
+                return run_dict[label]
+            # 2) if all_sensor_force exists and is a dict
+            af = run_dict.get("all_sensor_force", None)
+            if isinstance(af, dict) and label in af:
+                return af[label]
+            # 3) sometimes P2 signals might be nested under a sensor key (e.g., sensor_name -> label)
+            # try to search dict-of-dict
+            if isinstance(af, dict):
+                for k, v in af.items():
+                    if isinstance(v, dict) and label in v:
+                        return v[label]
+            # not found
+            return None
+
+        # helper: compute mean & std stance-phase curve for a signal (list-like of vectors)
+        def compute_mean_std_from_signal(signal, all_step_start, switches):
+            if signal is None:
+                return None, None
+            steps_list = []
+            if not all_step_start or len(all_step_start) <= 1 or not switches:
+                return None, None
+            for j in range(len(all_step_start) - 1):
+                start = all_step_start[j]
+                end = all_step_start[j + 1]
+                # guard indices
+                if start < 0 or end <= start:
+                    continue
+                seg = signal[start:end]
+                # seg expected to be iterable of vectors (e.g., (fx,fy,fz))
+                try:
+                    y = [float(np.array(a)[force_direction]) for a in seg]
+                except Exception:
+                    # if elements are scalars already
+                    try:
+                        y = [float(a) for a in seg]
+                    except Exception:
+                        continue
+                if len(y) < 2:
+                    continue
+                x_old = np.linspace(0, 1, len(y))
+                x_new = np.linspace(0, 1, interp_len)
+                y_interp = np.interp(x_new, x_old, y)
+                switch_idx = switches[0] if switches and switches[0] < interp_len else interp_len
+                stance_phase = y_interp[:switch_idx]
+                if len(stance_phase) > 1:
+                    x_stance_old = np.linspace(0, 1, len(stance_phase))
+                    x_stance_new = np.linspace(0, 1, interp_len)
+                    stance_phase_interp = np.interp(x_stance_new, x_stance_old, stance_phase)
+                    steps_list.append(stance_phase_interp)
+            if not steps_list:
+                return None, None
+            mean_val = -np.mean(steps_list, axis=0) / body_weight_to_normalize
+            std_val = -np.std(steps_list, axis=0) / body_weight_to_normalize
+            return mean_val, std_val
+
+        # iterate runs: create one figure per run_key
+        for run_key in all_loaded_data.keys():
+            run_dict = all_loaded_data[run_key]
+            step_data = run_step_data.get(run_key, {})
+
+            # choose step starts & switches according to prosthesis side
+            if prosthesis_side == "left":
+                all_step_start = step_data.get("step_start_left", [])
+                switches = left_switches.get(run_key, [])
+            else:
+                all_step_start = step_data.get("step_start_right", [])
+                switches = right_switches.get(run_key, [])
+
+            fig, axes = plt.subplots(2, 2, figsize=(14, 10), sharex=True, sharey=True)
+            axes = axes.flatten()
+
+            # common x for run curves
+            x_run = np.linspace(0, 100, interp_len)
+
+            # plot each subplot according to mapping
+            for i, (p2_variant, foot_label, subtitle) in enumerate(subplot_configs):
+                ax = axes[i]
+
+                # Baseline OPT (if present)
+                if "OPT" in baseline_dict and baseline_dict["OPT"]:
+                    xs_opt, ys_opt = zip(*baseline_dict["OPT"])
+                    ys_opt = np.array(ys_opt) / mass_norm
+                    ax.plot(xs_opt, ys_opt, marker='.', linestyle='-', label="OPT (baseline)", zorder=1)
+
+                # Baseline FOOT_x (if present)
+                if foot_label in baseline_dict and baseline_dict[foot_label]:
+                    xs_f, ys_f = zip(*baseline_dict[foot_label])
+                    ys_f = np.array(ys_f) / mass_norm
+                    ax.plot(xs_f, ys_f, linestyle='--', label=f"{foot_label} (baseline)", zorder=1)
+
+                # P2 (from run_dict)
+                p2_signal = get_run_signal(run_dict, "P2")
+                mean_p2, std_p2 = compute_mean_std_from_signal(p2_signal, all_step_start, switches)
+                if mean_p2 is not None:
+                    ax.plot(x_run, mean_p2, label="P2 (run)", linewidth=1.5, zorder=2)
+                    ax.fill_between(x_run, mean_p2 - std_p2, mean_p2 + std_p2, alpha=0.18, zorder=1)
+
+                # P2 variant (from run_dict) e.g., P2_X20mm, P2_Z5°, etc.
+                p2v_signal = get_run_signal(run_dict, p2_variant)
+                mean_p2v, std_p2v = compute_mean_std_from_signal(p2v_signal, all_step_start, switches)
+                if mean_p2v is not None:
+                    ax.plot(x_run, mean_p2v, label=f"{p2_variant} (run)", linewidth=1.5, zorder=3)
+                    ax.fill_between(x_run, mean_p2v - std_p2v, mean_p2v + std_p2v, alpha=0.18, zorder=2)
+
+                ax.set_title(f"{run_key} — {subtitle}")
+                ax.set_xlabel("Interpolated Step (%)")
+                if i % 2 == 0:
+                    ax.set_ylabel("Force value (normalized)")
+
+                ax.legend(fontsize='small', loc='best')
+
+            plt.suptitle(f"{run_key} — Prosthesis side: {prosthesis_side}", fontsize=14)
+            plt.tight_layout(rect=[0, 0, 1, 0.96])
+            plt.show()
+            plt.close(fig)
+
+
+
+
+
+
+
+    @staticmethod
+    def plot_sensor_force_prosthesis_vs_baseline(self,
+        all_loaded_data, run_step_data, direction, right_switches, interp_len=100,
+        body_weight_to_normalize=1, baseline_data=None
+    ):
+        """
+        Plot mean of prosthesis side (right) across all runs,
+        and optionally compare to baseline_data for knee_z.
+        Only stance phase is shown.
+        """
+        mass_norm = 85 * 10  # std 15
+        force_direction = {"x": 0, "y": 1, "z": 2}.get(direction, 0)
+
+        # Prosthesis sensor only
+        right_sensor = "right_knee_mimic_torque_sensor"
+
+        run_keys = list(all_loaded_data.keys())
+        mean_right_all = []
+        std_right_all = []
+        max_len = 0
+
+        for run_key in run_keys:
+            run_dict = all_loaded_data[run_key]
+            step_data = run_step_data[run_key]
+            right_data = run_dict["all_sensor_force"][right_sensor]
+            all_step_start_right = step_data["step_start_right"]
+
+            switches_right = right_switches.get(run_key, [])
+            right_steps = []
+
+            if all_step_start_right and len(all_step_start_right) > 1 and switches_right:
+                for j in range(len(all_step_start_right) - 1):
+                    start = all_step_start_right[j]
+                    end = all_step_start_right[j + 1]
+                    y = [float(np.array(a)[force_direction]) for a in right_data[start:end]]
+                    if len(y) < 2:
+                        continue
+
+                    # Interpolate full stride
+                    x_old = np.linspace(0, 1, len(y))
+                    x_new = np.linspace(0, 1, interp_len)
+                    y_interp = np.interp(x_new, x_old, y)
+
+                    # Stance phase cut
+                    switch_idx = switches_right[0] if switches_right and switches_right[0] < interp_len else interp_len
+                    stance_phase = y_interp[:switch_idx]
+
+                    if len(stance_phase) > 1:
+                        x_stance_old = np.linspace(0, 1, len(stance_phase))
+                        x_stance_new = np.linspace(0, 1, interp_len)
+                        stance_phase_interp = np.interp(x_stance_new, x_stance_old, stance_phase)
+                        right_steps.append(stance_phase_interp)
+                    max_len = interp_len
+
+            if right_steps:
+                mean_right = -np.mean(right_steps, axis=0) / body_weight_to_normalize
+                std_right = -np.std(right_steps, axis=0) / body_weight_to_normalize
+                mean_right_all.append((run_key, mean_right, std_right))
+            else:
+                mean_right_all.append((run_key, None, None))
+
+        # Plot
+        x = np.linspace(0, 100, interp_len)
+        plt.figure(figsize=(8, 6))
+
+        # Prosthesis side
+        for run_key, mean_right, std_right in mean_right_all:
+            if mean_right is not None:
+                plt.plot(x, mean_right, label=f"{run_key} {right_sensor} mean")
+                plt.fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.15)
+
+        # Baseline
+        if baseline_data is not None and direction == "z":
+            import re
+            data = {}
+            current_label = None
+            with open(baseline_data, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if 'Schmalz' in baseline_data:
+                        label_match = re.match(r'^([A-Z_]+)\s*=\s*\[?', line)
+                    else:
+                        label_match = re.match(r'^([A-Za-z_]+)\s*=\s*\[?', line)
+                    if label_match:
+                        current_label = label_match.group(1)
+                        data[current_label] = []
+                        continue
+                    if current_label:
+                        vals = line.split(';')
+                        if len(vals) == 2:
+                            try:
+                                xx, yy = map(float, vals)
+                                data[current_label].append((xx, yy))
+                            except ValueError:
+                                continue
+
+            for label, points in data.items():
+                if label == "OPT" and points:
+                    xs, ys = zip(*points)
+                    ys = np.array(ys) / mass_norm
+                    plt.plot(xs, ys, marker='.', linestyle='-', color='black', label=f"Baseline {label}")
+
+        plt.title(f"{right_sensor} mean (stance phase, prosthesis side only)")
+        plt.xlabel("Interpolated Step (%)")
+        plt.ylabel("Force Value (normalized)")
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+        plt.close()
+
 
     @staticmethod
     def plot_sensor_force_symmetry_summed_all_runs(
@@ -3681,7 +7907,7 @@ class PostProcessMetricsHandler():
             fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharex=True)
             # Plot mean of right of all runs
             for run_key, mean_right, std_right in mean_right_all:
-                axes[0].plot(x, mean_right, label=f"{run_key} Right mean", linestyle='--')
+                axes[0].plot(x, mean_right, label=f"{run_key}", linestyle='--')
                 axes[0].fill_between(x, mean_right - std_right, mean_right + std_right, alpha=0.15)
             axes[0].set_title(f"{comp} Right mean (all runs)")
             axes[0].set_xlabel("Interpolated Step (%)")
@@ -3689,7 +7915,7 @@ class PostProcessMetricsHandler():
             axes[0].legend()
             # Plot mean of left of all runs
             for run_key, mean_left, std_left in mean_left_all:
-                axes[1].plot(x, mean_left, label=f"{run_key} Left mean", linestyle='-')
+                axes[1].plot(x, mean_left, label=f"{run_key}", linestyle='-')
                 axes[1].fill_between(x, mean_left - std_left, mean_left + std_left, alpha=0.15)
             axes[1].set_title(f"{comp} Left mean (all runs)")
             axes[1].set_xlabel("Interpolated Step (%)")
@@ -3708,6 +7934,114 @@ class PostProcessMetricsHandler():
             plt.close()
 
     
+
+    def plot_grf_Fz_switch_all_runs(
+        self,
+        all_loaded_data,
+        run_step_data,
+        interp_len=100,
+        body_weight_to_normalize=1,
+        threshold=1e-2,
+    ):
+        """
+        Plot all right GRF Fz (5th entry) for all runs in one plot, and all left in another.
+        Mark swing-to-stance phase switches (where mean Fz crosses threshold).
+        Returns:
+            left_switches (dict): {run_key: [indices]}
+            right_switches (dict): {run_key: [indices]}
+        """
+        # Prepare color cycle for consistent coloring
+        color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        run_keys = list(all_loaded_data.keys())
+        right_curves = []
+        left_curves = []
+        right_switches = {}
+        left_switches = {}
+
+        # Collect curves and switches
+        for idx, run_key in enumerate(run_keys):
+            run_dict = all_loaded_data[run_key]
+            step_data = run_step_data[run_key]
+            all_grf_l = np.array(run_dict["all_grf_l"])
+            all_grf_r = np.array(run_dict["all_grf_r"])
+            all_step_start_left = step_data["step_start_left"]
+            all_step_start_right = step_data["step_start_right"]
+
+            # Interpolated steps for right
+            right_steps = []
+            if all_grf_r is not None and all_step_start_right and len(all_step_start_right) > 1:
+                for j in range(len(all_step_start_right) - 1):
+                    start, end = all_step_start_right[j]-1, all_step_start_right[j + 1]-1
+                    y = [float(np.array(a)[5]) for a in all_grf_r[start:end]]
+                    if len(y) < 2:
+                        continue
+                    x_old = np.linspace(0, 1, len(y))
+                    x_new = np.linspace(0, 1, interp_len)
+                    y_interp = np.interp(x_new, x_old, y)
+                    right_steps.append(y_interp)
+            if right_steps:
+                mean_right = np.mean(right_steps, axis=0) / body_weight_to_normalize
+                above = mean_right > threshold
+                switches = [i for i in range(1, len(mean_right)) if above[i-1] and not above[i]]
+                right_curves.append((run_key, mean_right, idx))
+                right_switches[run_key] = switches
+
+            # Interpolated steps for left
+            left_steps = []
+            if all_grf_l is not None and all_step_start_left and len(all_step_start_left) > 1:
+                for j in range(len(all_step_start_left) - 1):
+                    start, end = all_step_start_left[j]-1, all_step_start_left[j + 1]-1
+                    y = [float(np.array(a)[5]) for a in all_grf_l[start:end]]
+                    if len(y) < 2:
+                        continue
+                    x_old = np.linspace(0, 1, len(y))
+                    x_new = np.linspace(0, 1, interp_len)
+                    y_interp = np.interp(x_new, x_old, y)
+                    left_steps.append(y_interp)
+            if left_steps:
+                mean_left = np.mean(left_steps, axis=0) / body_weight_to_normalize
+                above = mean_left > threshold
+                switches = [i for i in range(1, len(mean_left)) if above[i-1] and not above[i]]
+                left_curves.append((run_key, mean_left, idx))
+                left_switches[run_key] = switches
+
+        x = np.linspace(0, 100, interp_len)
+        # Plot all right curves
+        plt.figure(figsize=(12, 6))
+        for run_key, curve, idx in right_curves:
+            color = color_cycle[idx % len(color_cycle)]
+            plt.plot(x, curve, label=f"{run_key} Right Fz", color=color)
+            for switch_idx in right_switches[run_key]:
+                plt.axvline(x[switch_idx], color=color, linestyle='--', alpha=0.7)
+        plt.axhline(threshold, color='gray', linestyle=':', linewidth=1, label="Threshold")
+        plt.title("All runs: Right GRF Fz (5th entry) & swing/stance switches")
+        plt.xlabel("Interpolated Step (%)")
+        plt.ylabel("Fz (N or Nm / BW)")
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+        plt.close()
+
+        # Plot all left curves
+        plt.figure(figsize=(12, 6))
+        for run_key, curve, idx in left_curves:
+            color = color_cycle[idx % len(color_cycle)]
+            plt.plot(x, curve, label=f"{run_key} Left Fz", color=color)
+            for switch_idx in left_switches[run_key]:
+                plt.axvline(x[switch_idx], color=color, linestyle='--', alpha=0.7)
+        plt.axhline(threshold, color='gray', linestyle=':', linewidth=1, label="Threshold")
+        plt.title("All runs: Left GRF Fz (5th entry) & swing/stance switches")
+        plt.xlabel("Interpolated Step (%)")
+        plt.ylabel("Fz (N or Nm / BW)")
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+        plt.close()
+
+        return left_switches, right_switches
+
+
+
 
     @staticmethod
     def plot_grf_component_symmetry_summed_all_runs(
@@ -4086,3 +8420,5 @@ class PostProcessMetricsHandler():
         plt.ylabel("Z Position")
         plt.legend()
         plt.show()
+
+

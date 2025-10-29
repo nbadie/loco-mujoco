@@ -10,16 +10,25 @@ import jax
 import jax.numpy as jnp
 from flax import struct
 import flax
+from flax.serialization import to_state_dict
 import optax
 from pathlib import Path
 from orbax import checkpoint as ocp
 import pickle
+
+from traitlets import This
 
 from loco_mujoco.algorithms import (JaxRLAlgorithmBase, AgentConfBase, AgentStateBase, ActorCritic,
                                     Transition, TrainState, TrainStateBuffer, MetricHandlerTransition, PPOJax)
 from loco_mujoco.core.wrappers import LogWrapper, NStepWrapper, LogEnvState, VecEnv, NormalizeVecReward, SummaryMetrics
 from loco_mujoco.utils import MetricsHandler, ValidationSummary
 from flax.training import orbax_utils
+
+# from jax.experimental import io_callback as hcb
+from jax.experimental import io_callback
+import uuid
+
+from jax import tree_util
 
 @dataclass(frozen=True)
 class PPOAgentConf(AgentConfBase):
@@ -67,6 +76,41 @@ class SavePPOJax(PPOJax):
     _agent_conf = PPOAgentConf
     _agent_state = PPOAgentState
 
+    @classmethod
+    def save_agent_checkpoints(cls, path, agent_conf: AgentConfBase, agent_state: AgentStateBase, checkpoint_name=None):
+        """
+        Save the agent state to a file.
+        
+        Args:
+            path: Base directory path
+            agent_conf: Agent configuration
+            agent_state: Agent state (can contain multiple seeds with vmap dimension)
+            checkpoint_name: Optional custom checkpoint name
+        """
+        path = Path(path)
+        
+        if checkpoint_name is None:
+            checkpoint_name = cls.__name__ + "_agent_saved"
+        
+        # Create checkpoints subdirectory
+        checkpoint_dir = path / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        
+        save_path = checkpoint_dir / checkpoint_name
+        save_path = save_path.with_suffix(cls._saved_agent_suffix)
+        
+        # Serialize both config and state
+        serialized_data = {
+            "agent_conf": agent_conf.serialize(),
+            "agent_state": agent_state.serialize()
+        }
+        
+        # Save to file
+        with open(save_path, 'wb') as file:
+            pickle.dump(serialized_data, file)
+        
+        print(f"Saved agent to: {save_path}")
+        return save_path
 
     @classmethod
     def init_agent_conf(cls, env, config):
@@ -522,6 +566,17 @@ class SavePPOJax(PPOJax):
                     # 'network': agent_conf.network,
                 }
 
+                # # move to host and convert to python containers
+                # host_train_state = jax.device_get(flax.serialization.to_state_dict(train_state))
+
+                # # build serializable payload
+                # serializable_train_state = {
+                #     'params': host_train_state['params'],
+                #     'run_stats': host_train_state['run_stats'],
+                #     'step': int(host_train_state.get('step', 0)),
+                #     'opt_state': host_train_state['opt_state'],
+                # }
+
                 # serializable_train_conf = {
                 #     'experiment': SavePPOJax._serialized_agent_conf['experiment'],
                 #     'control_config': SavePPOJax._serialized_agent_conf.control_config,
@@ -580,50 +635,313 @@ class SavePPOJax(PPOJax):
             #             )
             #         )
 
+            #########################################################################
+            # def _conditional_save():
+            #     jax.debug.callback(
+            #         _save_checkpoint_callback,
+            #         total_env_steps,
+            #         #train_state.step + 1,
+            #         ckpt_path,
+            #         train_state,  # Only pass train_state now
+            #         # agent_conf
+            #     )
+
+            ######################################################################################
+            # def _host_save(payload): #, transforms):
+            #     # payload is a tuple: (step, ckpt_path_str, host_state, maybe_seed_id)
+            #     step, host_state, seed_id = payload
+            #     path = Path(str(ckpt_path)) / f"ckpt_{int(step)}"
+            #     # if seed_id is provided, create seed-specific folder
+            #     if seed_id is not None:
+            #         path = path / step / f"seed_{seed_id}"
+            #     path.mkdir(parents=True, exist_ok=True)
+            #     opts = ocp.CheckpointManagerOptions(max_to_keep=5, create=True)
+            #     with ocp.CheckpointManager(path, options=opts, item_names=('agent_state',)) as mngr:
+            #         mngr.save(int(step), args=ocp.args.Composite(agent_state=ocp.args.StandardSave(host_state)))
+
+            # # Build and call host save only when the conditional save is triggered.
+            # def _conditional_save():
+            #     total_env_steps = (train_state.step // (config.num_minibatches * config.update_epochs)) * (config.num_envs * config.num_steps)
+            #     # device-side serializable dict (DeviceArrays will be materialized by id_tap)
+            #     device_state = flax.serialization.to_state_dict(train_state)
+            #     # Use seed_id if present on train_state, otherwise None
+            #     seed_id = getattr(train_state, 'seed_id', None)
+            #     # Prepare payload: (step, ckpt_path_str, device_state, seed_id)
+            #     payload = (total_env_steps, device_state, seed_id)
+            #     # Transfer payload to host and invoke _host_save there
+            #     # hcb.id_tap(_host_save, payload)
+            #     # io_callback(_host_save, None, payload)
+            #     io_callback(_host_save, payload)
+            #     leaves, treedef = tree_util.tree_flatten(train_state)
+            #     # Collect leaf info for vmap/jit compatibility (no side effects)
+            #     leaf_info = [
+            #         {"index": i, "type": str(type(leaf)), "shape": getattr(leaf, "shape", None)}
+            #         for i, leaf in enumerate(leaves)
+            #     ]
+            #     jax.debug.print("TrainState leaves: {leaf_info}", leaf_info=leaf_info)
+            #     # Optionally, return or log leaf_info for debugging outside jit/vmap
+
+
+            ##############################################################################
+            # CLAUDE ERROR
+            # def _host_save(payload):
+            #     step, host_state, seed_id = payload
+            #     path = Path(str(ckpt_path)) / f"ckpt_{int(step)}" / f"seed_{seed_id}"
+            #     path.mkdir(parents=True, exist_ok=True)
+            #     opts = ocp.CheckpointManagerOptions(max_to_keep=5, create=True)
+            #     with ocp.CheckpointManager(path, options=opts, item_names=('agent_state',)) as mngr:
+            #         mngr.save(int(step), args=ocp.args.Composite(
+            #             agent_state=ocp.args.StandardSave(host_state)))
+
+            # def _conditional_save():
+            #     total_env_steps = (train_state.step // (config.num_minibatches * config.update_epochs)) * (config.num_envs * config.num_steps)
+                
+            #     # Get the current seed index from vmap
+            #     # This requires passing seed_id through your runner_state
+            #     seed_id = jax.lax.axis_index('batch')  # If using pmap/vmap with axis_name
+                
+            #     device_state = flax.serialization.to_state_dict(train_state)
+            #     payload = (total_env_steps, device_state, seed_id)
+            #     io_callback(_host_save, None, payload)
+
+            ######################################################################################
+
+            # # Save using jax.debug.callback (1 seed/file?)
+            # def _conditional_save():
+            #     total_env_steps = (train_state.step // (config.num_minibatches * config.update_epochs)) * (config.num_envs * config.num_steps)
+                
+            #     # Prepare the checkpoint path
+            #     ckpt_save_path = ckpt_path / f"ckpt_{int(total_env_steps)}"
+                
+            #     # Use debug.callback to call save functions outside JIT
+            #     jax.debug.callback(
+            #         _checkpoint_callback,
+            #         ckpt_save_path,
+            #         agent_conf,
+            #         train_state,
+            #         total_env_steps
+            #     )
+
+
+            # def _checkpoint_callback(save_path, agent_conf, train_state, step):
+            #     """
+            #     Callback function that runs outside JIT context.
+            #     This handles vmap dimension properly by saving each seed separately.
+            #     """
+            #     # Convert JAX arrays to numpy for inspection
+            #     train_state_host = jax.device_get(train_state)
+                
+            #     # Check if we have multiple seeds (vmap dimension)
+            #     first_param = jax.tree_util.tree_leaves(train_state_host.params)[0]
+            #     has_vmap_dim = len(first_param.shape) > 1 and first_param.shape[0] == agent_conf.config.experiment.n_seeds
+                
+            #     if has_vmap_dim and agent_conf.config.experiment.n_seeds > 1:
+            #         # Save each seed separately
+            #         for seed_idx in range(agent_conf.config.experiment.n_seeds):
+            #             # Extract single seed from vmapped state
+            #             single_seed_state = jax.tree_util.tree_map(
+            #                 lambda x: x[seed_idx] if (hasattr(x, 'shape') and len(x.shape) > 0) else x,
+            #                 train_state_host
+            #             )
+                        
+            #             # Reconstruct agent_state for this seed
+            #             agent_state_single = SavePPOJax._agent_state(train_state=single_seed_state)
+                        
+            #             # Create seed-specific path
+            #             seed_save_path = Path(str(save_path)) / f"seed_{seed_idx}"
+            #             seed_save_path.mkdir(parents=True, exist_ok=True)
+                        
+            #             # Use existing save_agent function
+            #             SavePPOJax.save_agent_checkpoints(
+            #                 str(seed_save_path.parent.parent),  # Go back to base dir
+            #                 agent_conf,
+            #                 agent_state_single,
+            #                 checkpoint_name=f"ckpt_{int(step)}_seed_{seed_idx}"
+            #             )
+            #     else:
+            #         # Single seed case - save directly
+            #         agent_state = SavePPOJax._agent_state(train_state=train_state_host)
+            #         SavePPOJax.save_agent_checkpoints(
+            #             str(save_path.parent),
+            #             agent_conf,
+            #             agent_state,
+            #             checkpoint_name=f"ckpt_{int(step)}"
+            #         )
+                
+            #     print(f"Checkpoint saved at step {int(step)}")
+
+
+            ############################################
+
+            # # jax.debug.callbak all seeds after each other and overwriting them XX
+
+            # def _conditional_save():
+            #     total_env_steps = (train_state.step // (config.num_minibatches * config.update_epochs)) * (config.num_envs * config.num_steps)
+                
+            #     # Use debug.callback to save the entire vmapped train_state
+            #     jax.debug.callback(
+            #         _checkpoint_callback_all_seeds,
+            #         total_env_steps,
+            #         agent_conf,
+            #         train_state
+            #     )
+
+            # def _checkpoint_callback_all_seeds(step, agent_conf, train_state):
+            #     """
+            #     Callback function that saves all seeds together in one file.
+            #     This matches the behavior of the final save_agent call.
+            #     """
+            #     # Move train_state to host (CPU)
+            #     train_state_host = jax.device_get(train_state)
+                
+            #     # Create agent_state wrapper
+            #     agent_state = SavePPOJax._agent_state(train_state=train_state_host)
+                
+            #     # Use the existing save_agent function with a custom checkpoint name
+            #     checkpoint_name = f"ckpt_{int(step)}"
+            #     save_path = SavePPOJax.save_agent_checkpoints(
+            #         agent_conf.config.experiment.result_dir,
+            #         agent_conf,
+            #         agent_state,
+            #         checkpoint_name=checkpoint_name
+            #     )
+                
+            #     print(f"✓ Checkpoint saved at step {int(step)}: {save_path}")
+
+
+            ################################################################################
+
+            # def _conditional_save():
+            #     total_env_steps = (train_state.step // (config.num_minibatches * config.update_epochs)) * (config.num_envs * config.num_steps)
+                
+            #     # Use jax.lax.cond to ensure callback runs only once per vmap batch
+            #     # We check if we're at seed index 0, and only then save ALL seeds
+            #     seed_idx = jax.lax.axis_index('batch') if config.n_seeds > 1 else 0
+                
+            #     def _save_all():
+            #         jax.debug.callback(
+            #             _checkpoint_callback_all_seeds,
+            #             total_env_steps,
+            #             agent_conf,
+            #             train_state
+            #         )
+                
+            #     # Only execute for the first seed to avoid multiple saves
+            #     jax.lax.cond(
+            #         seed_idx == 0,
+            #         lambda _: _save_all(),
+            #         lambda _: None,
+            #         None
+            #     )
+
+            # def _checkpoint_callback_all_seeds(step, agent_conf, train_state):
+            #     """Save checkpoint with all seeds in a single file"""
+            #     train_state_host = jax.device_get(train_state)
+            #     agent_state = SavePPOJax._agent_state(train_state=train_state_host)
+                
+            #     checkpoint_name = f"ckpt_{int(step)}"
+            #     SavePPOJax.save_agent(
+            #         agent_conf.config.experiment.result_dir,
+            #         agent_conf,
+            #         agent_state,
+            #         checkpoint_name=checkpoint_name
+            #     )
+
+            # # Execute conditional save
+            # jax.lax.cond(
+            #     counter % config.checkpoint_interval == 0,
+            #     lambda _: _conditional_save(),
+            #     lambda _: None,
+            #     None
+            # )
+
+
+
+            #############################################################################################
+            # Option 2: Save each seed separately with unique names (Simpler, recommended)
+            
             def _conditional_save():
+                total_env_steps = (train_state.step // (config.num_minibatches * config.update_epochs)) * (config.num_envs * config.num_steps)
+                
+                # Get seed index if vmapped
+                seed_idx = jax.lax.axis_index('batch') if config.n_seeds > 1 else 0
+                
                 jax.debug.callback(
-                    _save_checkpoint_callback,
+                    _checkpoint_callback_single_seed,
                     total_env_steps,
-                    #train_state.step + 1,
-                    ckpt_path,
-                    train_state,  # Only pass train_state now
-                    # agent_conf
+                    agent_conf,
+                    train_state,
+                    seed_idx,
+                    config.n_seeds
                 )
 
+            def _checkpoint_callback_single_seed(step, agent_conf, train_state, seed_idx, n_seeds):
+                """Save checkpoint for a single seed"""
+                train_state_host = jax.device_get(train_state)
+                agent_state = SavePPOJax._agent_state(train_state=train_state_host)
+                
+                # Create unique checkpoint name per seed
+                if n_seeds > 1:
+                    checkpoint_name = f"ckpt_{int(step)}_seed_{int(seed_idx)}"
+                else:
+                    checkpoint_name = f"ckpt_{int(step)}"
+                
+                SavePPOJax.save_agent_checkpoints(
+                    agent_conf.config.experiment.result_dir,
+                    agent_conf,
+                    agent_state,
+                    checkpoint_name=checkpoint_name
+                )
 
-            # # def _conditional_save():
-            # #     jax.debug.callback(
-            # #         lambda current_step: _save_checkpoint(ckpt_path, int(current_step), agent_conf, train_state),
-            # #         train_state.step + 1
-            # #     )
+            # Execute conditional save
+            jax.lax.cond(
+                counter % config.checkpoint_interval == 0,
+                lambda _: _conditional_save(),
+                lambda _: None,
+                None
+            )
 
-            # # # staticmethod
-            # def _save_checkpoint(ckpt_path: Path, current_step: int, agent_conf: PPOAgentConf, train_state: TrainState):
-            #     check_options = ocp.CheckpointManagerOptions(max_to_keep=5, create=True)
-            #     # params_to_save = (agent_conf, train_state)
-            #     # save_args = orbax_utils.save_args_from_target(params_to_save)
-            #     path = ckpt_path / f"ckpt_{current_step}"
-            #     with ocp.CheckpointManager(path, options=check_options, item_names=('agent_conf', 'agent_state')) as mngr:
-            #         mngr.save(
-            #             current_step, 
-            #             args=ocp.args.Composite(
-            #                 agent_conf=ocp.args.StandardSave(agent_conf),
-            #                 agent_state=ocp.args.StandardSave(train_state),
-            #             )
-            #         )
-            total_env_steps = (train_state.step // (config.num_minibatches * config.update_epochs)) * (config.num_envs * config.num_steps)
-            # jax.debug.print('total_env_steps: {total_env_steps}', total_env_steps=total_env_steps)
-            jax.lax.cond(counter % config.checkpoint_interval==0, #config.validation_interval == 0, #total_env_steps % config.checkpoint_interval == 0,
-                         lambda _: _conditional_save(),
-                         lambda _: None,
-                         None)
+            #############################################################################################
+
+
+
+
+
+
+            # ########## WRONGGG ############
+            # # # def _conditional_save():
+            # # #     jax.debug.callback(
+            # # #         lambda current_step: _save_checkpoint(ckpt_path, int(current_step), agent_conf, train_state),
+            # # #         train_state.step + 1
+            # # #     )
+
+            # # # # staticmethod
+            # # def _save_checkpoint(ckpt_path: Path, current_step: int, agent_conf: PPOAgentConf, train_state: TrainState):
+            # #     check_options = ocp.CheckpointManagerOptions(max_to_keep=5, create=True)
+            # #     # params_to_save = (agent_conf, train_state)
+            # #     # save_args = orbax_utils.save_args_from_target(params_to_save)
+            # #     path = ckpt_path / f"ckpt_{current_step}"
+            # #     with ocp.CheckpointManager(path, options=check_options, item_names=('agent_conf', 'agent_state')) as mngr:
+            # #         mngr.save(
+            # #             current_step, 
+            # #             args=ocp.args.Composite(
+            # #                 agent_conf=ocp.args.StandardSave(agent_conf),
+            # #                 agent_state=ocp.args.StandardSave(train_state),
+            # #             )
+            # #         )
+            # # total_env_steps = (train_state.step // (config.num_minibatches * config.update_epochs)) * (config.num_envs * config.num_steps)
+            # # jax.debug.print('total_env_steps: {total_env_steps}', total_env_steps=total_env_steps)
+            # jax.lax.cond(counter % config.checkpoint_interval==0, #config.validation_interval == 0, #total_env_steps % config.checkpoint_interval == 0,
+            #              lambda _: _conditional_save(),
+            #              lambda _: None,
+            #              None)
             
-            # # current_step = jnp.array(metric.max_timestep, int) #jnp.max(logged_metrics.timestep * config.num_envs),int)
-            # # MODIFIED: Pass a lambda function to jax.lax.cond to defer the call to _save_checkpoint
-            # jax.lax.cond(counter % config.validation_interval == 0,
-            #                              lambda _: _save_checkpoint(ckpt_path, int(train_state.step + 1), agent_conf, train_state), # Use train_state directly
-            #                              lambda _: None, # No-op for the else branch
-            #                              None) # Dummy argument for the lambda
+            # # # current_step = jnp.array(metric.max_timestep, int) #jnp.max(logged_metrics.timestep * config.num_envs),int)
+            # # # MODIFIED: Pass a lambda function to jax.lax.cond to defer the call to _save_checkpoint
+            # # jax.lax.cond(counter % config.validation_interval == 0,
+            # #                              lambda _: _save_checkpoint(ckpt_path, int(train_state.step + 1), agent_conf, train_state), # Use train_state directly
+            # #                              lambda _: None, # No-op for the else branch
+            # #                              None) # Dummy argument for the lambda
 
             def _evaluation_step():
 
@@ -1004,49 +1322,95 @@ class SavePPOJax(PPOJax):
             current_step = jnp.array(metric.max_timestep, int)
 
 
-            def _save_checkpoint_callback(step, ckpt_path, train_state): #, agent_conf):
-                """Callback function for saving checkpoints"""
-                check_options = ocp.CheckpointManagerOptions(max_to_keep=5, create=True)
-                path = ckpt_path / f"ckpt_{int(step)}"
+            # def _save_checkpoint_callback(step, ckpt_path, train_state): #, agent_conf):
+            #     """Callback function for saving checkpoints"""
+            #     check_options = ocp.CheckpointManagerOptions(max_to_keep=5, create=True)
+            #     path = ckpt_path / f"ckpt_{int(step)}"
                 
-                # Extract only serializable parts from train_state
-                serializable_train_state = {
-                    'params': train_state.params,
-                    'run_stats': train_state.run_stats,
-                    'step': train_state.step,
-                    'opt_state': train_state.opt_state,
-                    # 'network': agent_conf.network,
-                }
+            #     # Extract only serializable parts from train_state
+            #     serializable_train_state = {
+            #         'params': train_state.params,
+            #         'run_stats': train_state.run_stats,
+            #         'step': train_state.step,
+            #         'opt_state': train_state.opt_state,
+            #         # 'network': agent_conf.network,
+            #     }
 
 
-                with ocp.CheckpointManager(path, options=check_options, item_names=('agent_state',)) as mngr:
-                    mngr.save(
-                        int(step), #f"ckpt_{int(step)}", #int(step), 
-                        args=ocp.args.Composite(
-                            agent_state=ocp.args.StandardSave(serializable_train_state),
-                            # agent_conf=ocp.args.JsonSave(serializable_train_conf), #SavePPOJax._serialized_agent_conf), #agent_conf),
-                            # agent_conf=ocp.args.StandardSave(SavePPOJax._serialized_agent_conf),
-                        )
-                    )
+            #     with ocp.CheckpointManager(path, options=check_options, item_names=('agent_state',)) as mngr:
+            #         mngr.save(
+            #             int(step), #f"ckpt_{int(step)}", #int(step), 
+            #             args=ocp.args.Composite(
+            #                 agent_state=ocp.args.StandardSave(serializable_train_state),
+            #                 # agent_conf=ocp.args.JsonSave(serializable_train_conf), #SavePPOJax._serialized_agent_conf), #agent_conf),
+            #                 # agent_conf=ocp.args.StandardSave(SavePPOJax._serialized_agent_conf),
+            #             )
+            #         )
             
 
+            # def _conditional_save():
+            #     jax.debug.callback(
+            #         _save_checkpoint_callback,
+            #         total_env_steps,
+            #         #train_state.step + 1,
+            #         ckpt_path,
+            #         train_state,  # Only pass train_state now
+            #         # agent_conf
+            #     )
+
+
+            # total_env_steps = (train_state.step // (config.num_minibatches * config.update_epochs)) * (config.num_envs * config.num_steps)
+            # # jax.debug.print('total_env_steps: {total_env_steps}', total_env_steps=total_env_steps)
+            # jax.lax.cond(counter % config.checkpoint_interval==0, #config.validation_interval == 0, #total_env_steps % config.checkpoint_interval == 0,
+            #              lambda _: _conditional_save(),
+            #              lambda _: None,
+            #              None)
+
+            #############################################################################################
+            # Option 2: Save each seed separately with unique names (Simpler, recommended)
+            
             def _conditional_save():
+                total_env_steps = (train_state.step // (config.num_minibatches * config.update_epochs)) * (config.num_envs * config.num_steps)
+                
+                # Get seed index if vmapped
+                seed_idx = jax.lax.axis_index('batch') if config.n_seeds > 1 else 0
+                
                 jax.debug.callback(
-                    _save_checkpoint_callback,
+                    _checkpoint_callback_single_seed,
                     total_env_steps,
-                    #train_state.step + 1,
-                    ckpt_path,
-                    train_state,  # Only pass train_state now
-                    # agent_conf
+                    agent_conf,
+                    train_state,
+                    seed_idx,
+                    config.n_seeds
                 )
 
+            def _checkpoint_callback_single_seed(step, agent_conf, train_state, seed_idx, n_seeds):
+                """Save checkpoint for a single seed"""
+                train_state_host = jax.device_get(train_state)
+                agent_state = SavePPOJax._agent_state(train_state=train_state_host)
+                
+                # Create unique checkpoint name per seed
+                if n_seeds > 1:
+                    checkpoint_name = f"ckpt_{int(step)}_seed_{int(seed_idx)}"
+                else:
+                    checkpoint_name = f"ckpt_{int(step)}"
+                
+                SavePPOJax.save_agent_checkpoints(
+                    agent_conf.config.experiment.result_dir,
+                    agent_conf,
+                    agent_state,
+                    checkpoint_name=checkpoint_name
+                )
 
-            total_env_steps = (train_state.step // (config.num_minibatches * config.update_epochs)) * (config.num_envs * config.num_steps)
-            # jax.debug.print('total_env_steps: {total_env_steps}', total_env_steps=total_env_steps)
-            jax.lax.cond(counter % config.checkpoint_interval==0, #config.validation_interval == 0, #total_env_steps % config.checkpoint_interval == 0,
-                         lambda _: _conditional_save(),
-                         lambda _: None,
-                         None)
+            # Execute conditional save
+            jax.lax.cond(
+                counter % config.checkpoint_interval == 0,
+                lambda _: _conditional_save(),
+                lambda _: None,
+                None
+            )
+
+            #############################################################################################
             
            
             def _evaluation_step():

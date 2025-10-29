@@ -72,7 +72,7 @@ def experiment(config: DictConfig):
 
         # create env
         env = factory.make(domain_randomization_type=randomization_type, domain_randomization_params=randomization_params,
-            # terrain_type="RoughTerrain", terrain_params=dict(random_min_height=-0.05,random_max_height=0.05),
+            # terrain_type="RoughTerrain", terrain_params=dict(random_min_height=-0.05, random_max_height=0.05), 
             **config.experiment.env_params, **config.experiment.task_factory.params)
         
         

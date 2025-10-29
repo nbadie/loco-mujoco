@@ -443,6 +443,46 @@ class Mjx(Mujoco):
 
             return _data
 
+        # Method to add velocity perturbation based on randomization in domain_randomizer/prosthesis body_vel_perturb in carry 
+        def _adapt_vel_applied(_data, _carry):
+            if hasattr(_carry.domain_randomizer_state, "body_vel_perturb"):
+                body_vel_perturb = _carry.domain_randomizer_state.body_vel_perturb
+                body_vel_perturb_names = list(body_vel_perturb.keys())
+                for i in range(len(body_vel_perturb_names)):
+                    # get time and length entries from body_vel_perturb
+                    body_vel_perturb_time = body_vel_perturb[body_vel_perturb_names[i]]['time']
+                    body_vel_perturb_length = body_vel_perturb[body_vel_perturb_names[i]]['length']
+                    _data = jax.lax.cond(jnp.logical_and(carry.cur_step_in_episode >= body_vel_perturb_time,carry.cur_step_in_episode < body_vel_perturb_time + body_vel_perturb_length),
+                        _apply_vel_perturb,
+                        _no_adaptation_two_inputs,
+                        _data, 
+                        _carry)
+            return _data
+        
+        # Method to apply velocity perturbation to specified bodies
+        # Assumes body_vel_perturb dict has body names as keys and dicts with 'vel', 'time', 'length' as values
+        # 'vel' should be a jnp.array of shape (3,) representing linear velocity perturbation
+        def _apply_vel_perturb(_data, _carry):
+            body_vel_perturb = _carry.domain_randomizer_state.body_vel_perturb
+            body_vel_perturb_names = list(body_vel_perturb.keys())
+            for i in range(len(body_vel_perturb_names)):
+                body_id= mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_vel_perturb_names[i])
+                # jax.debug.print("body_id: {body_id}", body_id = body_id)
+                # vel_address = self._model.body_dofadr[body_id]
+                # jax.debug.print("vel_address: {vel_address}", vel_address = vel_address)
+                body_vel_perturb_per_body = body_vel_perturb[body_vel_perturb_names[i]]
+                # cvel linear then angualr velocity
+                curr_cvel = _data.cvel[body_id] 
+                linear_vel = body_vel_perturb_per_body['vel']
+                angular_vel_zeros = jnp.zeros(3, dtype=linear_vel.dtype)
+                full_6d_velocity = jnp.concatenate([linear_vel, angular_vel_zeros], axis=0)
+                _data = _data.replace(cvel=_data.cvel.at[body_id].set(curr_cvel + full_6d_velocity))
+            return _data
+        
+    
+        def _no_adaptation_two_inputs(_data, _carry):
+            return _data
+
         def _no_adaptation(_data):
             return _data
 
@@ -457,6 +497,29 @@ class Mjx(Mujoco):
             _data = _data.replace(ctrl=ctrl)
 
             _data = jax.lax.cond(self.socket_ty_slack, _adapt_qfrc_applied, _no_adaptation, _data)
+
+        
+            # Apply velocity perturbation only if randomize_body_vel_perturb is present and True
+            _data = jax.lax.cond(
+                # jnp.logical_and(hasattr(self._domain_randomizer.rand_conf, "randomize_body_vel_perturb"), self._domain_randomizer.rand_conf["randomize_body_vel_perturb"]),
+                ("randomize_body_vel_perturb" in self._domain_randomizer.rand_conf and
+                self._domain_randomizer.rand_conf["randomize_body_vel_perturb"]),
+                # lambda d: _adapt_vel_applied(d, _carry),
+                _adapt_vel_applied,
+                _no_adaptation_two_inputs,
+                _data, 
+                _carry,
+            )
+
+            # _data = jax.lax.cond(_carry.domain_randomizer_state.body_vel_perturb, _adapt_vel_applied, _no_adaptation_two_inputs, _data, _carry)
+            
+            # body_vel_perturb_names = list(_carry.domain_randomizer_state.body_vel_perturb.keys())
+            # for i in range(len(body_vel_perturb_names)):
+            #     # get time and length entries from body_vel_perturb
+            #     body_vel_perturb_time = _carry.domain_randomizer_state.body_vel_perturb[body_vel_perturb_names[i]]['time']
+            #     body_vel_perturb_length = _carry.domain_randomizer_state.body_vel_perturb[body_vel_perturb_names[i]]['length']
+
+            #     _data = jax.lax.cond(jnp.logical_and(self.cur_step_in_episode >= body_vel_perturb_time,self.cur_step_in_episode < body_vel_perturb_time + body_vel_perturb_length), _adapt_vel_applied, _no_adaptation_two_inputs, _data, _carry)
 
             step_fn = lambda _, x: mjx.step(sys, x)
             _data = jax.lax.fori_loop(0, self._n_substeps, step_fn, _data)
@@ -815,6 +878,14 @@ class Mjx(Mujoco):
                 del self._viewer_params['knee_extension_limit']
             if 'socket_type' in self._viewer_params.keys():
                 del self._viewer_params['socket_type']
+            if 'limit_hip_joints' in self._viewer_params.keys():
+                del self._viewer_params['limit_hip_joints']
+            if 'joint_stiffness_both_sides' in self._viewer_params.keys():
+                del self._viewer_params['joint_stiffness_both_sides']
+            if 'contact_solref' in self._viewer_params.keys():
+                del self._viewer_params['contact_solref']
+            if 'contact_geom_type' in self._viewer_params.keys():
+                del self._viewer_params['contact_geom_type']
             self._viewer = MujocoViewer(self._model, self.dt, record=record, **self._viewer_params)
 
         if self._terrain.is_dynamic:
@@ -857,6 +928,14 @@ class Mjx(Mujoco):
                 del self._viewer_params['knee_extension_limit']
             if 'socket_type' in self._viewer_params.keys():
                 del self._viewer_params['socket_type']
+            if 'limit_hip_joints' in self._viewer_params.keys():
+                del self._viewer_params['limit_hip_joints']
+            if 'joint_stiffness_both_sides' in self._viewer_params.keys():
+                del self._viewer_params['joint_stiffness_both_sides']
+            if 'contact_solref' in self._viewer_params.keys():
+                del self._viewer_params['contact_solref']
+            if 'contact_geom_type' in self._viewer_params.keys():
+                del self._viewer_params['contact_geom_type']
             self._viewer = MujocoViewer(model, self.dt, record=record, **self._viewer_params)
 
         if self._terrain.is_dynamic:

@@ -138,8 +138,8 @@ def experiment(config: DictConfig):
             )
 
             # # To continue training from your saved checkpoint:
-            # loaded_state = SavePPOJax.load_checkpoint_with_device_fix(checkpoint_path, train_state_template) #load_checkpoint_callback(ckpt_path)
-            loaded_state = SavePPOJax.load_checkpoint_with_device_fix_without_value(checkpoint_path, train_state_template,network,env)
+            loaded_state = SavePPOJax.load_checkpoint_with_device_fix(checkpoint_path, train_state_template) #load_checkpoint_callback(ckpt_path)
+            # loaded_state = SavePPOJax.load_checkpoint_with_device_fix_without_value(checkpoint_path, train_state_template,network,env)
             # Extract the components
             params = loaded_state['params']
             run_stats = loaded_state['run_stats'] 

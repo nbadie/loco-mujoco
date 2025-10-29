@@ -64,7 +64,7 @@ class RoughTerrain(DynamicTerrain):
         self.random_step = random_step
         self.random_downsampled_scale = random_downsampled_scale
 
-        self.hfield_size = (8,8,30.0,0.125) #(4, 4, 30.0, 0.125)
+        self.hfield_size = (4, 4, 30.0, 0.125) #(8,8,30.0,0.125) #(4, 4, 30.0, 0.125)
         self.hfield_length = 80
         self.hfield_half_length_in_meters = self.hfield_size[0]
         self.max_possible_height = self.hfield_size[2]

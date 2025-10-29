@@ -68,6 +68,18 @@ import sys
 #     "prosthesis_body_orientation": 0.1
 # }
 
+subfolder_name = 'cylinder_pylon_socket_pos_z'
+# subfolder_name = 'talus_ori_z'
+
+dt_str_init = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+ori_ang_test= np.deg2rad(4)
+ori_ang_test_2 = np.deg2rad(2)
+# ori_ang = np.deg2rad(10)
+ori_ang = np.deg2rad(6)
+talus_ori_ang = np.deg2rad(5)
+# ori_ang_t = np.deg2rad(4)
 # Parameter randomization initialization (no changes)
 randomization_params_names = ["prosthesis_dof_damping", "prosthesis_joint_stiffness", "prosthesis_body_position", "prosthesis_body_orientation"]
 randomization_params_eval = {
@@ -76,17 +88,23 @@ randomization_params_eval = {
     "prosthesis_dof_damping_range": {'ankle_angle': [2, 10]},
     "randomize_prosthesis_joint_stiffness": False,
     "prosthesis_joint_stiffness_range": {'ankle_angle': [1000, 1300]}, #[14924, 24924]}, #{'ankle_angle': [50, 100]},
-    "randomize_prosthesis_body_position": True, #False, #True, #False, #True,
-    "prosthesis_body_position_range": {'talus': {'x': [-0.02, 0.020]}}, #{'pylon_socket': {'x': [-0.1, 0.1]}},
+    "randomize_prosthesis_body_position": True, #True, #False, #True, #False, #True,
+    "prosthesis_body_position_range": {'pylon_socket': {'z': [-0.010,0.010]}}, #{'z': [-0.0292, 0.0292]}}, #{'pylon_socket': {'x': [-0.1, 0.1]}},
+    # "prosthesis_body_position_range": {'pylon_socket': {'x': [-0.0147, 0.0147]}}, #{'z': [-0.0292, 0.0292]}}, #{'pylon_socket': {'x': [-0.1, 0.1]}},
+    # "prosthesis_body_position_range": {'talus': {'z': [-0.015, 0.015]}}, #{'pylon_socket': {'x': [-0.1, 0.1]}},
     "randomize_prosthesis_body_orientation": False, #False, #True, #False, #True, #False, #True, #False,
-    "prosthesis_body_orientation_range": {'talus': {'z': [-0.175, 0.175]}},
-    # "prosthesis_body_orientation_range": {'pylon_socket': {'z': [-0.1, 0.1]}},
+    # "prosthesis_body_orientation_range": {'talus': {'x': [-0.0875, 0.0875]}},
+    "prosthesis_body_orientation_range": {'talus': {'z': [-talus_ori_ang, talus_ori_ang]}},
+    # "prosthesis_body_orientation_range": {'pylon_socket': {'z': [-ori_ang, ori_ang]}},
 }
 randomization_increments = {
     "prosthesis_joint_stiffness": 100, #10,
     "prosthesis_dof_damping": 5,
-    "prosthesis_body_position": 0.04, #0.05,
-    "prosthesis_body_orientation": 0.35 #0.001 #0.2
+    # "prosthesis_body_position": 0.01, #
+    "prosthesis_body_position": 0.005, #0.04, #0.05,
+    "prosthesis_body_orientation": talus_ori_ang*2, #0.175, #0.35 #0.001 #0.2
+    # "prosthesis_body_orientation": ori_ang/3, #0.175, #0.35 #0.001 #0.2
+    # "prosthesis_body_orientation": ori_ang/2, #0.175, #0.35 #0.001 #0.2
 }
 
 os.environ["MUJOCO_GL"] = "egl"  # Use EGL for rendering, which is more compatible with headless environments
@@ -130,6 +148,13 @@ OmegaConf.set_struct(config, False)  # Allow modifications
 config.experiment.env_params["headless"] = True #False
 config.experiment.env_params["goal_type"] = "GoalTrajMimicv2"   # nicer looking than GoalTrajMimic
 config.experiment.env_params["add_sensors"] = True
+
+# delete 'knee_extension_limit'' from config
+# del config.experiment.env_params["knee_extension_limit'"]
+
+# config.experiment.env_params['socket_ty_slack'] = False
+# config.experiment.env_params['limit_hip_joints'] = True
+# config.experiment.env_params["socket_ty_joint"] = False
 env = factory.make(domain_randomization_type=randomization_type, domain_randomization_params=randomization_params,
                    **config.experiment.env_params, **config.experiment.task_factory.params)
 env.th.to_jax()
@@ -246,7 +271,7 @@ else:
 
 muscle_skeleton_control_activation = SkeletonMuscleControlFunction(env)
 
-def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_handler, param_name=None, param_value=None, direction=None):
+def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_handler, param_name=None, param_value=None, direction=None, subfolder_name=None, dt_str_init=None):
     step_total = 0
 
     ###### Some params for evaluation 
@@ -569,7 +594,21 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
     dt_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     if "param_name":
         joint_name = list(randomization_params_eval[f"{param_name}_range"].keys())[0]
-        output_path = os.path.join(os.path.dirname(path), f"{dt_str}_eval_{n_steps}steps_{joint_name}_{direction}_{int(param_value*10)}{param_name}.pkl")
+        if 'orientation' in param_name:
+            name_param_value = np.rad2deg(param_value)
+            name_units = 'deg'
+        elif 'position' in param_name:
+            name_param_value = param_value*1000
+            name_units = 'mm'
+        else:
+            name_param_value = param_value
+            name_units = ''
+        if subfolder_name is not None: 
+            if not os.path.exists(os.path.join(os.path.dirname(path), f"{dt_str_init}_{subfolder_name}")):
+                os.makedirs(os.path.join(os.path.dirname(path), f"{dt_str_init}_{subfolder_name}"))
+            output_path = os.path.join(os.path.dirname(path), f"{dt_str_init}_{subfolder_name}", f"eval_{n_steps}steps_{joint_name}_{direction}_{int(np.round(name_param_value,0))}{name_units}_{param_name}.pkl")
+        else: 
+            output_path = os.path.join(os.path.dirname(path), f"{dt_str}_eval_{n_steps}steps_{joint_name}_{direction}_{int(np.round(name_param_value,0))}{name_units}_{param_name}.pkl")
         # output_path = os.path.join(os.path.dirname(path), f"{dt_str}_evaluation_results_{n_steps}steps_{int(param_value*1000)}{param_name}.pkl")
     else:   
         output_path = os.path.join(os.path.dirname(path), f"{dt_str}_evaluation_results_{n_steps}steps.pkl")
@@ -640,7 +679,7 @@ for param_name in randomization_params_names:
                 env_state = jit_reset(env_keys) 
                 obs = env_state.observation
                 print("Running evaluation for ", param_name, " with value: ", current_value)
-                run_evaluation_loop(env_state, n_steps, train_state, rng, prosthesis_metrics_handler,param_name=param_name, param_value = current_value) #min_val + increment)
+                run_evaluation_loop(env_state, n_steps, train_state, rng, prosthesis_metrics_handler,param_name=param_name, param_value = current_value, subfolder_name = subfolder_name,dt_str_init=dt_str_init) #min_val + increment)
                 current_value += increment
 
         elif "position" in param_name or "orientation" in param_name:
@@ -671,7 +710,7 @@ for param_name in randomization_params_names:
                     env_state = jit_reset(env_keys)
                     obs = env_state.observation
                     print("Running evaluation for ", param_name," for axis: ", axis, " with value: ",current_value)
-                    run_evaluation_loop(env_state, n_steps, train_state, rng, prosthesis_metrics_handler,param_name=param_name, param_value = current_value,direction=axis) #min_val + inc)
+                    run_evaluation_loop(env_state, n_steps, train_state, rng, prosthesis_metrics_handler,param_name=param_name, param_value = current_value,direction=axis, subfolder_name = subfolder_name, dt_str_init=dt_str_init) #min_val + inc)
                     current_value += inc
 
         # jit_reset  = jax.jit(jax.vmap(env.mjx_reset))

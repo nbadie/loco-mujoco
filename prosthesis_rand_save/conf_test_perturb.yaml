@@ -5,7 +5,7 @@ defaults:
 
 wandb:
   project: "deepmimic"
-  run_name: "SACHFoot_Cont1Box_Gas_SlackRange002_SocketTySlack_ObsPosOriSocket_RandPosOriSocketTalus_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal"
+  run_name: "SACHFoot_ContSolRef[0]005[1]1_Gas_SlackRange002_SocketTySlack_ObsPosOriSocket_RandPosOriSocketTalus_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal"
 experiment:
   task_factory:
     name: ImitationFactory
@@ -25,14 +25,12 @@ experiment:
     amputated_tibia_length: 0.2
     limit_knee_extension: False #true
     knee_extension_limit: 5
-    # contact_solref: [0.03, 1]
-    # contact_geom_type: 'sphere' #'cylinder' #'sphere' # 'box' or  'sphere'
     socket_ty_slack: true
     add_pos_ori_to_observation: true
     joint_stiffness: {'ankle_angle': 1200}
     reattach_muscle: true
     reattach_muscles_offset: {'med_gas': [0,0,0]}
-    # use_2_box_per_foot: true
+    use_2_box_per_foot: true
     headless: true
     disable_arms: false
     horizon: 1000
@@ -143,6 +141,17 @@ randomization_config:
           'socket_ty': [-0.25,0.025]  
       }
       adapt_tibia_socket_parameters: False
+
+      randomize_body_vel_perturb: True
+      randomization_body_vel_perturb_range: {
+        'torso':{
+          'time': [40, 100],  # Time step to start perturbation
+          'length': [20, 50],  # Duration of perturbation in time steps
+          'vel': {'x': [-0.1, 0.1],  # Velocity range in x, y, z directions
+                    'y': [-0.2, 0.2],
+                    'z': [-0.3, 0.3]}
+        }
+      }
 
 
 checkpoint_path: ""

@@ -31,6 +31,7 @@ class ProsthesisRandomizerState:
     prosthesis_body_position: Union[np.ndarray, jax.Array]
     prosthesis_body_orientation: Union[np.ndarray, jax.Array]
     prosthesis_socket_joint_value: Union[np.ndarray, jax.Array]
+    body_vel_perturb: dict
 
 
     # geom_friction: Union[np.ndarray, jax.Array]
@@ -65,6 +66,7 @@ class ProsthesisRandomizer(DomainRandomizer):
         self._init_prosthesis_socket_joint_value = None
         self._init_prosthesis_socket_joint_springref = None
         self.init_talus_pos = None
+        # self.body_vel_perturb = None
         super().__init__(env, **kwargs)
 
 
@@ -249,6 +251,7 @@ class ProsthesisRandomizer(DomainRandomizer):
         self._joint_indices = {}
         self._dof_indices = {}
         self._socket_joint_indices = {}
+        self._body_vel_perturb_indices= {}
         
         # self._feet_geom_solref_indices = {}
 
@@ -296,9 +299,20 @@ class ProsthesisRandomizer(DomainRandomizer):
                 print("Warning: 'prosthesis_body_orientation_range' is not nested and 'randomization_body_orientation_names' is not found for orientation randomization. No bodies will be randomized for orientation.")
                 body_quat_names = [] # Default to empty if names not specified explicitly
             
-        # foot_geom_names = self.rand_conf["randomization_foot_geom_solref_names"]
+        # # foot_geom_names = self.rand_conf["randomization_foot_geom_solref_names"]
+        if "randomization_body_vel_perturb_range" in self.rand_conf:
+            body_vel_perturb_config = self.rand_conf["randomization_body_vel_perturb_range"]
+            if isinstance(body_vel_perturb_config, dict) and all(isinstance(v, dict) for v in body_vel_perturb_config.values()):
+                self.is_init_body_vel_range_nested = True
+                # Keep config keyed by base body name (no side suffix)
+                self.body_vel_perturb_range_dict = body_vel_perturb_config
+                body_vel_perturb_names = list(body_vel_perturb_config.keys())
+            else:
+                print("Warning: 'randomization_body_vel_perturb_range' is not nested. No bodies will be randomized for initial velocity.")
+                body_vel_perturb_names = []
+        else:
+            body_vel_perturb_names = []
         
-
         assert prosthesis_side in ["left_side", "right_side"], f"Invalid prosthesis side: {prosthesis_side}. Expected 'left' or 'right'."
 
 
@@ -314,6 +328,25 @@ class ProsthesisRandomizer(DomainRandomizer):
         socket_joint_names = [name + self.prosthesis_side_str for name in socket_joint_names]
         # foot_geom_names = [name + '_l' for name in foot_geom_names] + [name + '_r' for name in foot_geom_names]
 
+
+        # For body perturb names check if they exist with a side suffix in the model or not.
+        # If yes add suffix, if not keep original name. Also build a map full_name -> base_name
+        valid_body_vel_perturb_names = []
+        # self._body_vel_perturb_name_map = {}  # full_body_name -> base_name (key in range dict)
+        for base_body_name in body_vel_perturb_names:
+            full_with_side = base_body_name + self.prosthesis_side_str
+            idx_with_side = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, full_with_side)
+            if idx_with_side != -1:
+                valid_body_vel_perturb_names.append(full_with_side)
+                # self._body_vel_perturb_name_map[full_with_side] = base_body_name
+                continue
+            # fallback to base name if present in model
+            idx_base = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, base_body_name)
+            if idx_base != -1:
+                valid_body_vel_perturb_names.append(base_body_name)
+                # self._body_vel_perturb_name_map[base_body_name] = base_body_name
+            else:
+                print(f"Warning: Body '{base_body_name}' (for velocity perturbation) not found in model with or without side suffix. Skipping randomization for it.")
 
         # Get mujoco joint indices for the joints
         valid_joint_names = []
@@ -383,6 +416,8 @@ class ProsthesisRandomizer(DomainRandomizer):
             else: 
                 self._body_quat_indices[body_quat_name] = idx
                 self.randomized_quat_body_names.append(body_quat_name)
+
+
             
         # # Get position and orientation for those bodies
         prosthesis_body_position ={}
@@ -488,12 +523,31 @@ class ProsthesisRandomizer(DomainRandomizer):
         #     else:
         #         self._feet_geom_side_map[name] = "other_side"
 
-            
+
+        # Body vel perturb indices
+        self.randomized_vel_perturb_body_names = []  # Store names of bodies that will *actually* be randomized
+        for body_name in valid_body_vel_perturb_names:
+            idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+            if idx == -1:
+                print(f"Warning: Body '{body_name}' (for velocity perturbation) not found in model. Skipping randomization for it.")
+            else:
+                self._body_vel_perturb_indices[body_name] = idx
+                self.randomized_vel_perturb_body_names.append(body_name)
+
+        
+        body_vel_perturb = {}
+        for body_name in valid_body_vel_perturb_names:
+            body_vel_perturb[body_name] = {'time': 0.0, 'length': 0.0, 'vel': backend.array([0.0, 0.0, 0.0])}
+
+
+
         return ProsthesisRandomizerState(prosthesis_joint_stiffness=prosthesis_joint_stiffness,
                                       prosthesis_dof_damping=prosthesis_dof_damping,
                                       prosthesis_body_position=prosthesis_body_position,
                                       prosthesis_body_orientation=prosthesis_body_orientation,
-                                      prosthesis_socket_joint_value= prosthesis_socket_joint_value
+                                      prosthesis_socket_joint_value= prosthesis_socket_joint_value,
+                                      body_vel_perturb = body_vel_perturb
+
                                     #   feet_geom_solref= feet_geom_solref
 
 
@@ -542,12 +596,14 @@ class ProsthesisRandomizer(DomainRandomizer):
             self._init_prosthesis_body_orientation = model.body_quat.copy()
             self._init_prosthesis_socket_joint_value = model.qpos0.copy()
             self._init_prosthesis_socket_joint_springref = model.qpos_spring.copy()
+
             # self._init_feet_geom_solref = model.geom_solref.copy()
         # elif backend == jnp:
         #     self._init_prosthesis_joint_stiffness = jnp.array(model.jnt_stiffness)
         #     self._init_prosthesis_dof_damping = jnp.array(model.dof_damping)
         #     self._init_prosthesis_body_position = jnp.array(model.body_pos)
         #     self._init_prosthesis_body_orientation = jnp.array(model.body_quat)
+        
 
 
         prosthesis_joint_stiffness, carry = self._sample_joint_stiffness(model, carry, backend)
@@ -555,6 +611,7 @@ class ProsthesisRandomizer(DomainRandomizer):
         prosthesis_body_position, carry = self._sample_geom_position(model, carry, backend)
         prosthesis_body_orientation, carry = self._sample_joint_orientation(model, carry, backend)
         prosthesis_socket_joint_value, carry = self._sample_socket_joint_value(model, data, carry, backend)
+        body_vel_perturb, carry = self._sample_body_velocity_perturbation(model, carry, backend)
         # jax.debug.print('prosthesis_socket_joint_value: {value}', value = prosthesis_socket_joint_value)
         # feet_geom_solref, carry = self._sample_feet_geom_solref(model, carry, backend)
 
@@ -572,7 +629,8 @@ class ProsthesisRandomizer(DomainRandomizer):
                 prosthesis_dof_damping=prosthesis_dof_damping,
                 prosthesis_body_position=prosthesis_body_position,
                 prosthesis_body_orientation=prosthesis_body_orientation,
-                prosthesis_socket_joint_value= prosthesis_socket_joint_value
+                prosthesis_socket_joint_value= prosthesis_socket_joint_value, 
+                body_vel_perturb = body_vel_perturb,
                 # feet_geom_solref = feet_geom_solref
                 ))
         
@@ -1829,6 +1887,71 @@ class ProsthesisRandomizer(DomainRandomizer):
         return all_mass, all_inertia, all_center_of_mass
 
 
+
+    def _sample_body_velocity_perturbation(self, model, carry, backend):
+        """Sample per-body velocity perturbation config:
+        Expect rand_conf["randomization_body_vel_perturb_range"] format:
+        { body_name: { "time": [min,max], "length": [min,max],
+                       "vel": {"x":[min,max], "y":[min,max], "z":[min,max]} } }
+        Returns dict: { full_body_name: {"time": scalar, "length": scalar, "vel": array([vx,vy,vz])}, ... }, carry
+        """
+        assert_backend_is_supported(backend)
+
+        sampled = {}
+
+        # nothing configured
+        if not getattr(self, "randomized_vel_perturb_body_names", []):
+            return sampled, carry
+
+        # Ensure config exists
+        if "randomization_body_vel_perturb_range" not in self.rand_conf:
+            return sampled, carry
+
+        rng_dict = self.body_vel_perturb_range_dict if hasattr(self, "body_vel_perturb_range_dict") else self.rand_conf["randomization_body_vel_perturb_range"]
+
+        for body in self.randomized_vel_perturb_body_names:
+            # body may include side suffix; use base key to lookup config
+            base = body.replace(getattr(self, "prosthesis_side_str", ""), "")
+            cfg = rng_dict.get(base, None)
+            if cfg is None:
+                # skip if no per-body config found
+                continue
+
+            # Read ranges with sensible defaults
+            t_min, t_max = cfg.get("time", [0.0, 0.0])
+            l_min, l_max = cfg.get("length", [0.0, 0.0])
+            vel_cfg = cfg.get("vel", {})
+            vx_min, vx_max = vel_cfg.get("x", [0.0, 0.0])
+            vy_min, vy_max = vel_cfg.get("y", [0.0, 0.0])
+            vz_min, vz_max = vel_cfg.get("z", [0.0, 0.0])
+
+            if backend == jnp:
+                key = carry.key
+                # split into three subkeys: time, length, vel
+                key, k = jax.random.split(key)
+                k_time, k_len, k_vel = jax.random.split(k, 3)
+                carry = carry.replace(key=key)
+
+                t_s = jax.random.uniform(k_time, ())  # scalar in [0,1)
+                l_s = jax.random.uniform(k_len, ())
+                vel_s = jax.random.uniform(k_vel, (3,))
+
+                t_val = t_min + (t_max - t_min) * t_s
+                l_val = l_min + (l_max - l_min) * l_s
+                vel_vals = jnp.array([vx_min, vy_min, vz_min]) + (jnp.array([vx_max, vy_max, vz_max]) - jnp.array([vx_min, vy_min, vz_min])) * vel_s
+
+            else:  # numpy backend
+                t_s = np.random.uniform()
+                l_s = np.random.uniform()
+                vel_s = np.random.uniform(size=(3,))
+
+                t_val = t_min + (t_max - t_min) * t_s
+                l_val = l_min + (l_max - l_min) * l_s
+                vel_vals = np.array([vx_min, vy_min, vz_min]) + (np.array([vx_max, vy_max, vz_max]) - np.array([vx_min, vy_min, vz_min])) * vel_s
+
+            sampled[body] = {"time": t_val, "length": l_val, "vel": vel_vals}
+
+        return sampled, carry
 
 
 

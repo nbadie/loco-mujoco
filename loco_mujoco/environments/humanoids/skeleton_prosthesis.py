@@ -77,6 +77,7 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             self.knee_extension_limit = kwargs.get("knee_extension_limit")
         if "socket_ty_slack" in kwargs:
             self.socket_ty_slack = kwargs.get("socket_ty_slack")
+            print('self.socket_ty_slack in env: ', self.socket_ty_slack)
         else: 
             self.socket_ty_slack = False
         if "add_pos_ori_to_observation" in kwargs:
@@ -108,6 +109,17 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             self.socket_type = kwargs.pop("socket_type")
         if "prosthesis_visualization" in kwargs:
             self.prosthesis_visualization = kwargs.pop("prosthesis_visualization")
+        if "socket_ty_joint" in kwargs: 
+            self.socket_ty_joint = kwargs.pop("socket_ty_joint")
+        if "socket_joint" in kwargs: 
+            self.socket_joint = kwargs.pop("socket_joint")
+
+        if "contact_solref" in kwargs: 
+            self.contact_solref = kwargs.pop("contact_solref")
+        if "contact_geom_type" in kwargs:
+            self.contact_geom_type = kwargs.pop("contact_geom_type")
+
+        
 
         self.actuators_removed = []
         self.amputated_joint_names = []
@@ -157,10 +169,24 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
                 self.add_force_sensor(spec, f"right_{joint_force_sensor_site_name}")
                 self.add_torque_sensor(spec, f"left_{joint_force_sensor_site_name}")
                 self.add_torque_sensor(spec, f"right_{joint_force_sensor_site_name}")
+                if hasattr(self, "prosthesis_type") and self.prosthesis_type != "None":
+                    joint_force_sensor_site_name = f"pylon_mimic{self.prosthesis_side}"
+                    self.add_force_sensor(spec, joint_force_sensor_site_name)
+                    self.add_torque_sensor(spec, joint_force_sensor_site_name)
+                # joint_force_sensor_site_name = f"pylon_socket_joint{self.prosthesis_side}"
+                # self.add_force_sensor(spec, joint_force_sensor_site_name)
+                # self.add_torque_sensor(spec, joint_force_sensor_site_name)
 
         if hasattr(self, 'limit_knee_extension') and self.limit_knee_extension:
             self.limit_joint_range(spec, 'knee_angle',self.knee_extension_limit)
 
+        if 'limit_hip_joints' in kwargs:
+            self.limit_hip_rot_add_angles(spec)
+
+
+        if "joint_stiffness_both_sides" in kwargs:
+            self.joint_stiffness_both_sides = kwargs.pop("joint_stiffness_both_sides")
+            self.increase_joint_stiffness_both_sides(spec)
 
         # Model option configuration
         model_option_conf = kwargs.pop("model_option_conf", {
@@ -180,7 +206,14 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             if j.name in joint_names:
                 j.range = [j.range[0], upper_limit]
 
-        
+    
+    def limit_hip_rot_add_angles(self, spec):
+        joint_names = ['hip_rotation', 'hip_adduction']
+        joint_names = [j + '_l' for j in joint_names] + [j + '_r' for j in joint_names]
+        for j in spec.joints:
+            if j.name in joint_names:
+                j.range = [-0.001, 0.001]
+        print("Hip rotation and adduction joints limited to 0 range.")
 
     def add_force_sensor_prosthesis_side(self, spec, site_name):
         """
@@ -308,7 +341,26 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             if j.name in joint_names:
                 # print(f"Increasing stiffness of joint: {j.name}")
                 j.stiffness = joint_stiffness[j.name.replace(self.prosthesis_side,'')]
+
+
+    def increase_joint_stiffness_both_sides(self, spec):
+        """
+        Increases the stiffness of specified joints in the model specification.
+        Args:
+            spec (MjSpec): The model specification object.
+        """
+        joint_stiffness = self.joint_stiffness_both_sides
+        joint_names =  list(joint_stiffness.keys())
+        joint_names = [j+'_l' for j in joint_names] + [j+'_r' for j in joint_names]
         
+        for j in spec.joints:
+            if j.name in joint_names:
+                # print(f"Increasing stiffness of joint: {j.name}")
+                if j.name.endswith('_l'):
+                    j.stiffness = joint_stiffness[j.name[:-2]]
+                elif j.name.endswith('_r'):
+                    j.stiffness = joint_stiffness[j.name[:-2]]
+
 
 
     def increase_joint_damping_each_joint(self, spec):
@@ -788,6 +840,13 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         )
 
         prosthetic_shank_body.add_site(
+            name=f"pylon_mimic{self.prosthesis_side}",
+            pos=np.array([0,0,0]),
+            size = [0.01, 0.01,0.01],
+            rgba=[0, 1, 0, 1]
+        )
+
+        prosthetic_shank_body.add_site(
             name=f"pylon_0{self.prosthesis_side}",
             pos=np.array([0,0,0])+np.array([0,self.tibia_socket_overlap,0]),
             size = [0.01, 0.01,0.01],
@@ -851,15 +910,15 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
 
 
         prosthetic_shank_body.add_site(
-            name=f"socket_joint{self.prosthesis_side}",
+            name=f"pylon_socket_joint{self.prosthesis_side}",
             pos=[0, socket_joint_offset,0], # This site is at the "bottom" of the shank, relative to prosthetic_shank_body's origin
             size=[0.01,0.01,0.01],
             rgba=[1, 0, 0, 1]
         )
         socket_joint_damping_tz = 40 #100 #100 #400 #200 # ty/2
-        socket_joint_stiffness_tz = 20000 #43500 #30000 #43500 #21750
+        socket_joint_stiffness_tz = 20000 #100000 #20000 #43500 #30000 #43500 #21750
         socket_joint_damping_tx = 40 #100 #400 #200 # ty/2
-        socket_joint_stiffness_tx = 43500 #43500 #10000 #21750 # ty/2
+        socket_joint_stiffness_tx = 43500 #120000 #43500 #43500 #10000 #21750 # ty/2
         
         if hasattr(self, 'socket_ty_joint_stiffness'):
             socket_joint_stiffness_ty = self.socket_ty_joint_stiffness
@@ -873,11 +932,11 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         else:
             socket_joint_damping_ty = 4 #40 #4 #40 #1 #0  #4 #100 #400 #3000 #100 #5
 
-        socket_joint_stiffness_axial = 10 #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
+        socket_joint_stiffness_axial = 10 #1000 #10 #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
         socket_joint_damping_axial = 2 #300 #5
-        socket_joint_stiffness_flexion = 997 #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
+        socket_joint_stiffness_flexion = 997 #6000 #997 #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
         socket_joint_damping_flexion = 10
-        socket_joint_stiffness_adduction = 623 #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
+        socket_joint_stiffness_adduction = 623 #6000 #623 #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
         socket_joint_damping_adduction = 6
 
         if hasattr(self, 'socket_ty_joint_range'):
@@ -901,133 +960,140 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         # socket_joint_damping_adduction = 9
 
         # # Add joints to the prosthetic shank body to allow for flexibility
-        prosthetic_shank_body.add_joint(
-            name=f"socket_tx{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_SLIDE,
-            pos=[0,socket_joint_offset,0], axis=[1, 0, 0], range=[-0.01, 0.01], # Linear translation X [-0.01]
-            stiffness=socket_joint_stiffness_tx, damping=socket_joint_damping_tx,
-        )
-        # prosthetic_shank_body.add_joint(
-        #     name=f"socket_ty{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_SLIDE,
-        #     pos=[0,socket_joint_offset,0], axis=[0, 1, 0], range=socket_ty_joint_range, #[-0.02,0.02], #[-0.008,0.01], #[-0.02,0.02], #[-0.038,0.025],
-        #     stiffness=socket_joint_stiffness_ty, damping=socket_joint_damping_ty, #solref= 0.01#,armature=1,
-        #     springref=0.005
-        #     # range=[-0.038,0.025], #[-0.009,0.001], # Half the range for solimp#[- 0.038,0.025]#LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
-        #     # range=[-0.034,0.020], #[-0.038,0.023], #[-0.009,0.001], # Half the range for solimp#[- 0.038,0.025]#LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
-        #     # range=[-0.025,0.015], 
-        #     # range=[-0.025,0.015], 
-        #     # range=[-0.030,0.02], 
+        if hasattr(self, 'socket_joint') and not self.socket_joint:
+            pass 
+        else:
+            prosthetic_shank_body.add_joint(
+                name=f"socket_tx{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_SLIDE,
+                pos=[0,socket_joint_offset,0], axis=[1, 0, 0], range=[-0.01, 0.01], # Linear translation X [-0.01]
+                stiffness=socket_joint_stiffness_tx, damping=socket_joint_damping_tx,
+            )
 
-            
-        #     # Linear translation Y [-0.02]
-        #     # stiffness=socket_joint_stiffness_ty, damping=socket_joint_damping_ty,  
-        #     # solimp_limit = [0, 0.9, 0.02, 0.5, 1], margin = 0.02 #2 #0.02 #85
-            
-        #     # solimp_limit = [0, 0.95, 0.04, 0.5, 1], margin = 0.04 #2 #0.02 #85
-        #     # solimp_limit = [0, 0.95, 0.02, 0.5, 1], margin = 0.02 #2 #0.02 #85
-        #     # solimp_limit = [0, 0.97, 0.02, 0.5, 1], margin = 0.02 #2 #0.02 #85
-        #     # solimp_limit = [0, 0.97, 0.015, 0.5, 1], margin = 0.015 #2 #0.02 #85
-            
-        #     # solimp_limit = [0, 0.92, 0.03, 0.5, 1], margin = 0.03 #2 #0.02 #85
-        #     # solimp_limit = [0, 0.92, 0.03, 0.5, 1], margin = 0.025 #2 #0.02 #85
-        #     # solimp_limit = [0, 0.92, 0.025, 0.5, 1], margin = 0.03 #2 #0.02 #85
+            if hasattr(self, 'socket_ty_joint') and not self.socket_ty_joint:
+                pass
+            else:
+                prosthetic_shank_body.add_joint(
+                    name=f"socket_ty{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_SLIDE,
+                    pos=[0,socket_joint_offset,0], axis=[0, 1, 0], range=socket_ty_joint_range, #[-0.02,0.02], #[-0.008,0.01], #[-0.02,0.02], #[-0.038,0.025],
+                    stiffness=socket_joint_stiffness_ty, damping=socket_joint_damping_ty, #solref= 0.01#,armature=1,
+                    # springref=0.005
+                    # range=[-0.038,0.025], #[-0.009,0.001], # Half the range for solimp#[- 0.038,0.025]#LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
+                    # range=[-0.034,0.020], #[-0.038,0.023], #[-0.009,0.001], # Half the range for solimp#[- 0.038,0.025]#LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
+                    # range=[-0.025,0.015], 
+                    # range=[-0.025,0.015], 
+                    # range=[-0.030,0.02], 
 
-        #     # solimp_limit = [0, 0.85, 0.018, 0.5, 1], margin=0.018,
-        #     # solimp_limit = [0, 0.92, 0.018, 0.5, 1], margin=0.018,
-        #     # solimp_limit = [0, 0.92, 0.025, 0.5, 1], margin=0.03,
-            
-        #     # solimp_limit = [0, 0.85, 0.025, 0.5, 1], margin=0.025,
-        #     # solimp_limit = [0, 0.85, 0.07, 0.5, 1], margin=0.07,
-        #     # solimp_limit = [0, 0.88, 0.07, 0.5, 1], margin=0.07,
-        #     # solimp_limit = [0, 0.88, 0.05, 0.5, 1], margin=0.05,
-            
+                    
+                    # Linear translation Y [-0.02]
+                    # stiffness=socket_joint_stiffness_ty, damping=socket_joint_damping_ty,  
+                    # solimp_limit = [0, 0.9, 0.02, 0.5, 1], margin = 0.02 #2 #0.02 #85
+                    
+                    # solimp_limit = [0, 0.95, 0.04, 0.5, 1], margin = 0.04 #2 #0.02 #85
+                    # solimp_limit = [0, 0.95, 0.02, 0.5, 1], margin = 0.02 #2 #0.02 #85
+                    # solimp_limit = [0, 0.97, 0.02, 0.5, 1], margin = 0.02 #2 #0.02 #85
+                    # solimp_limit = [0, 0.97, 0.015, 0.5, 1], margin = 0.015 #2 #0.02 #85
+                    
+                    # solimp_limit = [0, 0.92, 0.03, 0.5, 1], margin = 0.03 #2 #0.02 #85
+                    # solimp_limit = [0, 0.92, 0.03, 0.5, 1], margin = 0.025 #2 #0.02 #85
+                    # solimp_limit = [0, 0.92, 0.025, 0.5, 1], margin = 0.03 #2 #0.02 #85
 
-        #     # solimp_limit = [0, 0.88, 0.03, 0.5, 1], margin=0.03,
-        #     # solimp_limit = [0, 0.88, 0.04, 0.5, 1], margin=0.04,
-        #     # solimp_limit = [0, 0.88, 0.03, 0.5, 1], margin=0.025,
-        #     # solimp_limit = [0, 0.88, 0.018, 0.5, 1], margin=0.03,
-            
-            
-        #     # solimp_limit = [0, 0.85, 0.018, 0.5, 1], margin=0.03,
-        #     # solimp_limit = [0, 0.85, 0.018, 0.5, 1], margin=0.05,
-        #     # solimp_limit = [0, 0.85, 0.018, 0.5, 1], margin=0.07,
+                    # solimp_limit = [0, 0.85, 0.018, 0.5, 1], margin=0.018,
+                    # solimp_limit = [0, 0.92, 0.018, 0.5, 1], margin=0.018,
+                    # solimp_limit = [0, 0.92, 0.025, 0.5, 1], margin=0.03,
+                    
+                    # solimp_limit = [0, 0.85, 0.025, 0.5, 1], margin=0.025,
+                    # solimp_limit = [0, 0.85, 0.07, 0.5, 1], margin=0.07,
+                    # solimp_limit = [0, 0.88, 0.07, 0.5, 1], margin=0.07,
+                    # solimp_limit = [0, 0.88, 0.05, 0.5, 1], margin=0.05,
+                    
 
-        #     # solimp_limit = [0, 0.85, 0.010, 0.5, 1], margin=0.05,
-        #     # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008,
-        #     #solimp_limit = [0, 0.88, 0.004, 0.5, 1], margin=0.004,
-        #     # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008,
-            
-            
-            
-        #     # solimp_limit = [0, 0.96, 0.007, 0.5, 1], margin=0.007,
-        #     # solimp_limit = [0, 0.96, 0.006, 0.5, 1], margin=0.006,
-        #     # solimp_limit = [0, 0.94, 0.006, 0.5, 1], margin=0.006,
-        #     # solimp_limit = [0, 0.92, 0.002, 0.5, 1], margin=0.01,
+                    # solimp_limit = [0, 0.88, 0.03, 0.5, 1], margin=0.03,
+                    # solimp_limit = [0, 0.88, 0.04, 0.5, 1], margin=0.04,
+                    # solimp_limit = [0, 0.88, 0.03, 0.5, 1], margin=0.025,
+                    # solimp_limit = [0, 0.88, 0.018, 0.5, 1], margin=0.03,
+                    
+                    
+                    # solimp_limit = [0, 0.85, 0.018, 0.5, 1], margin=0.03,
+                    # solimp_limit = [0, 0.85, 0.018, 0.5, 1], margin=0.05,
+                    # solimp_limit = [0, 0.85, 0.018, 0.5, 1], margin=0.07,
 
-        #     # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008 ##### FINAL
-        #     # solimp_limit = [0, 0.92, 0.008, 0.5, 1], margin=0.08,
-        #     # solimp_limit = [0, 0.92, 0.008, 0.5, 1], margin=0.05,
+                    # solimp_limit = [0, 0.85, 0.010, 0.5, 1], margin=0.05,
+                    # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008,
+                    #solimp_limit = [0, 0.88, 0.004, 0.5, 1], margin=0.004,
+                    # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008,
+                    
+                    
+                    
+                    # solimp_limit = [0, 0.96, 0.007, 0.5, 1], margin=0.007,
+                    # solimp_limit = [0, 0.96, 0.006, 0.5, 1], margin=0.006,
+                    # solimp_limit = [0, 0.94, 0.006, 0.5, 1], margin=0.006,
+                    # solimp_limit = [0, 0.92, 0.002, 0.5, 1], margin=0.01,
 
-        #     # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008, damping= 0.5
-        #     # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008, damping= 0.2
-        #     # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008, damping= 0.8
+                    # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008 ##### FINAL
+                    # solimp_limit = [0, 0.92, 0.008, 0.5, 1], margin=0.08,
+                    # solimp_limit = [0, 0.92, 0.008, 0.5, 1], margin=0.05,
 
-        #     # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008, damping= 2
-        #     # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008, damping= 1.5
-        #     # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008, damping= 3
-            
-            
-        #     # range=[-0.05,0.04], 
-        #     # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.02,# damping= 3
-        #     # range=[-0.05,0.04],  
-        #     # solimp_limit = [0, 0.96, 0.02, 0.5, 1], margin=0.02,# damping= 3
-        #     # range=[-0.05,0.04],  
-        #     # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.04,# damping= 3
+                    # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008, damping= 0.5
+                    # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008, damping= 0.2
+                    # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008, damping= 0.8
+
+                    # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008, damping= 2
+                    # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008, damping= 1.5
+                    # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.008, damping= 3
+                    
+                    
+                    # range=[-0.05,0.04], 
+                    # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.02,# damping= 3
+                    # range=[-0.05,0.04],  
+                    # solimp_limit = [0, 0.96, 0.02, 0.5, 1], margin=0.02,# damping= 3
+                    # range=[-0.05,0.04],  
+                    # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.04,# damping= 3
 
 
-        #     # range=[-0.05,0.04],  
-        #     # solimp_limit = [0, 0.96, 0.004, 0.5, 1], margin=0.02,# damping= 3
-        #     # range=[-0.05,0.04],  
-        #     # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.025,# damping= 3
-        #     # range=[-0.15,0.1],  
-        #     # solimp_limit = [0, 0.96, 0.004, 0.5, 1], margin=0.08,
+                    # range=[-0.05,0.04],  
+                    # solimp_limit = [0, 0.96, 0.004, 0.5, 1], margin=0.02,# damping= 3
+                    # range=[-0.05,0.04],  
+                    # solimp_limit = [0, 0.96, 0.008, 0.5, 1], margin=0.025,# damping= 3
+                    # range=[-0.15,0.1],  
+                    # solimp_limit = [0, 0.96, 0.004, 0.5, 1], margin=0.08,
 
-        #     # range=[-0.15,0.1],  
-        #     # solimp_limit = [0, 0.96, 0.004, 0.5, 1], margin=0.08, stiffness = 10,
-        #     # range=[-0.15,0.15],  
-        #     # solimp_limit = [0, 0.96, 0.004, 0.5, 1], margin=0.08, stiffness = 10,
-        #     # range=[-0.15,0.15],  
-        #     # solimp_limit = [0, 0.96, 0.004, 0.5, 1], margin=0.1, stiffness = 10,
+                    # range=[-0.15,0.1],  
+                    # solimp_limit = [0, 0.96, 0.004, 0.5, 1], margin=0.08, stiffness = 10,
+                    # range=[-0.15,0.15],  
+                    # solimp_limit = [0, 0.96, 0.004, 0.5, 1], margin=0.08, stiffness = 10,
+                    # range=[-0.15,0.15],  
+                    # solimp_limit = [0, 0.96, 0.004, 0.5, 1], margin=0.1, stiffness = 10,
 
-        #     # range=[-0.15,0.15],  
-        #     # solimp_limit = [0, 0.96, 0.002, 0.5, 1], margin=0.1, stiffness = 10,
-        #     # range=[-0.15,0.15],  
-        #     # solimp_limit = [0, 0.96, 0.006, 0.5, 1], margin=0.1, stiffness = 10,
-        #     # range=[-0.15,0.15],  
-        #     # solimp_limit = [0, 0.96, 0.004, 0.5, 1], margin=0.15, stiffness = 10,
+                    # range=[-0.15,0.15],  
+                    # solimp_limit = [0, 0.96, 0.002, 0.5, 1], margin=0.1, stiffness = 10,
+                    # range=[-0.15,0.15],  
+                    # solimp_limit = [0, 0.96, 0.006, 0.5, 1], margin=0.1, stiffness = 10,
+                    # range=[-0.15,0.15],  
+                    # solimp_limit = [0, 0.96, 0.004, 0.5, 1], margin=0.15, stiffness = 10,
 
-        # )
-        prosthetic_shank_body.add_joint(
-            name=f"socket_tz{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_SLIDE,
-            pos=[0,socket_joint_offset,0], axis=[0, 0, 1], range=[-0.01, 0.01],# Linear translation Z
-            stiffness=socket_joint_stiffness_tz, damping=socket_joint_damping_tz,
-        )
-        prosthetic_shank_body.add_joint(
-            name=f"socket_flexion{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_HINGE,
-            pos=[0,socket_joint_offset,0], axis=[0, 0, 1], range=[-0.174,0.087], #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
-            #0.1 # Flexion/Extension #socket_pos_relative_to_tibia
-            stiffness=socket_joint_stiffness_flexion, damping=socket_joint_damping_flexion,
-        )
-        prosthetic_shank_body.add_joint(
-            name=f"socket_adduction{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_HINGE,
-            pos=[0,socket_joint_offset,0], axis=[1, 0, 0], range=[-0.1, 0.1],# Adduction/Abduction # 0.1
-            stiffness=socket_joint_stiffness_adduction, damping=socket_joint_damping_adduction,
-        )
-        prosthetic_shank_body.add_joint(
-            name=f"socket_rotation{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_HINGE,
-            pos=[0,socket_joint_offset,0], axis=[0, 1, 0], range=[-0.35, 0.35], #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
-            # Angus: Internal/External Rotation # 0.3
-            stiffness=socket_joint_stiffness_axial, damping=socket_joint_damping_axial,
-        )
+                )
+            prosthetic_shank_body.add_joint(
+                name=f"socket_tz{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_SLIDE,
+                pos=[0,socket_joint_offset,0], axis=[0, 0, 1], range=[-0.01, 0.01],# Linear translation Z
+                stiffness=socket_joint_stiffness_tz, damping=socket_joint_damping_tz,
+            )
+            prosthetic_shank_body.add_joint(
+                name=f"socket_flexion{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_HINGE,
+                pos=[0,socket_joint_offset,0], axis=[0, 0, 1], range=[-0.174,0.087], #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
+                #0.1 # Flexion/Extension #socket_pos_relative_to_tibia
+                stiffness=socket_joint_stiffness_flexion, damping=socket_joint_damping_flexion,
+            )
+            prosthetic_shank_body.add_joint(
+                name=f"socket_adduction{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_HINGE,
+                pos=[0,socket_joint_offset,0], axis=[1, 0, 0], range=[-0.1, 0.1],# Adduction/Abduction # 0.1
+                stiffness=socket_joint_stiffness_adduction, damping=socket_joint_damping_adduction,
+            )
+            prosthetic_shank_body.add_joint(
+                name=f"socket_rotation{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_HINGE,
+                pos=[0,socket_joint_offset,0], axis=[0, 1, 0], range=[-0.35, 0.35], #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
+                # Angus: Internal/External Rotation # 0.3
+                stiffness=socket_joint_stiffness_axial, damping=socket_joint_damping_axial,
+            )
 
         return prosthetic_shank_body
 
