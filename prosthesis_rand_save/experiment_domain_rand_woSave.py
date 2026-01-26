@@ -1,6 +1,7 @@
 import pickle
 from pathlib import Path
 import os
+# Try to use CPU to avoid GPU segfault during initialization
 # os.environ["CUDA_VISIBLE_DEVICES"] = "" 
 # os.environ["JAX_PLATFORMS"] = "cpu"
 import sys
@@ -21,7 +22,7 @@ from loco_mujoco.utils.metrics import QuantityContainer
 from omegaconf import DictConfig, OmegaConf #OmegaConf is a YAML based hierarchical configuration system, with support for merging configurations from multiple sources
 
 from loco_mujoco import TaskFactory
-from loco_mujoco.algorithms import PPOJax
+from loco_mujoco.algorithms import PPOJax#, SavePPOJax #SavePPOJax
 from loco_mujoco.utils import MetricsHandler
 from loco_mujoco import ImitationFactory
 
@@ -41,6 +42,47 @@ def experiment(config: DictConfig):
         # Accessing the current sweep number
         print('TOTAL TIME STPES: ', config.experiment.total_timesteps)
         result_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+
+        # # # Ensure reward_params exists and add missing defaults
+        # if "reward_params" not in config.experiment.env_params or config.experiment.env_params["reward_params"] is None:
+        #     config.experiment.env_params["reward_params"] = OmegaConf.create({})
+
+        # # Convert existing reward_params to a plain dict, merge defaults into it, then recreate a DictConfig
+        # rp_existing = config.experiment.env_params["reward_params"]
+        # rp_container = OmegaConf.to_container(rp_existing, resolve=True) if rp_existing is not None else {}
+        # _defaults = {
+        #     # "qpos_w_sum": 2*1.6, 
+        #     # "qvel_w_sum": 2*0.8,
+        #     # "rpos_w_sum": 2*2.0,
+        #     # "rquat_w_sum": 2*1.2,
+        #     # "rvel_w_sum": 2*0.4,
+        #     "action_coeff": 0.002, #0.005, #0.015, #0.02, 
+        #     "grf_coeff": 0.1, #0.07281
+        #     "grf_threshold": 1.4,
+        #     "torque_at_limit_coeff": 0.005, #0.01, #0.1, #0.1307
+        #     "action_rate_coeff": 0.2, #0.1, # 0.097
+        #     "action_threshold": 0.15, 
+        #     "action_out_of_bounds_coeff": 0.1, #0.05, # 1.57929
+            
+        #     "lateral_range_coeff": 0.1,
+        #     "lateral_pos_reward_range": 0.5,
+            
+        #     "joint_limit_threshold_slide": 0.003,
+        #     "joint_limit_threshold_hinge": 0.05,
+            
+        #     "target_body": "pelvis",
+        #     "target_velocity": 1.2,
+        #     "vel_coeff": 1.5,
+        # }
+        # # vel: 10.0 
+        # # CLIP ACTIONS? 
+
+        # # Merge defaults with existing values (existing values override defaults)
+        # merged = {**_defaults, **(rp_container or {})}
+        # # Re-create a DictConfig from the merged dict to avoid modifying a structured DictConfig in-place
+        # rp = OmegaConf.create(merged)
+        # config.experiment.env_params["reward_params"] = rp
+        # config.experiment.env_params["reward_type"] = "MimicRewardEmergenceNatural"
 
 
         # Extract date and time from the result directory path for wandb run name
@@ -68,6 +110,7 @@ def experiment(config: DictConfig):
 
         # create env
         env = factory.make(domain_randomization_type=randomization_type, domain_randomization_params=randomization_params,
+                # terrain_type="RoughTerrain", terrain_params=dict(random_min_height=-0.05, random_max_height=0.05,), 
             **config.experiment.env_params, **config.experiment.task_factory.params)
 
         config.experiment.result_dir = result_dir
@@ -84,7 +127,7 @@ def experiment(config: DictConfig):
         #     pickle.dump(serialized_conf, file)
         # print(f"\nSaved conf")
 
-        # save_path = PPOJax.save_conf(result_dir, agent_conf)
+        # save_path = SavePPOJax.save_conf(result_dir, agent_conf)
         # run.config.update({"agent_conf_save_path": save_path})
         
         
@@ -97,11 +140,14 @@ def experiment(config: DictConfig):
 
         # jit and vmap training function
         train_fn = jax.jit(jax.vmap(train_fn)) if config.experiment.n_seeds > 1 else jax.jit(train_fn)
+        # train_fn = jax.jit(jax.vmap(train_fn, axis_name='batch')) if config.experiment.n_seeds > 1 else jax.jit(train_fn)
 
         # get rng keys and run training
-        skip_seed = 1
-        rngs = [jax.random.PRNGKey(i) for i in range(skip_seed,config.experiment.n_seeds+1)]  # create rngs from seed
-        # rngs = [jax.random.PRNGKey(i) for i in range(config.experiment.n_seeds+1)]  # create rngs from seed
+        if config.experiment.n_seeds > 1: 
+            skip_seed = 1
+            rngs = [jax.random.PRNGKey(i) for i in range(skip_seed,config.experiment.n_seeds+1)]  # create rngs from seed
+        else: 
+            rngs = [jax.random.PRNGKey(i) for i in range(config.experiment.n_seeds+1)]  # create rngs from seed
         rng, _rng = rngs[0], jnp.squeeze(jnp.vstack(rngs[1:]))
         out = train_fn(_rng)
 

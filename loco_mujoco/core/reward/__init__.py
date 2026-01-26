@@ -6,7 +6,7 @@ from .default_cross import TargetVelocityGoalRewardCross
 from .trajectory_based_cross import MimicRewardCross
 from .trajectory_based_vel import MimicRewardVel
 from .trajectory_based_vel import MimicRewardVelArm
-
+from .trajectory_based_natural import MimicRewardEmergenceNatural
 
 # register all rewards
 NoReward.register()
@@ -19,3 +19,4 @@ LocomotionReward.register()
 TargetVelocityGoalRewardCross.register()
 MimicRewardVel.register()
 MimicRewardVelArm.register()
+MimicRewardEmergenceNatural.register()

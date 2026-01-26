@@ -5,7 +5,8 @@ defaults:
 
 wandb:
   project: "deepmimic"
-  run_name: "SACHFoot_LatRange05Coeff01_ActPenSquare003_ContSphere2_Gas_SlackRange002_SocketTySlack_ObsPosOriSocket_RandPosOriSocketTalus_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal"
+  run_name: "SACHFoot_LatRange05Coeff01_ActPenSquare00_SphereSconeExact_solref_1200_300_Gas_SlackRange002_SocketTySlack_ObsPosOriSocket_RandPosOriSocketTalus_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal"
+  #"SACHFoot_LatRange05Coeff01_ActPenSquare003_ContSphere2_Gas_SlackRange002_SocketTySlack_ObsPosOriSocket_RandPosOriSocketTalus_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal"
 experiment:
   task_factory:
     name: ImitationFactory
@@ -23,16 +24,19 @@ experiment:
     tibia_socket_offset_x: 0
     tibia_socket_overlap: 0.2
     amputated_tibia_length: 0.2
-    limit_knee_extension: False #true
-    knee_extension_limit: 5
+    limit_knee_extension: False #True #False #true
+    knee_extension_limit: {'knee_angle_r': [-120,0]} # 5
     # contact_solref: [0.03, 1]
-    contact_geom_type: 'sphere' #'cylinder' #'sphere' # 'box' or  'sphere'
+    contact_geom_type: 'sphere_scone_exact' #'cylinder' #'sphere' # 'box' or  'sphere'
     socket_ty_slack: true
+    # socket_tx_joint: false 
+    # socket_tz_joint: false 
+    contact_solref: [-1200,-300] #[-3000,-150]
     add_pos_ori_to_observation: true
     joint_stiffness: {'ankle_angle': 1200}
     reattach_muscle: true
     reattach_muscles_offset: {'med_gas': [0,0,0]}
-    use_2_box_per_foot: true
+    use_2_box_per_foot: true #false #true
     headless: true
     disable_arms: false
     horizon: 1000
@@ -65,7 +69,7 @@ experiment:
   lr: 0.0001
   num_envs: 2048
   num_steps: 200
-  total_timesteps: 1200e6 #1500000000.0
+  total_timesteps: 600e6 #1500000000.0
   result_dir: None
   checkpoint_num: 6
   update_epochs: 4
@@ -144,4 +148,5 @@ randomization_config:
       adapt_tibia_socket_parameters: False
 
 
-checkpoint_path: "" 
+checkpoint_path: '/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2025-11-23/22-57-00/SavePPOJax_saved.pkl' 
+#'/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2025-11-24/12-35-12/SavePPOJax_saved.pkl'

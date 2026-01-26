@@ -27,13 +27,27 @@ class SkeletonMuscleControlFunction(DefaultControl):
                 # jax.debug.print("Actuator {i} is a Muscle", i=i)
                 # apply sigmoid activation function for muscle control
                 # action = action.at[i].set(jax.nn.sigmoid(action[i]))
+
                 action = action.at[i].set(self.adapted_sigmoid(action[i]))
+                # action = action.at[..., i].set(self.adapted_sigmoid(action[..., i]))
             # else: # Motor 
             #     # jax.debug.print("Actuator {i} is a Motor", i=i)
             #     # apply tanh activation function for motor control
             #     action = action.at[i].set(jax.nn.tanh(action[i]))
 
         # jax.debug.print("Normalized action after applying fnc: {action}", action=action)
+
+        # # Use boolean masks instead of nonzero indices to avoid requiring a static size during JAX tracing.
+        # muscle_mask = model.actuator_dyntype == mujoco.mjtDyn.mjDYN_MUSCLE
+        # motor_mask = jax.numpy.logical_not(muscle_mask)
+        # # jax.debug.print("Muscle actuator mask CONT: {muscle_mask}", muscle_mask=muscle_mask)
+        # # jax.debug.print("Motor actuator mask CONT: {motor_mask}", motor_mask=motor_mask)
+
+        # # Create masked action arrays for debugging (keep shape; non-muscle entries set to NaN)
+        # muscle_actions = jax.numpy.where(muscle_mask, action, jax.numpy.nan)
+        # motor_actions = jax.numpy.where(motor_mask, action, jax.numpy.nan)
+        # jax.debug.print("Muscle actions CONT: {muscle_actions}", muscle_actions=muscle_actions)
+        # # jax.debug.print("Motor actions CONT: {motor_actions}", motor_actions=motor_actions)
         
         # # unnormalize the action
         # unnormalized_action = self._unnormalize_action(action)

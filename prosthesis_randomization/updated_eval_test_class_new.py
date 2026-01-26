@@ -37,6 +37,7 @@ from datetime import datetime
 import timeit 
 import sys
 
+
 # # Parameter randomization initialization
 # randomization_params_names = ["prosthesis_dof_damping", "prosthesis_joint_stiffness", "prosthesis_body_position", "prosthesis_body_orientation"]
 
@@ -68,43 +69,49 @@ import sys
 #     "prosthesis_body_orientation": 0.1
 # }
 
-subfolder_name = 'cylinder_pylon_socket_pos_z'
-# subfolder_name = 'talus_ori_z'
+subfolder_name = 'pylon_socket_ori_x'# _TalZ5'
+# subfolder_name = 'talus_ori_z' #_test_knee_lim' #_3000steps'
 
 dt_str_init = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+talus_ori_unequal_0 = False #True #False #True
+
 
 ori_ang_test= np.deg2rad(4)
-ori_ang_test_2 = np.deg2rad(2)
+ori_ang_test_2 = np.deg2rad(3)
 # ori_ang = np.deg2rad(10)
 ori_ang = np.deg2rad(6)
 talus_ori_ang = np.deg2rad(5)
 # ori_ang_t = np.deg2rad(4)
 # Parameter randomization initialization (no changes)
 randomization_params_names = ["prosthesis_dof_damping", "prosthesis_joint_stiffness", "prosthesis_body_position", "prosthesis_body_orientation"]
+##### ONLY 1. Name in dictionary is incrementaly changed if randomization flag is true 
 randomization_params_eval = {
     "prosthesis_side": "left_side",
     "randomize_prosthesis_dof_damping": False,
     "prosthesis_dof_damping_range": {'ankle_angle': [2, 10]},
     "randomize_prosthesis_joint_stiffness": False,
     "prosthesis_joint_stiffness_range": {'ankle_angle': [1000, 1300]}, #[14924, 24924]}, #{'ankle_angle': [50, 100]},
-    "randomize_prosthesis_body_position": True, #True, #False, #True, #False, #True,
-    "prosthesis_body_position_range": {'pylon_socket': {'z': [-0.010,0.010]}}, #{'z': [-0.0292, 0.0292]}}, #{'pylon_socket': {'x': [-0.1, 0.1]}},
+    "randomize_prosthesis_body_position": False, #False, #True, #False, #True, #False, #True,
+    # "prosthesis_body_position_range": {'pylon_socket': {'z': [-0.010,0.010]}}, #{'z': [-0.0292, 0.0292]}}, #{'pylon_socket': {'x': [-0.1, 0.1]}},
+    "prosthesis_body_position_range": {'pylon_socket': {'z': [0.005,0.010]}}, #{'z': [-0.0292, 0.0292]}}, #{'pylon_socket': {'x': [-0.1, 0.1]}},
+    # "prosthesis_body_position_range": {'pylon_socket': {'x': [-0.010,-0.005]}}, #{'z': [-0.0292, 0.0292]}}, #{'pylon_socket': {'x': [-0.1, 0.1]}},
     # "prosthesis_body_position_range": {'pylon_socket': {'x': [-0.0147, 0.0147]}}, #{'z': [-0.0292, 0.0292]}}, #{'pylon_socket': {'x': [-0.1, 0.1]}},
     # "prosthesis_body_position_range": {'talus': {'z': [-0.015, 0.015]}}, #{'pylon_socket': {'x': [-0.1, 0.1]}},
-    "randomize_prosthesis_body_orientation": False, #False, #True, #False, #True, #False, #True, #False,
-    # "prosthesis_body_orientation_range": {'talus': {'x': [-0.0875, 0.0875]}},
-    "prosthesis_body_orientation_range": {'talus': {'z': [-talus_ori_ang, talus_ori_ang]}},
-    # "prosthesis_body_orientation_range": {'pylon_socket': {'z': [-ori_ang, ori_ang]}},
+    "randomize_prosthesis_body_orientation": True, #False, #True, #False, #True, #False, #True, #False,
+    # "prosthesis_body_orientation_range": {'talus': {'z': [-talus_ori_ang, talus_ori_ang]}},
+    # "prosthesis_body_orientation_range": {'talus': {'z': [talus_ori_ang, talus_ori_ang]}}
+    # "prosthesis_body_orientation_range": {'pylon_socket': {'z': [-ori_ang, ori_ang]}, 'talus': {'z': [talus_ori_ang, talus_ori_ang]}}
+    "prosthesis_body_orientation_range": {'pylon_socket': {'x': [-ori_ang,ori_ang]}} 
 }
 randomization_increments = {
     "prosthesis_joint_stiffness": 100, #10,
     "prosthesis_dof_damping": 5,
     # "prosthesis_body_position": 0.01, #
-    "prosthesis_body_position": 0.005, #0.04, #0.05,
-    "prosthesis_body_orientation": talus_ori_ang*2, #0.175, #0.35 #0.001 #0.2
+    "prosthesis_body_position":0.005, #0.04, #0.05,
+    # "prosthesis_body_orientation": talus_ori_ang*2, #0.175, #0.35 #0.001 #0.2
     # "prosthesis_body_orientation": ori_ang/3, #0.175, #0.35 #0.001 #0.2
-    # "prosthesis_body_orientation": ori_ang/2, #0.175, #0.35 #0.001 #0.2
+    "prosthesis_body_orientation": ori_ang/2, #0.175, #0.35 #0.001 #0.2
 }
 
 os.environ["MUJOCO_GL"] = "egl"  # Use EGL for rendering, which is more compatible with headless environments
@@ -123,9 +130,11 @@ path = args.path
 agent_conf, agent_state = PPOJax.load_agent(path)
 config = agent_conf.config
 
+# config.experiment.env_params["knee_extension_limit"] = {'ankle_angle_r': [-13,7], 'ankle_angle_l': [-7,10], 'hip_flexion_r': [-18,25],'hip_flexion_l': [-18,35], 'knee_angle_r': [-120,0]}
+
 randomization_type = config.randomization_config["randomization_type"]
 randomization_params = OmegaConf.to_container(config.randomization_config["randomization_params"], resolve=True)
-
+config.experiment.env_params["horizon"] = 3000 
 # update values in randommization_params based on randomization_params_eval
 for key, value in randomization_params_eval.items():
     if key in randomization_params:
@@ -149,6 +158,8 @@ config.experiment.env_params["headless"] = True #False
 config.experiment.env_params["goal_type"] = "GoalTrajMimicv2"   # nicer looking than GoalTrajMimic
 config.experiment.env_params["add_sensors"] = True
 
+
+
 # delete 'knee_extension_limit'' from config
 # del config.experiment.env_params["knee_extension_limit'"]
 
@@ -166,9 +177,10 @@ model = env.get_model()
 
 prosthesis_metrics_handler = ProsthesisMetricsHandler(env)
 
-n_steps = 1000
+n_steps = 2000 #3000
 n_envs = 1  # <--- Make sure this matches your training batch size
-rng = jax.random.key(0)
+seed =  0 #2 #0 #0
+rng = jax.random.key(seed)
 train_state_seed = 0  # Take first seed 
 
 keys = jax.random.split(rng, n_envs + 1)
@@ -195,6 +207,8 @@ if config.experiment.n_seeds > 1:
 else: 
     # obs, env_state = jit_reset(env_keys) #env.reset(env_keys)
     train_state = agent_state.train_state
+
+# train_state = agent_state.train_state
 
 
 # ###### Some params for evaluation 
@@ -493,7 +507,7 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
 
         step_total += n_envs 
 
-        env.mjx_render_domain_randomization(env_state, record=True)
+        # env.mjx_render_domain_randomization(env_state, record=True)
 
     time_all.append(timeit.default_timer())  # End timer
 
@@ -606,12 +620,12 @@ def run_evaluation_loop(env_state, n_steps, train_state, rng,prosthesis_metrics_
         if subfolder_name is not None: 
             if not os.path.exists(os.path.join(os.path.dirname(path), f"{dt_str_init}_{subfolder_name}")):
                 os.makedirs(os.path.join(os.path.dirname(path), f"{dt_str_init}_{subfolder_name}"))
-            output_path = os.path.join(os.path.dirname(path), f"{dt_str_init}_{subfolder_name}", f"eval_{n_steps}steps_{joint_name}_{direction}_{int(np.round(name_param_value,0))}{name_units}_{param_name}.pkl")
+            output_path = os.path.join(os.path.dirname(path), f"{dt_str_init}_{subfolder_name}", f"eval_{n_steps}steps_{joint_name}_{direction}_{int(np.round(name_param_value,0))}{name_units}_{param_name}_{seed}seed.pkl")
         else: 
-            output_path = os.path.join(os.path.dirname(path), f"{dt_str}_eval_{n_steps}steps_{joint_name}_{direction}_{int(np.round(name_param_value,0))}{name_units}_{param_name}.pkl")
+            output_path = os.path.join(os.path.dirname(path), f"{dt_str}_eval_{n_steps}steps_{joint_name}_{direction}_{int(np.round(name_param_value,0))}{name_units}_{param_name}_{seed}seed.pkl")
         # output_path = os.path.join(os.path.dirname(path), f"{dt_str}_evaluation_results_{n_steps}steps_{int(param_value*1000)}{param_name}.pkl")
     else:   
-        output_path = os.path.join(os.path.dirname(path), f"{dt_str}_evaluation_results_{n_steps}steps.pkl")
+        output_path = os.path.join(os.path.dirname(path), f"{dt_str}_evaluation_results_{n_steps}steps_{seed}seed.pkl")
     with open(output_path, "wb") as f:
         pickle.dump(all_relevant_data, f)
     print(f"Saved evaluation data to {output_path}")
@@ -661,10 +675,15 @@ for param_name in randomization_params_names:
 
         # Set the current parameter's randomization flag to True
         env._domain_randomizer.rand_conf[f"randomize_{param_name}"] = True
+
+        if talus_ori_unequal_0 and param_name == "prosthesis_body_position":
+            # Manually set talus orientation to 0 deg when position is being evaluated
+            env._domain_randomizer.rand_conf["randomize_prosthesis_body_orientation"] = True
+            env._domain_randomizer.rand_conf["prosthesis_body_orientation_range"] = randomization_params_eval["prosthesis_body_orientation_range"]
         
         if "stiffness" in param_name or "damping" in param_name:
             # The range is now a dictionary, not a simple list
-            joint_name = list(randomization_params_eval[f"{param_name}_range"].keys())[0]
+            joint_name = list(randomization_params_eval[f"{param_name}_range"].keys())[0] # ONLY 1. body_name in dictionary is incrementaly changed
             min_val, max_val = randomization_params_eval[f"{param_name}_range"][joint_name]
             increment = randomization_increments[param_name]
 
@@ -684,7 +703,7 @@ for param_name in randomization_params_names:
 
         elif "position" in param_name or "orientation" in param_name:
             body_range = randomization_params_eval[f"{param_name}_range"]
-            body_name = list(body_range.keys())[0]
+            body_name = list(body_range.keys())[0] # ONLY 1. body_name in dictionary is incrementaly changed if randomization flag is true 
             directions = list(body_range[body_name].keys())
 
             for axis in directions:

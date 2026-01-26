@@ -7,6 +7,7 @@ from flax import struct
 from loco_mujoco.environments.base import  LocoCarry
 import jax.numpy as jnp
 from loco_mujoco.core.utils import info_property
+from collections.abc import Mapping
 # from omegaconf import OmegaConf
 
 
@@ -93,8 +94,30 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
                 #         if domain_randomization_params["randomize_prosthesis_body_orientation"]:
                 #             self.prosthesis_body_orientation_range = domain_randomization_params["prosthesis_body_orientation_range"]
                 # else: 
-                self.prosthesis_body_position_range = {'pylon_socket': {'x': [-0.01,0.01],'z': [-0.01,0.01]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
-                self.prosthesis_body_orientation_range = {'pylon_socket': {'x': [-0.1,0.1],'y': [-0.1,0.1],'z': [-0.1,0.1]},'talus': {'x': [-0.1,0.1],'y': [-0.1,0.1],'z': [-0.1,0.1]}}
+                #     # Hardcoded
+                # self.prosthesis_body_position_range = {'pylon_socket': {'x': [-0.02,0.02],'y': [-0.1,0.1],'z': [-0.02,0.02]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
+                # self.prosthesis_body_orientation_range = {'pylon_socket': {'x': [-0.2,0.2],'y': [-0.3,0.3],'z': [-0.2,0.2]},'talus': {'x': [-0.1,0.1],'z': [-0.1,0.1]}}
+
+                
+                # # # if y in pylon_socket in domain_randomization_params["prosthesis_body_position_range"] then take 
+                # domain_randomization_params = kwargs.get("domain_randomization_params")
+                # if "pylon_socket" in domain_randomization_params["prosthesis_body_position_range"] and 'y' in domain_randomization_params["prosthesis_body_position_range"]["pylon_socket"]:
+                #     print('AUTOMATIC OBS FROM RANDOMIZATION PARAMS')
+                #     if "randomize_prosthesis_body_position" in domain_randomization_params:
+                #         if domain_randomization_params["randomize_prosthesis_body_position"]:
+                #             self.prosthesis_body_position_range = domain_randomization_params["prosthesis_body_position_range"]
+                #     if "randomize_prosthesis_body_orientation" in domain_randomization_params:
+                #         if domain_randomization_params["randomize_prosthesis_body_orientation"]:
+                #             self.prosthesis_body_orientation_range = domain_randomization_params["prosthesis_body_orientation_range"]
+                # else: 
+                #     self.prosthesis_body_position_range = {'pylon_socket': {'x': [-0.02,0.02],'z': [-0.02,0.02]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
+                #     self.prosthesis_body_orientation_range = {'pylon_socket': {'x': [-0.2,0.2],'y': [-0.3,0.3],'z': [-0.2,0.2]},'talus': {'x': [-0.1,0.1],'z': [-0.1,0.1]}}
+                #     #self.prosthesis_body_orientation_range = {'pylon_socket': {'x': [-0.1,0.1],'y': [-0.1,0.1],'z': [-0.1,0.1]},'talus': {'x': [-0.1,0.1],'y': [-0.1,0.1],'z': [-0.1,0.1]}}
+
+                self.prosthesis_body_position_range = {'pylon_socket': {'x': [-0.02,0.02],'z': [-0.02,0.02]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
+                self.prosthesis_body_orientation_range = {'pylon_socket': {'x': [-0.2,0.2],'y': [-0.3,0.3],'z': [-0.2,0.2]},'talus': {'x': [-0.1,0.1],'z': [-0.1,0.1]}}
+                    
+
 
         else:
             self.add_pos_ori_to_observation = False
@@ -109,8 +132,20 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             self.socket_type = kwargs.pop("socket_type")
         if "prosthesis_visualization" in kwargs:
             self.prosthesis_visualization = kwargs.pop("prosthesis_visualization")
+            
         if "socket_ty_joint" in kwargs: 
             self.socket_ty_joint = kwargs.pop("socket_ty_joint")
+        if "socket_tx_joint" in kwargs: 
+            self.socket_tx_joint = kwargs.pop("socket_tx_joint")
+        if "socket_tz_joint" in kwargs: 
+            self.socket_tz_joint = kwargs.pop("socket_tz_joint")
+        if "socket_flexion_joint" in kwargs: 
+            self.socket_flexion_joint = kwargs.pop("socket_flexion_joint")
+        if "socket_rotation_joint" in kwargs: 
+            self.socket_rotation_joint = kwargs.pop("socket_rotation_joint")
+        if "socket_adduction_joint" in kwargs: 
+            self.socket_adduction_joint = kwargs.pop("socket_adduction_joint")
+
         if "socket_joint" in kwargs: 
             self.socket_joint = kwargs.pop("socket_joint")
 
@@ -178,7 +213,27 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
                 # self.add_torque_sensor(spec, joint_force_sensor_site_name)
 
         if hasattr(self, 'limit_knee_extension') and self.limit_knee_extension:
-            self.limit_joint_range(spec, 'knee_angle',self.knee_extension_limit)
+            kel = getattr(self, "knee_extension_limit", None)
+
+            if isinstance(kel, Mapping):
+                # Expect entries like {'knee_angle_r': [-120, 5], 'knee_angle_l': [-120, 10], ...}
+                for joint_name, joint_limit in kel.items():
+                    # print(f'Limiting joint {joint_name} to range {joint_limit}')
+                    if joint_limit is None:
+                        continue
+                    if not (hasattr(joint_limit, "__len__") and len(joint_limit) == 2):
+                        raise ValueError(f"Expected 2-element range for '{joint_name}', got: {joint_limit!r}")
+                    self.limit_joint_range_side(spec, joint_name, joint_limit)
+            else:
+                # Treat as scalar upper limit applied to both sides (e.g. 5)
+                if kel is None:
+                    pass
+                else:
+                    try:
+                        upper = float(kel)
+                    except Exception:
+                        raise ValueError(f"knee_extension_limit must be a number or dict, got: {kel!r}")
+                    self.limit_joint_range(spec, "knee_angle", upper)
 
         if 'limit_hip_joints' in kwargs:
             self.limit_hip_rot_add_angles(spec)
@@ -187,6 +242,14 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         if "joint_stiffness_both_sides" in kwargs:
             self.joint_stiffness_both_sides = kwargs.pop("joint_stiffness_both_sides")
             self.increase_joint_stiffness_both_sides(spec)
+
+        if "joint_stiffness_each_joint" in kwargs:
+            self.joint_stiffness_each_joint = kwargs.pop("joint_stiffness_each_joint")
+            self.set_joint_stiffness_each_joint(spec)
+
+        if "joint_damping_each_joint" in kwargs:
+            self.joint_damping_each_joint = kwargs.pop("joint_damping_each_joint")
+            self.set_joint_damping_each_joint(spec)
 
         # Model option configuration
         model_option_conf = kwargs.pop("model_option_conf", {
@@ -204,7 +267,13 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         joint_names = [joint_name + '_l', joint_name + '_r']
         for j in spec.joints:
             if j.name in joint_names:
-                j.range = [j.range[0], upper_limit]
+                j.range = [j.range[0], np.deg2rad(upper_limit)]
+
+        
+    def limit_joint_range_side(self, spec, joint_name, joint_limit):
+        for j in spec.joints:
+            if j.name == joint_name: 
+                j.range = [np.deg2rad(joint_limit[0]), np.deg2rad(joint_limit[1])]
 
     
     def limit_hip_rot_add_angles(self, spec):
@@ -361,6 +430,40 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
                 elif j.name.endswith('_r'):
                     j.stiffness = joint_stiffness[j.name[:-2]]
 
+    
+    def set_joint_stiffness_each_joint(self, spec):
+        """
+        Sets the stiffness of specified degree of freedom in the model specification.
+        Args:
+            spec (MjSpec): The model specification object.
+        """
+
+        joint_stiffness = self.joint_stiffness_each_joint
+        joint_names =  list(joint_stiffness.keys())
+
+        
+        for j in spec.joints:
+            if j.name in joint_names:
+                # print(f"Increasing stiffness of joint: {j.name}")
+                j.stiffness = joint_stiffness[j.name]
+
+
+    def set_joint_damping_each_joint(self, spec):
+        """
+        Sets the damping of specified degree of freedom in the model specification.
+        Args:
+            spec (MjSpec): The model specification object.
+        """
+
+        joint_damping = self.joint_damping_each_joint
+        joint_names =  list(joint_damping.keys())
+
+        
+        for j in spec.joints:
+            if j.name in joint_names:
+                # print(f"Increasing stiffness of joint: {j.name}")
+                j.damping = joint_damping[j.name]
+
 
 
     def increase_joint_damping_each_joint(self, spec):
@@ -377,7 +480,7 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         for j in spec.joints:
             if j.name in joint_names:
                 # print(f"Increasing stiffness of joint: {j.name}")
-                j.stiffness = joint_damping[j.name.replace(self.prosthesis_side,'')]
+                j.damping = joint_damping[j.name.replace(self.prosthesis_side,'')]
         
         
 
@@ -743,9 +846,9 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         tibia_name = f"tibia{self.prosthesis_side}"
         tibia_body = spec.find_body(tibia_name)
         original_tibia_mass = tibia_body.mass
-        original_tibia_fullinertia = tibia_body.fullinertia
+        original_tibia_fullinertia = tibia_body.fullinertia.copy()
         original_tibia_length = abs(original_talus_pos[1])
-        original_tibia_center_of_mass= tibia_body.ipos
+        original_tibia_center_of_mass= tibia_body.ipos.copy()
 
         # SITE POSITON TESTING 
         tibia_body.add_site(
@@ -833,7 +936,7 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
 
         prosthetic_shank_body = tibia_body.add_body(
             name=f"pylon_socket{self.prosthesis_side}",
-            pos= socket_pos_relative_to_tibia, # Use the calculated offset here
+            pos= socket_pos_relative_to_tibia, # Use the calculated offset here # Start of non-overlaapping with tibia and socket 
             # mass = socket_mass,
             # fullinertia = socket_inertia,
             # ipos = socket_center_of_mass,
@@ -963,11 +1066,15 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         if hasattr(self, 'socket_joint') and not self.socket_joint:
             pass 
         else:
-            prosthetic_shank_body.add_joint(
-                name=f"socket_tx{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_SLIDE,
-                pos=[0,socket_joint_offset,0], axis=[1, 0, 0], range=[-0.01, 0.01], # Linear translation X [-0.01]
-                stiffness=socket_joint_stiffness_tx, damping=socket_joint_damping_tx,
-            )
+
+            if hasattr(self, 'socket_tx_joint') and not self.socket_tx_joint:
+                pass
+            else:
+                prosthetic_shank_body.add_joint(
+                    name=f"socket_tx{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_SLIDE,
+                    pos=[0,socket_joint_offset,0], axis=[1, 0, 0], range=[-0.01, 0.01], # Linear translation X [-0.01]
+                    stiffness=socket_joint_stiffness_tx, damping=socket_joint_damping_tx,
+                )
 
             if hasattr(self, 'socket_ty_joint') and not self.socket_ty_joint:
                 pass
@@ -1072,28 +1179,44 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
                     # solimp_limit = [0, 0.96, 0.004, 0.5, 1], margin=0.15, stiffness = 10,
 
                 )
-            prosthetic_shank_body.add_joint(
-                name=f"socket_tz{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_SLIDE,
-                pos=[0,socket_joint_offset,0], axis=[0, 0, 1], range=[-0.01, 0.01],# Linear translation Z
-                stiffness=socket_joint_stiffness_tz, damping=socket_joint_damping_tz,
-            )
-            prosthetic_shank_body.add_joint(
-                name=f"socket_flexion{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_HINGE,
-                pos=[0,socket_joint_offset,0], axis=[0, 0, 1], range=[-0.174,0.087], #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
-                #0.1 # Flexion/Extension #socket_pos_relative_to_tibia
-                stiffness=socket_joint_stiffness_flexion, damping=socket_joint_damping_flexion,
-            )
-            prosthetic_shank_body.add_joint(
-                name=f"socket_adduction{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_HINGE,
-                pos=[0,socket_joint_offset,0], axis=[1, 0, 0], range=[-0.1, 0.1],# Adduction/Abduction # 0.1
-                stiffness=socket_joint_stiffness_adduction, damping=socket_joint_damping_adduction,
-            )
-            prosthetic_shank_body.add_joint(
-                name=f"socket_rotation{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_HINGE,
-                pos=[0,socket_joint_offset,0], axis=[0, 1, 0], range=[-0.35, 0.35], #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
-                # Angus: Internal/External Rotation # 0.3
-                stiffness=socket_joint_stiffness_axial, damping=socket_joint_damping_axial,
-            )
+
+            if hasattr(self, 'socket_tz_joint') and not self.socket_tz_joint:
+                pass
+            else:
+                prosthetic_shank_body.add_joint(
+                    name=f"socket_tz{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_SLIDE,
+                    pos=[0,socket_joint_offset,0], axis=[0, 0, 1], range=[-0.01, 0.01],# Linear translation Z
+                    stiffness=socket_joint_stiffness_tz, damping=socket_joint_damping_tz,
+                )
+
+            if hasattr(self, 'socket_flexion_joint') and not self.socket_flexion_joint:
+                pass
+            else:
+                prosthetic_shank_body.add_joint(
+                    name=f"socket_flexion{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_HINGE,
+                    pos=[0,socket_joint_offset,0], axis=[0, 0, 1], range=[-0.174,0.087], #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
+                    #0.1 # Flexion/Extension #socket_pos_relative_to_tibia
+                    stiffness=socket_joint_stiffness_flexion, damping=socket_joint_damping_flexion,
+                )
+
+            if hasattr(self, 'socket_adduction_joint') and not self.socket_adduction_joint:
+                pass
+            else:
+                prosthetic_shank_body.add_joint(
+                    name=f"socket_adduction{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_HINGE,
+                    pos=[0,socket_joint_offset,0], axis=[1, 0, 0], range=[-0.1, 0.1],# Adduction/Abduction # 0.1
+                    stiffness=socket_joint_stiffness_adduction, damping=socket_joint_damping_adduction,
+                )
+
+            if hasattr(self, 'socket_rotation_joint') and not self.socket_rotation_joint:
+                pass
+            else:
+                prosthetic_shank_body.add_joint(
+                    name=f"socket_rotation{self.prosthesis_side}", type=mujoco.mjtJoint.mjJNT_HINGE,
+                    pos=[0,socket_joint_offset,0], axis=[0, 1, 0], range=[-0.35, 0.35], #LaPrè, A. K., et al. "Approach for gait analysis in persons with limb loss including residuum and prosthesis socket dynamics." International Journal for Numerical Methods in Biomedical Engineering 34.4 (2018): e2936.
+                    # Angus: Internal/External Rotation # 0.3
+                    stiffness=socket_joint_stiffness_axial, damping=socket_joint_damping_axial,
+                )
 
         return prosthetic_shank_body
 
@@ -2002,6 +2125,12 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
                 for b in rand_ori_body_names:    
                     b = b + self.prosthesis_side  # Append prosthesis side to body names
                     observation_spec_body_quat.append(ObservationType.ModelBodyRot(f"quat_{b}", xml_name=b))
+
+            # if hasattr(self, 'amputation_height_range'):
+            #     rand_pos_amp_body_pos = []
+            #     observation_spec_amp_body_pos = []
+            #     # if 
+
 
         joint_names = []
         for j in spec.joints: 

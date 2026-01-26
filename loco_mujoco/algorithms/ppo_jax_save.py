@@ -97,7 +97,9 @@ class SavePPOJax(PPOJax):
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         
         save_path = checkpoint_dir / checkpoint_name
+        # jax.debug.print("Saving agent checkpoint to: {save_path}", save_path=str(save_path))
         save_path = save_path.with_suffix(cls._saved_agent_suffix)
+        # jax.debug.print("Saving agent checkpoint to: {save_path}", save_path=str(save_path))
         
         # Serialize both config and state
         serialized_data = {
@@ -111,6 +113,20 @@ class SavePPOJax(PPOJax):
         
         print(f"Saved agent to: {save_path}")
         return save_path
+    
+    @classmethod
+    def save_agent_with_name(cls, path, agent_conf: AgentConfBase, agent_state: AgentStateBase, checkpoint_name=None):
+        """ Save the agent state to a file."""
+        path = Path(path)
+        path = path / (cls.__name__ + '_' + checkpoint_name + "_saved")
+        path = path.with_suffix(cls._saved_agent_suffix)
+        # serialize agent state
+        serialized_state = cls.serialize(agent_conf, agent_state)
+        # save agent state
+        with open(path, 'wb') as file:
+            pickle.dump(serialized_state, file)
+        print(f"\nSaved agent to: {path}\n")
+        return path
 
     @classmethod
     def init_agent_conf(cls, env, config):
@@ -287,6 +303,8 @@ class SavePPOJax(PPOJax):
         # extract static agent info
         config, network, tx =\
             (agent_conf.config.experiment, agent_conf.network, agent_conf.tx)
+        
+        jax.debug.print('Training config updated num_updates: {num_updates}', num_updates=config.num_updates)
 
         env = cls._wrap_env(env, config)
 
@@ -489,7 +507,7 @@ class SavePPOJax(PPOJax):
             ckpt_path = Path(ckpt_path)
             ckpt_path.mkdir(parents=True, exist_ok=True)
             # jax.debug.print(f"Checkpoint path: {ckpt_path}")
-            current_step = jnp.array(metric.max_timestep, int)
+            # current_step = jnp.array(metric.max_timestep, int)
 
 
 

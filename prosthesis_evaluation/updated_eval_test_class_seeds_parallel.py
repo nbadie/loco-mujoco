@@ -94,8 +94,8 @@ model = env.get_model()
 
 prosthesis_metrics_handler = ProsthesisMetricsHandler(env) #(config, env)
 
-n_steps = 1000 #400 #2 #400 #400 #1000 #10 #1000 #00 #1000
-n_envs = 1 #1  # <--- Make sure this matches your training batch size
+n_steps = 1500 #1000 #400 #2 #400 #400 #1000 #10 #1000 #00 #1000
+n_envs = 1#1  # <--- Make sure this matches your training batch size
 
 # seed = 0
 seeds = 10 #4 #5 #10
@@ -314,9 +314,16 @@ def run_eval_for_seed(seed):
         for muscle_group, muscle_names in evaluation_muscle_names.items():
             left = prosthesis_metrics_handler.get_relevant_ctrl(muscle_names, left_side, action)
             right = prosthesis_metrics_handler.get_relevant_ctrl(muscle_names, right_side, action)
-            # flatten to [batch]
-            left = left.reshape(left.shape[0],)
-            right = right.reshape(right.shape[0],)
+            # # flatten to [batch]
+            # left = left.reshape(left.shape[0],)
+            # right = right.reshape(right.shape[0],)
+            left = jnp.array(left).reshape(len(left),)
+            right = jnp.array(right).reshape(len(right),)
+
+            # left = left[0]
+            # right = right[0]
+
+
 
             run_muscle_activations[f"run_{muscle_group}_activation_left"] = (
                 run_muscle_activations[f"run_{muscle_group}_activation_left"].at[i, :].set(left)

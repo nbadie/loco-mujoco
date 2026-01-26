@@ -47,6 +47,27 @@ path = args.path
 agent_conf, agent_state = PPOJax.load_agent(path)
 config = agent_conf.config
 
+dt_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+if 'checkpoints' in path:
+    i = path.rfind("/")
+    tail = path[i+1:]
+    tail = tail[:-4]
+    video_name = f'{tail}'
+else: 
+    video_name = f'lastCkpt'
+
+# viewer params must match MujocoViewer signature
+viewer_params = {
+    "default_camera_mode": "follow",
+    "recorder_params": {
+        "path": os.path.dirname(path),
+        "video_name": video_name,
+    },
+}
+
+
+
 # get task factory
 factory = TaskFactory.get_factory_cls(config.experiment.task_factory.name)
 
@@ -55,12 +76,105 @@ OmegaConf.set_struct(config, False)  # Allow modifications
 config.experiment.env_params["headless"] = True #False
 config.experiment.env_params["goal_type"] = "GoalTrajMimicv2"   # nicer looking than GoalTrajMimic
 config.experiment.env_params["add_sensors"] = True
-# config.experiment.env_params["contact_geom_type"] = "sphere"  #"box"  #"sphere"
 
-# config.experiment.env_params["contact_solref"] = [0.025, 1]  
+# # Ensure reward_params exists and add missing defaults
+if "reward_params" not in config.experiment.env_params or config.experiment.env_params["reward_params"] is None:
+    config.experiment.env_params["reward_params"] = OmegaConf.create({})
+
+# config.experiment.env_params["knee_extension_limit"] = {'ankle_angle_r': [-20,20], 'ankle_angle_l': [-10,15], 'hip_flexion_r': [-30,40],'hip_flexion_l': [-30,40], 'knee_angle_r': [-120,5]}
+
+# config.experiment.env_params["reward_params"]["action_muscle_coeff"] = 0.01
+# config.experiment.env_params["reward_params"]["torque_at_limit_coeff"] = 0 #0.04
+# config.experiment.env_params["reward_params"]["torque_at_limit_direction_coeff"] = 0 #0.04
+# config.experiment.env_params["reward_params"]["grf_coeff"] = 0.1 #0.04
+
+# # Convert existing reward_params to a plain dict, merge defaults into it, then recreate a DictConfig
+# rp_existing = config.experiment.env_params["reward_params"]
+# rp_container = OmegaConf.to_container(rp_existing, resolve=True) if rp_existing is not None else {}
+# _defaults = {
+#     # "qpos_w_sum": 2*1.6, 
+#     # "qvel_w_sum": 2*0.8,
+#     # "rpos_w_sum": 2*2.0,
+#     # "rquat_w_sum": 2*1.2,
+#     # "rvel_w_sum": 2*0.4,
+#     # "action_coeff": 0.002, #0.005, #0.015, #0.02, 
+#     "action_muscle_coeff": 0.01,
+#     "action_motor_coeff": 0, #0.2, #0.3,
+
+
+#     "grf_coeff": 0, #0.1, #0.07281
+#     "grf_threshold": 1.4,
+#     "torque_at_limit_coeff": 0, #0.01, #0.02,#0.04, #0.01, #0.1, #0.1307
+#     "action_rate_coeff": 0, #0.4, #0.6, #0.1, # 0.097
+#     "action_threshold": 0.15, 
+#     "action_out_of_bounds_coeff": 0, #0.2, #0.05, # 1.57929
+    
+#     "lateral_range_coeff": 0, #0.3,
+#     "lateral_pos_reward_range": 0.5,
+    
+#     "joint_limit_threshold_slide": 0.003,
+#     "joint_limit_threshold_hinge": 0.1, #0.14,
+    
+#     "target_body": "pelvis",
+#     "target_velocity": 1.2,
+#     "vel_coeff": 0.8, #1.3,
+
+#     "joint_torque_vel_arm_coeff": 0, #0.0008,
+
+#     "target_velocity_z": 0.0,
+#     "vel_z_coeff": 0.2, 
+#     "target_body_z": "pelvis",
+# }
+# # # vel: 10.0 
+# # # CLIP ACTIONS? 
+
+# # Merge defaults with existing values (existing values override defaults)
+# merged = {**_defaults, **(rp_container or {})}
+# # Re-create a DictConfig from the merged dict to avoid modifying a structured DictConfig in-place
+# rp = OmegaConf.create(merged)
+# config.experiment.env_params["reward_params"] = rp
+# config.experiment.env_params["reward_type"] = "MimicRewardEmergenceNatural"
+
+# config.experiment.env_params["reward_params"]["qpos_w_sum"] = 2.8
+# config.experiment.env_params["reward_params"]["qvel_w_sum"] = 1.4
+# config.experiment.env_params["reward_params"]["rpos_w_sum"] = 3.5
+# config.experiment.env_params["reward_params"]["rquat_w_sum"] = 2.1
+# config.experiment.env_params["reward_params"]["rvel_w_sum"] = 0.7
+# config.experiment.env_params["reward_params"]["action_out_of_bounds_coeff"] = 0.07
+# config.experiment.env_params["reward_params"]["action_coeff"] = 0.12
+# config.experiment.env_params["reward_params"]["lateral_range_coeff"] = 0.7
+# config.experiment.env_params["reward_params"]["lateral_pos_reward_range"] = 0.5
+
+# config.experiment.env_params["reward_params"]["action_coeff"] = 0
+# config.experiment.env_params["reward_params"]["joint_torque_vel_nonarm_coeff"] = 0.00003 #0.0003
+# config.experiment.env_params["reward_params"]["joint_torque_vel_arm_coeff"] = 0.0001 #0.0002
+
+
+
+
+
+# config.experiment.env_params["reward_params"]["action_coeff"] = 0.03
+# config.experiment.env_params["joint_stiffness"] = {'ankle_angle': 1200, 'mtp_angle': 2000}
+# config.experiment.env_params["contact_geom_type"] = 'sphere_scone_exact' #"2box"  #"box"  #"sphere"
+
+# # # config.experiment.env_params['limit_knee_extension'] = True
+# config.experiment.env_params["knee_extension_limit"] = {'ankle_angle_r': [-13,7], 'ankle_angle_l': [-7,10], 'hip_flexion_r': [-18,25],'hip_flexion_l': [-18,35], 'knee_angle_r': [-70,0]} #{'ankle_angle_r': [-13,7]}
+# # # # config.experiment.env_params["joint_stiffness"] = {'ankle_angle': 700} #1200}
+
+# config.experiment.env_params["joint_stiffness_each_joint"] = {'ankle_angle_l': 700} #{'ankle_angle_r': 40, 'ankle_angle_l': 700}
+# # config.experiment.env_params["joint_damping_each_joint"] = {'ankle_angle_r': 10}
+config.experiment.env_params["horizon"] = 3000  #2000 #1000 # Use MuJoCo for evaluation if specified
+# config.experiment.env_params["socket_ty_slack"] = False
+# config.experiment.env_params["socket_type"] = 'Auto'
+# config.experiment.socket_ty_joint_range = [-0.5, 0.5] #[-0.09, 0.09]
+# config.experiment.socket_ty_joint_stiffness = 100000 #43500
+
+# config.experiment.env_params["contact_solref"] = [-800, -300] #[-1000,-300] # [0.02, 1] #[-800, -600]  #[0.02, 1] # [-1000, -400]  
 # config.experiment.env_params["socket_ty_joint_stiffness"] = 263500
 # config.experiment.env_params["socket_ty_joint_damping"] = 10
-# config.experiment.env_params["socket_ty_joint_range"] = [-0.001,0.001]
+# config.experiment.env_params["socket_ty_joint_range"] = [-0.0005,0.0005] #[-0.001,0.001]
+# config.experiment.env_params["tibia_socket_overlap"] = 0.2  # Use MuJoCo for evaluation if specified
+# config.experiment.env_params["amputated_tibia_length"] = 0.2  # Use MuJoCo for evaluation if specified
 # delete 'knee_extension_limit'' from config
 # del config.experiment.env_params["knee_extension_limit'"]
 # config.experiment.env_params["knee_extension_limit"] = - 10 
@@ -73,25 +187,51 @@ config.experiment.env_params["add_sensors"] = True
 
 # randomization_params["randomize_prosthesis_body_position"] = True
 # randomization_params["prosthesis_body_position_range"] = {'pylon_socket': {'x': [0.05,0.05]}} #[-0.01,-0.01]}} 
-env = factory.make(**config.experiment.env_params, **config.experiment.task_factory.params, #) #,
-                #    terrain_type="RoughTerrain", terrain_params=dict(random_min_height=-0.05, random_max_height=0.05),
-                #    domain_randomization_type=randomization_type, domain_randomization_params=randomization_params)
+
+randomization_type = config.randomization_config["randomization_type"]
+# Convert to plain dict to allow adding new keys
+randomization_params = OmegaConf.to_container(config.randomization_config["randomization_params"], resolve=True)
+
+# add prosthesis side to randomization params if it exists in config.experiment.env_params
+if "prosthesis_side" in config.experiment.env_params:
+    randomization_params["prosthesis_side"] = config.experiment.env_params["prosthesis_side"]
+
+
+randomization_params['randomize_prosthesis_body_position'] = True 
+randomization_params['prosthesis_body_position_range'] = {'pylon_socket': {'y': [0.05,0.05]}} #{'pylon_socket': {'y': [-0.1,-0.1]}, 'talus': {'x': [0.1,0.1]}} #{'pylon_socket': {'y': [0.1,0.1]}} #, 'y': [0.0,0.0], 'z': [0.0,0.0]}} 
+randomization_params['randomize_prosthesis_body_orientation'] = False #False
+randomization_params['prosthesis_body_orientation_range'] = {'pylon_socket': {'x': [-0.2,0.2],'y': [-0.3,0.3],'z': [-0.2,0.2]},'talus': {'x': [-0.1,0.1],'z': [-0.1,0.1]}}
+randomization_params['randomize_prosthesis_socket_joint'] = False #True
+randomization_params['socket_joint_range'] = {'socket_ty': [0.02,0.02]} #[0.1,0.1]}
+# randomization_params['randomize_amputation_height'] = False 
+# randomization_params['amputation_height_range'] = {'pylon_socket': [0.02, 0.02]}
+# randomization_params['adapt_tibia_socket_parameters'] = False #False
+
+env = factory.make(
+    **config.experiment.env_params,
+    **config.experiment.task_factory.params,
+    # terrain_type="RoughTerrain", terrain_params=dict(random_min_height=-0.05, random_max_height=0.05),
+    # domain_randomization_type=randomization_type, domain_randomization_params=randomization_params,
+    **viewer_params,
 )
 env.th.to_jax()
 env = VecEnv(env)
+# jit_step = jax.jit(jax.vmap(env.mjx_step_test))  #env.step)
 jit_step  = jax.jit(jax.vmap(env.mjx_step))  #env.step)
 jit_reset  = jax.jit(jax.vmap(env.mjx_reset)) #env.reset)
 model = env.get_model()
 
 prosthesis_metrics_handler = ProsthesisMetricsHandler(env) #(config, env)
 
-n_steps = 1000 #00 #1000
+n_steps = 2000 #800 #2000 #1000 #3000 #3000 #3000 #1000 #200 #400 #1000 #00 #1000
 n_envs = 1 #1  # <--- Make sure this matches your training batch size
 rng = jax.random.key(0)
-train_state_seed = 0 #0  # Take first seed 
+train_state_seed = 0 #0 #0  # Take first seed 
 
 keys = jax.random.split(rng, n_envs + 1)
 rng, env_keys = keys[0], keys[1:]
+
+muscle_skeleton_control_activation = SkeletonMuscleControlFunction(env)
 
 def sample_actions_uncompiled(ts, obs, _rng): # Renamed for clarity
     y, updates = agent_conf.network.apply({'params': ts.params,
@@ -99,7 +239,7 @@ def sample_actions_uncompiled(ts, obs, _rng): # Renamed for clarity
                                            obs, mutable=["run_stats"])
     ts = ts.replace(run_stats=updates['run_stats'])  # update stats
     pi, _ = y
-    a = pi.sample(seed=_rng)
+    a = pi.sample(seed=_rng) 
     return a, ts
 
 # JIT compile the function
@@ -113,14 +253,16 @@ obs = env_state.observation
 step_total = 0
 
 
-if config.experiment.n_seeds > 1:
-    assert train_state_seed is not None, ("Loaded train state has multiple seeds. Please specify "
-                                            "train_state_seed for replay.")
+# if config.experiment.n_seeds > 1:
+#     assert train_state_seed is not None, ("Loaded train state has multiple seeds. Please specify "
+#                                             "train_state_seed for replay.")
     
-    train_state = jax.tree.map(lambda x: x[train_state_seed], agent_state.train_state)
-else: 
-# obs, env_state = jit_reset(env_keys) #env.reset(env_keys)
-    train_state = agent_state.train_state
+#     train_state = jax.tree.map(lambda x: x[train_state_seed], agent_state.train_state)
+# else: 
+# # obs, env_state = jit_reset(env_keys) #env.reset(env_keys)
+#     train_state = agent_state.train_state
+train_state = agent_state.train_state
+
 
 
 ###### Some params for evaluation 
@@ -136,6 +278,11 @@ body_xposes = {}
 for i in range(model.nbody):
     body_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, i)
     body_xposes[body_name] = []
+
+body_cvels = {}
+for i in range(model.nbody):
+    body_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, i)
+    body_cvels[body_name] = []
 
 joint_data = {}
 for i in range(model.njnt):
@@ -209,24 +356,35 @@ all_actions = []
 all_actuator_names = []
 
 
-muscle_skeleton_control_activation = SkeletonMuscleControlFunction(env)
 
 
 ###########
 time_all = []
+total_reward = 0.0
 time_all.append(timeit.default_timer())  # Start timer
 for i in range(n_steps):
     rng, _rng = jax.random.split(rng)
     # action, train_state = sample_actions(train_state, obs, _rng) # Now calls the JITted version
     action, train_state = sample_actions(train_state, obs, _rng) # Now calls the JITted version
+    # print('shape of action: ', action.shape)
     action = jnp.atleast_2d(action)
+    # print('shape of action after atleast_2d: ', action.shape)
+
+    # for i in range(model.nu):
+    #     if model.actuator_dyntype[i] == mujoco.mjtDyn.mjDYN_MUSCLE: #Muscle
+    #         # jax.debug.print("Actuator {i} is a Muscle", i=i)
+    #         # apply sigmoid activation function for muscle control
+    #         # action = action.at[i].set(jax.nn.sigmoid(action[i]))
+    #         action = muscle_skeleton_control_activation.adapted_sigmoid(env, action)
 
 
     env_state = jit_step(env_state, action)  #env.step(env_state, action)
+
     obs = env_state.observation
+    total_reward += env_state.reward
     # obs, reward, absorbing, done, info, env_state = jit_step(env_state, action)  #env.step(env_state, action)
 
-    if step_total % 100 == 0:
+    if step_total % 500 == 0:
         print(f"Step {step_total}")
 
     # # # # # # # # Collect metrics 
@@ -269,6 +427,13 @@ for i in range(n_steps):
     for name in body_names: 
         # for body_name, pos in body_xpos[name]:
         body_xposes[name].append(body_xpos[name])
+
+
+    # Body velocities
+    body_cvel = prosthesis_metrics_handler.get_cvel(env_state.data)
+    for name in body_names: 
+        # for body_name, pos in body_xpos[name]:
+        body_cvels[name].append(body_cvel[name])
 
     # Joint data
     joint_angles = prosthesis_metrics_handler.get_joint_angles(env_state.data)
@@ -316,6 +481,7 @@ for i in range(n_steps):
             action = action.at[...,i].set(muscle_skeleton_control_activation.adapted_sigmoid(action[...,i]))
 
     # print(f"Step: {i}, Action after sigmoid: {action}")
+    
 
     all_actions.append(action)
 
@@ -337,8 +503,12 @@ for i in range(n_steps):
     step_total += n_envs 
 
     env.mjx_render(env_state, record=True)
-    # # env.mjx_render_domain_randomization(env_state, record=True)
-
+    # env.mjx_render_domain_randomization(env_state, record=True)
+    # Extract the first model from the vmapped batch (all envs share the same randomized model)
+    # sys_unbatched = jax.tree.map(lambda x: x[0] if hasattr(x, '__len__') else x, sys)
+    # env.mjx_render_test(env_state, sys_unbatched, record=True)
+print('TOTAL REWARD: ', total_reward)
+print('TOTAL REWARD/Step_total: ', total_reward/step_total)
 time_all.append(timeit.default_timer())  # End timer
 
 env.stop()
@@ -371,10 +541,15 @@ for muscle_group in evaluation_muscle_groups:
     # get sum along axis=0 and 1    
     sum_muscles_activations[f"{muscle_group}_left"] = jnp.sum(sum_step_activations[f"{muscle_group}_left"], axis=0)
     sum_muscles_activations[f"{muscle_group}_right"] = jnp.sum(sum_step_activations[f"{muscle_group}_right"], axis=0)
+    sum_muscles_activations[f"{muscle_group}_both"] = sum_muscles_activations[f"{muscle_group}_left"] + sum_muscles_activations[f"{muscle_group}_right"]
+
     step_muscles_norm_activations[f"{muscle_group}_left"] = sum_muscles_activations[f"{muscle_group}_left"] / n_steps
     step_muscles_norm_activations[f"{muscle_group}_right"] = sum_muscles_activations[f"{muscle_group}_right"] / n_steps
-    step_num_norm_activations[f"{muscle_group}_left"] = jnp.sum(step_muscles_norm_activations[f"{muscle_group}_left"]/ n_musc), #axis=0)
+    step_muscles_norm_activations[f"{muscle_group}_both"] = sum_muscles_activations[f"{muscle_group}_both"] / n_steps
+
+    step_num_norm_activations[f"{muscle_group}_left"] = jnp.sum(step_muscles_norm_activations[f"{muscle_group}_left"]/ n_musc) #axis=0)
     step_num_norm_activations[f"{muscle_group}_right"] = jnp.sum(step_muscles_norm_activations[f"{muscle_group}_right"]/ n_musc) #, axis=0)
+    step_num_norm_activations[f"{muscle_group}_both"] = jnp.sum(step_muscles_norm_activations[f"{muscle_group}_both"]/ (2* n_musc)) #, axis=0)
 
     # print(f"Sum of {muscle_group.replace('_', ' ').title()} Muscles Activation Left: {sum_muscles_activations[f'{muscle_group}_left']}")
     # print(f"Sum of {muscle_group.replace('_', ' ').title()} Muscles Activation Right: {sum_muscles_activations[f'{muscle_group}_right']}")
@@ -451,6 +626,7 @@ all_relevant_data = {
     "all_actions": all_actions,
     "all_actuator_names": all_actuator_names,
     "all_body_poses": body_xposes,
+    "all_body_vels": body_cvels,
     "evaluation_body_names": body_names,
 
 
@@ -470,8 +646,10 @@ for muscle_group in evaluation_muscle_groups:
     all_relevant_data[f"run_{muscle_group}_activation_right"] = locals().get(f"run_{muscle_group}_activation_right", [])
 
 # Save to file
-dt_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-output_path = os.path.join(os.path.dirname(path), f"{dt_str}_evaluation_results_{n_steps}steps_{train_state_seed}seed.pkl")
+if 'checkpoints' in path:
+    output_path = os.path.join(os.path.dirname(path), f"{dt_str}_{tail}_evaluation_results_{n_steps}steps_{train_state_seed}seed.pkl")
+else: 
+    output_path = os.path.join(os.path.dirname(path), f"{dt_str}_evaluation_results_{n_steps}steps_{train_state_seed}seed.pkl")
 with open(output_path, "wb") as f:
     pickle.dump(all_relevant_data, f)
 print(f"Saved evaluation data to {output_path}")

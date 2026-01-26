@@ -30,7 +30,9 @@ class ProsthesisRandomizerState:
     prosthesis_dof_damping: Union[np.ndarray, jax.Array]
     prosthesis_body_position: Union[np.ndarray, jax.Array]
     prosthesis_body_orientation: Union[np.ndarray, jax.Array]
-    prosthesis_socket_joint_value: Union[np.ndarray, jax.Array]
+    # amputation_height_body_position: Union[np.ndarray, jax.Array]
+    # prosthesis_socket_joint_value: Union[np.ndarray, jax.Array]
+    # amputation_body_position: Union[np.ndarray, jax.Array]
     body_vel_perturb: dict
 
 
@@ -65,166 +67,7 @@ class ProsthesisRandomizer(DomainRandomizer):
         self._init_prosthesis_body_orientation = None
         self._init_prosthesis_socket_joint_value = None
         self._init_prosthesis_socket_joint_springref = None
-        self.init_talus_pos = None
-        # self.body_vel_perturb = None
         super().__init__(env, **kwargs)
-
-
-    # def init_state(self,
-    #                env: Any,
-    #                key: Any,
-    #                model: Union[MjModel, Model],
-    #                data: Union[MjData, Data],
-    #                backend: ModuleType) -> ProsthesisRandomizerState:
-    #     """
-    #     Initialize the randomizer state.
-
-    #     Args:
-    #         env (Any): The environment instance.
-    #         key (Any): Random seed key.
-    #         model (Union[MjModel, Model]): The simulation model.
-    #         data (Union[MjData, Data]): The simulation data.
-    #         backend (ModuleType): Backend module used for calculation (e.g., numpy or jax.numpy).
-
-    #     Returns:
-    #         DefaultRandomizerState: The initialized randomizer state.
-
-    #     """
-    #     self._body_indices = {}
-    #     self._joint_indices = {}
-    #     self._dof_indices = {}
-
-    #     # get stiffness and damping for randomization_joints 
-    #     prosthesis_side = self.rand_conf["prosthesis_side"]
-    #     joint_names = self.rand_conf["randomization_joints"]
-
-    #     assert prosthesis_side in ["left_side", "right_side"], f"Invalid prosthesis side: {prosthesis_side}. Expected 'left' or 'right'."
-
-    #     if prosthesis_side == "left_side":
-    #         joint_names = [name + '_l' for name in joint_names]
-    #     elif prosthesis_side == "right_side":
-    #         joint_names = [name + '_r' for name in joint_names]
-
-    #     self.joint_names_side = joint_names
-
-    #     # get joint stiffness and damping
-    #     # Get mujoco joint indices for the prosthesis joints
-    #     for joint_name in joint_names:
-    #         # if joint_name in model.joint_names:
-    #         idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
-    #         if idx != -1:
-    #             self._joint_indices[joint_name] = idx
-        
-    #     # Initialize dof_indices
-    #     for joint_name, idx in self._joint_indices.items():
-    #         dof_adr = model.jnt_dofadr[idx]
-    #         self._dof_indices[joint_name] = dof_adr
-
-    #     # For bodies add the correct side and then get positon and orientation 
-    #     if prosthesis_side == "left_side":
-    #         body_names = [name + '_l' for name in self.rand_conf["randomization_bodies"]]
-    #     elif prosthesis_side == "right_side":
-    #         body_names = [name + '_r' for name in self.rand_conf["randomization_bodies"]]
-
-    #     for body_name in body_names:
-    #         idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
-    #         self._body_indices[body_name] = idx
-
-    #     return ProsthesisRandomizerState(prosthesis_joint_stiffness=backend.array([10.0] * len(self._joint_indices.values())),
-    #                                   prosthesis_dof_damping=backend.array([1.0] * len(self._dof_indices.values())), 
-    #                                     # prosthesis_body_position=backend.array([[0.0, 0.0, 0.0]] * len(self._body_indices.values())),
-    #                                     # prosthesis_body_orientation=backend.array([[1.0, 0.0, 0.0, 0.0]] * len(self._body_indices.values())
-    #                                   )
-    
-    # def init_state(self,
-    #                env: Any,
-    #                key: Any,
-    #                model: Union[MjModel, Model],
-    #                data: Union[MjData, Data],
-    #                backend: ModuleType) -> ProsthesisRandomizerState:
-    #     """
-    #     Initialize the randomizer state.
-
-    #     Args:
-    #         env (Any): The environment instance.
-    #         key (Any): Random seed key.
-    #         model (Union[MjModel, Model]): The simulation model.
-    #         data (Union[MjData, Data]): The simulation data.
-    #         backend (ModuleType): Backend module used for calculation (e.g., numpy or jax.numpy).
-
-    #     Returns:
-    #         DefaultRandomizerState: The initialized randomizer state.
-
-    #     """
-    #     self._body_indices = {}
-    #     self._joint_indices = {}
-    #     self._dof_indices = {}
-
-    #     # get stiffness and damping for randomization_joints 
-    #     prosthesis_side = self.rand_conf["prosthesis_side"]
-    #     joint_names = self.rand_conf["randomization_joints"]
-
-    #     assert prosthesis_side in ["left_side", "right_side"], f"Invalid prosthesis side: {prosthesis_side}. Expected 'left' or 'right'."
-
-    #     if prosthesis_side == "left_side":
-    #         joint_names = [name + '_l' for name in joint_names]
-    #     elif prosthesis_side == "right_side":
-    #         joint_names = [name + '_r' for name in joint_names]
-
-    #     self.joint_names_side = joint_names
-
-    #     # get joint stiffness and damping
-    #     # Get mujoco joint indices for the prosthesis joints
-    #     for joint_name in joint_names:
-    #         # if joint_name in model.joint_names:
-    #         idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
-    #         if idx != -1:
-    #             self._joint_indices[joint_name] = idx
-        
-    #     # Initialize dof_indices
-    #     for joint_name, idx in self._joint_indices.items():
-    #         dof_adr = model.jnt_dofadr[idx]
-    #         self._dof_indices[joint_name] = dof_adr
-
-    #     # Get stiffness and damping for those joints
-    #     prosthesis_joint_stiffness = backend.array([model.jnt_stiffness[idx] for idx in self._joint_indices.values()])
-    #     prosthesis_dof_damping = backend.array([model.dof_damping[idx] for idx in self._dof_indices.values()])
-
-
-    #     # For bodies add the correct side and then get positon and orientation 
-    #     if prosthesis_side == "left_side":
-    #         body_names = [name + '_l' for name in self.rand_conf["randomization_bodies"]]
-    #     elif prosthesis_side == "right_side":
-    #         body_names = [name + '_r' for name in self.rand_conf["randomization_bodies"]]
-
-    #     self.body_names_side = body_names
-    #     # Get body indices for the prosthesis bodies
-    #     # self.body_indices = []
-    #     for body_name in body_names:
-    #         idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
-    #         self._body_indices[body_name] = idx
-    #         # else:
-    #         #     raise ValueError(f"Body '{body_name}' not found in model.body_names.")
-    #     # # Get position and orientation for those bodies
-    #     prosthesis_body_position = backend.array([model.body_pos[idx] for idx in self._body_indices.values()])
-    #     prosthesis_body_orientation = backend.array([model.body_quat[idx] for idx in self._body_indices.values()])
-
-    #     # assert_backend_is_supported(backend)
-
-            
-    #     return ProsthesisRandomizerState(prosthesis_joint_stiffness=prosthesis_joint_stiffness,
-    #                                   prosthesis_dof_damping=prosthesis_dof_damping,
-    #                                   prosthesis_body_position=prosthesis_body_position,
-    #                                   prosthesis_body_orientation=prosthesis_body_orientation,
-
-
-    #                                 #   base_mass_to_add=0.0,
-    #                                 #   com_displacement=backend.array([0.0, 0.0, 0.0]),
-    #                                 #   link_mass_multipliers=backend.array([1.0] * (model.nbody-1)), #exclude worldbody
-    #                                 #   joint_friction_loss=backend.array([0.0] * (model.nv-6)), #exclude freejoint 6 dofs
-    #                                 #   dof_damping=backend.array([0.0] * (model.nv-6)), #exclude freejoint 6 dofs
-    #                                 #   joint_armature=backend.array([0.0] * (model.nv-6)), #exclude freejoint 6 dofs
-    #                                   )
 
     def init_state(self,
                    env: Any,
@@ -252,6 +95,7 @@ class ProsthesisRandomizer(DomainRandomizer):
         self._dof_indices = {}
         self._socket_joint_indices = {}
         self._body_vel_perturb_indices= {}
+        self._amputation_height_body_indices = {}
         
         # self._feet_geom_solref_indices = {}
 
@@ -312,6 +156,28 @@ class ProsthesisRandomizer(DomainRandomizer):
                 body_vel_perturb_names = []
         else:
             body_vel_perturb_names = []
+
+
+        # # self.rand_conf["amputation_height_range"] = {'tibia': [-0.1,0.1]}
+        # if "amputation_height_range" in self.rand_conf: 
+        #     self.amputation_height_range_dict = self.rand_conf["amputation_height_range"]
+        #     amputation_height_body = list(self.amputation_height_range_dict.keys())
+        #     if 'pylon_socket' in amputation_height_body: 
+        #         amputation_height_body_names= ['pylon_socket', 'talus']
+        #     else: 
+        #         raise ValueError("Only Trantibial Amputation Variation Allowed. Invalid amputation body configuration: 'pylon_socket' key not found.")
+
+
+
+            # if isinstance(amp_height_range_config, dict) and all(isinstance(v, (list, tuple)) for v in amp_height_range_config.values()):
+            #     self.is_amputation_height_range_nested = True
+            #     self.amputation_height_range_dict = amp_height_range_config
+            #     amputation_body_names = list(amp_height_range_config.keys())
+            # else:
+            #     print("Warning: 'amputation_height_range' format is invalid. Expected dict with body names as keys and [min, max] ranges as values.")
+            #     amputation_body_names = []
+        # else:
+        #     amputation_body_names = []
         
         assert prosthesis_side in ["left_side", "right_side"], f"Invalid prosthesis side: {prosthesis_side}. Expected 'left' or 'right'."
 
@@ -327,6 +193,22 @@ class ProsthesisRandomizer(DomainRandomizer):
         body_quat_names = [name + self.prosthesis_side_str for name in body_quat_names]
         socket_joint_names = [name + self.prosthesis_side_str for name in socket_joint_names]
         # foot_geom_names = [name + '_l' for name in foot_geom_names] + [name + '_r' for name in foot_geom_names]
+
+        # self.amputation_height_body_names = [name + self.prosthesis_side_str for name in amputation_height_body_names]
+        
+
+        # self.randomized_amputation_height_body_names = []
+        # for body_name in self.amputation_height_body_names: 
+        #     idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+        #     if idx == -1:
+        #         print(f"Warning: Body '{body_name}' (for position) not found in model. Skipping randomization for it.")
+        #     else:
+        #         self._amputation_height_body_indices[body_name] = idx
+        #         self.randomized_amputation_height_body_names.append(body_name)
+
+        # amputation_height_body_position =  {}
+        # for body_name in self.amputation_height_body_names:
+        #     amputation_height_body_position[body_name] = backend.array([model.body_pos[self._amputation_height_body_indices[body_name]]])
 
 
         # For body perturb names check if they exist with a side suffix in the model or not.
@@ -392,13 +274,6 @@ class ProsthesisRandomizer(DomainRandomizer):
             prosthesis_dof_damping[dof_name] = backend.array([model.dof_damping[self._dof_indices[dof_name]]])
         #prosthesis_dof_damping = backend.array([model.dof_damping[idx] for idx in self._dof_indices.values()])
 
-
-        # # Get body indices for the prosthesis bodies
-        # # self.body_indices = []
-        # for body_pos_name in body_pos_names:
-        #     idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_pos_name)
-        #     self._body_pos_indices[body_pos_name] = idx
-
         self.randomized_pos_body_names = [] # Store names of bodies that will *actually* be randomized for position
         for body_name in body_pos_names:
             idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
@@ -423,21 +298,12 @@ class ProsthesisRandomizer(DomainRandomizer):
         prosthesis_body_position ={}
         prosthesis_body_orientation ={}
 
-        # initial_prosthesis_body_position_list = []
-        # for body_name in self.randomized_pos_body_names:
-        #     idx = self._body_pos_indices[body_name] # We know it exists from the loop above
-        #     initial_prosthesis_body_position_list.append(model.body_pos[idx])
-        # #self._init_prosthesis_body_position = self.backend.array(initial_prosthesis_body_position_list)
 
         for body_name in body_pos_names:
             prosthesis_body_position[body_name] = backend.array([model.body_pos[self._body_pos_indices[body_name]]])
         for body_name in body_quat_names:
             prosthesis_body_orientation[body_name] = backend.array([model.body_quat[self._body_quat_indices[body_name]]])
         
-            
-        # prosthesis_body_position = backend.array([model.body_pos[idx] for idx in self._body_pos_indices.values()])
-        # prosthesis_body_orientation = backend.array([model.body_quat[idx] for idx in self._body_quat_indices.values()])
-
 
         # Get mujoco joint indices for the socket joints
         valid_socket_joint_names = []
@@ -454,13 +320,7 @@ class ProsthesisRandomizer(DomainRandomizer):
                     valid_socket_joint_range_dict[joint_name] = self.socket_joint_range_dict[joint_name]
         socket_joint_names = valid_socket_joint_names
         self.socket_joint_range_dict = valid_socket_joint_range_dict
-
-        
-        prosthesis_socket_joint_value = {}
-        for joint_name in socket_joint_names:
-            prosthesis_socket_joint_value[joint_name] = backend.array([model.qpos0[self._socket_joint_indices[joint_name]]])
-            # prosthesis_socket_joint_value[joint_name] = backend.array([data.qpos[self._socket_joint_indices[joint_name]]])
-
+    
 
         ###### Indices for tibia, socket, talus for initialization and parameter adaption for different socket_ty 
         if 'socket_ty'+self.prosthesis_side_str in self._socket_joint_indices and "randomize_prosthesis_socket_joint" in self.rand_conf and self.rand_conf["randomize_prosthesis_socket_joint"]:
@@ -491,38 +351,12 @@ class ProsthesisRandomizer(DomainRandomizer):
             socket_ty_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, socket_ty_name)
             self._socket_ty_idx =  model.jnt_qposadr[socket_ty_idx]
 
-        # assert_backend_is_supported(backend)
+            # Get initial talus pos
+            self._init_talus_pos = model.body_pos[self._talus_idx].copy()  
 
-        # # Foot geom indices
-        # for foot_geom_name in foot_geom_names:
-        #     idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, foot_geom_name)
-        #     if idx != -1:
-        #         if foot_geom_name.endswith("_l") and prosthesis_side == "left_side":
-        #             self._feet_geom_solref_indices["prosthesis_side"] = model.geom_solref[idx]
-        #         elif foot_geom_name.endswith("_r") and prosthesis_side == "right_side":
-        #             self._feet_geom_solref_indices["prosthesis_side"] = model.geom_solref[idx]
-        #         else:
-        #             self._feet_geom_solref_indices["other_side"] = model.geom_solref[idx]
-        #         # self._feet_geom_solref_indices[foot_geom_name] = model.geom_solref[idx]
-        
-        # feet_geom_solref = backend.array([model.geom_solref[idx] for idx in self._feet_geom_solref_indices.values()])
-
-        # Map feet geom names to indices, and match side for solref assignment
-        # Example: feet_geom_solref_range: {'prosthesis_side': [0.01, 0.1], 'other_side': [0.01, 0.1]}
-        # randomization_feet_geom_names: ['foot_box']
-        # foot_geom_names will be ['foot_box_l', 'foot_box_r']
-        # We want to know which index is prosthesis_side and which is other_side
-
-        # # Build a mapping from geom name to side
-        # self._feet_geom_side_map = {}
-        # for name in foot_geom_names:
-        #     if prosthesis_side == "left_side" and name.endswith("_l"):
-        #         self._feet_geom_side_map[name] = "prosthesis_side"
-        #     elif prosthesis_side == "right_side" and name.endswith("_r"):
-        #         self._feet_geom_side_map[name] = "prosthesis_side"
-        #     else:
-        #         self._feet_geom_side_map[name] = "other_side"
-
+            # Amputation height / socket body_pos 
+            amputation_height = backend.array([model.body_pos[self._socket_idx]])
+      
 
         # Body vel perturb indices
         self.randomized_vel_perturb_body_names = []  # Store names of bodies that will *actually* be randomized
@@ -538,14 +372,62 @@ class ProsthesisRandomizer(DomainRandomizer):
         body_vel_perturb = {}
         for body_name in valid_body_vel_perturb_names:
             body_vel_perturb[body_name] = {'time': 0.0, 'length': 0.0, 'vel': backend.array([0.0, 0.0, 0.0])}
+            
 
+
+        # Tibia Amputation height 
+        socket_name = 'pylon_socket' + self.prosthesis_side_str
+        talus_name = 'talus' + self.prosthesis_side_str
+        self._socket_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, socket_name)
+        self._talus_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, talus_name)
+        tibia_name = 'tibia' + self.prosthesis_side_str
+        self._tibia_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, tibia_name)
+        calcn_name = 'calcn' + self.prosthesis_side_str
+        self._calcn_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, calcn_name)
+        femur_name = 'femur' + self.prosthesis_side_str
+        self._femur_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, femur_name)
+
+
+        # Reattach muscles around the amputation height
+        if hasattr(env, 'reattach_muscle') and env.reattach_muscle:
+            self.reattach_muscles_after_rand = True
+            self._muscles_to_reattach_site_indices = {}
+            self._muscles_to_reattach_act_indices = {}
+            
+            for muscle_name in env.reattach_muscle_names:
+                full_muscle_name = muscle_name + self.prosthesis_side_str
+                self._muscles_to_reattach_act_indices[full_muscle_name] = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, full_muscle_name)
+            
+            
+                for attachment_point in ['P2', 'P3']:
+                    site_name = f"{full_muscle_name}-{attachment_point}"
+                    site_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, site_name)
+                    
+                    if site_idx == -1:
+                        print(f"Warning: Muscle attachment site '{site_name}' not found in model.")
+                        continue
+                    
+                    self._muscles_to_reattach_site_indices[site_name] = [site_idx]
+        
+        self.amputated_tibia_length = env.amputated_tibia_length
+
+        # self._muscles_to_reattach = []
+        # for i in range(model.nsite):
+        #     site_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_SITE, i)
+        #     if site_name is not None and 'muscle_attachment_' in site_name:
+        #         # check if site is on the amputated side
+        #         if site_name.endswith(self.prosthesis_side_str):
+        #             self._muscles_to_reattach.append(site_name)
+
+        
 
 
         return ProsthesisRandomizerState(prosthesis_joint_stiffness=prosthesis_joint_stiffness,
                                       prosthesis_dof_damping=prosthesis_dof_damping,
                                       prosthesis_body_position=prosthesis_body_position,
                                       prosthesis_body_orientation=prosthesis_body_orientation,
-                                      prosthesis_socket_joint_value= prosthesis_socket_joint_value,
+                                    #   amputation_height_body_position = amputation_height_body_position, 
+                                    #   prosthesis_socket_joint_value= prosthesis_socket_joint_value,
                                       body_vel_perturb = body_vel_perturb
 
                                     #   feet_geom_solref= feet_geom_solref
@@ -594,8 +476,10 @@ class ProsthesisRandomizer(DomainRandomizer):
             self._init_prosthesis_dof_damping = model.dof_damping.copy()
             self._init_prosthesis_body_position = model.body_pos.copy()
             self._init_prosthesis_body_orientation = model.body_quat.copy()
-            self._init_prosthesis_socket_joint_value = model.qpos0.copy()
+            # self._init_prosthesis_socket_joint_value = model.qpos0.copy()
             self._init_prosthesis_socket_joint_springref = model.qpos_spring.copy()
+            # self._init_amputation_height_body_position = model.body_pos.copy()
+        # jax.debug.print('self._init_prosthesis_socket_joint_value: {value}', value=self._init_prosthesis_socket_joint_value)
 
             # self._init_feet_geom_solref = model.geom_solref.copy()
         # elif backend == jnp:
@@ -610,7 +494,8 @@ class ProsthesisRandomizer(DomainRandomizer):
         prosthesis_dof_damping, carry = self._sample_dof_damping(model, carry, backend)
         prosthesis_body_position, carry = self._sample_geom_position(model, carry, backend)
         prosthesis_body_orientation, carry = self._sample_joint_orientation(model, carry, backend)
-        prosthesis_socket_joint_value, carry = self._sample_socket_joint_value(model, data, carry, backend)
+        # prosthesis_socket_joint_value, carry = self._sample_socket_joint_value(model, data, carry, backend)
+        # amputation_height_body_position, carry = self._sample_amputation_height(model, data, carry, backend)
         body_vel_perturb, carry = self._sample_body_velocity_perturbation(model, carry, backend)
         # jax.debug.print('prosthesis_socket_joint_value: {value}', value = prosthesis_socket_joint_value)
         # feet_geom_solref, carry = self._sample_feet_geom_solref(model, carry, backend)
@@ -629,7 +514,8 @@ class ProsthesisRandomizer(DomainRandomizer):
                 prosthesis_dof_damping=prosthesis_dof_damping,
                 prosthesis_body_position=prosthesis_body_position,
                 prosthesis_body_orientation=prosthesis_body_orientation,
-                prosthesis_socket_joint_value= prosthesis_socket_joint_value, 
+                # amputation_height_body_position = amputation_height_body_position,
+                # prosthesis_socket_joint_value= prosthesis_socket_joint_value, 
                 body_vel_perturb = body_vel_perturb,
                 # feet_geom_solref = feet_geom_solref
                 ))
@@ -675,6 +561,8 @@ class ProsthesisRandomizer(DomainRandomizer):
 
                 body_indices = jnp.array(body_indices)
                 body_values = jnp.array(body_values)
+                # # Squeeze out the extra dimension: (n_bodies, 1, 4) -> (n_bodies, 4)
+                # body_values = jnp.squeeze(body_values, axis=1)
 
                 body_quat = model.body_quat.at[jnp.array(body_indices)].set(body_values)
             elif backend == np: 
@@ -742,6 +630,8 @@ class ProsthesisRandomizer(DomainRandomizer):
                 # Convert to jnp arrays
                 dof_indices = jnp.array(dof_indices)
                 dof_values = jnp.array(dof_values)
+                # Squeeze out the extra dimension: (n_dofs, 1) -> (n_dofs,)
+                # dof_values = jnp.squeeze(dof_values, axis=1)
 
                 # Apply to model
                 dof_damping = model.dof_damping.at[dof_indices].set(dof_values)
@@ -766,6 +656,8 @@ class ProsthesisRandomizer(DomainRandomizer):
                 # Convert to jnp arrays
                 joint_indices = jnp.array(joint_indices)
                 joint_values = jnp.array(joint_values)
+                # Squeeze out the extra dimension: (n_joints, 1) -> (n_joints,)
+                # joint_values = jnp.squeeze(joint_values, axis=1)
 
                 # Apply to model
                 jnt_stiffness = model.jnt_stiffness.at[joint_indices].set(joint_values)
@@ -786,83 +678,91 @@ class ProsthesisRandomizer(DomainRandomizer):
         # #     model = self._set_attribute_in_model(model, "geom_solref", feet_geom_solref, backend)
 
 
-        if self.rand_conf["randomize_prosthesis_socket_joint"]:
-            # jax.debug.print('data.qpos before: {qpos}', qpos = data.qpos)
-            # print('qpos before:', data.qpos)
-            if backend == jnp:
-                # Use JAX for randomization
-                # Unpack joint stiffness dictionary into indices and values
-                joint_names = list(domrand_state.prosthesis_socket_joint_value.keys())
-                joint_values = list(domrand_state.prosthesis_socket_joint_value.values())
-                joint_indices = [self._socket_joint_indices[name] for name in joint_names]
+        # if self.rand_conf["randomize_prosthesis_socket_joint"]:
+        #     # jax.debug.print('data.qpos before: {qpos}', qpos = data.qpos)
+        #     # print('qpos before:', data.qpos)
+        #     if backend == jnp:
+        #         # Use JAX for randomization
+        #         # Unpack joint stiffness dictionary into indices and values
+        #         joint_names = list(domrand_state.prosthesis_socket_joint_value.keys())
+        #         joint_values = list(domrand_state.prosthesis_socket_joint_value.values())
+        #         joint_indices = [self._socket_joint_indices[name] for name in joint_names]
 
-                # Convert to jnp arrays
-                joint_indices = jnp.array(joint_indices)
-                joint_values = jnp.array(joint_values)
+        #         # Convert to jnp arrays
+        #         joint_indices = jnp.array(joint_indices)
+        #         joint_values = jnp.array(joint_values)
+        #         # Squeeze out the extra dimension: (n_joints, 1) -> (n_joints,)
+        #         # joint_values = jnp.squeeze(joint_values, axis=1)
 
-                #jax.debug.print('joint_values: {joint_values}', joint_values=joint_values)
+        #         jax.debug.print('joint_values: {joint_values}', joint_values=joint_values)
 
                 
-                # Apply to data
-                all_joint_values = data.qpos.at[joint_indices].set(joint_values)
+        #         # Apply to data
+        #         all_joint_values = data.qpos.at[joint_indices].set(joint_values)
 
-                data = data.replace(qpos=all_joint_values) 
-            elif backend == np: 
-                all_joint_values = self._init_prosthesis_socket_joint_value.copy()
-                for joint_name, value in domrand_state.prosthesis_socket_joint_value.items():
-                    idx = self._socket_joint_indices[joint_name]
-                    all_joint_values[idx] = value
+        #         # data = data.replace(qpos=all_joint_values)
+        #         # data = mjx.forward(model, data)  # ← ADD THIS 
+        #     elif backend == np: 
+        #         all_joint_values = self._init_prosthesis_socket_joint_value.copy()
+        #         for joint_name, value in domrand_state.prosthesis_socket_joint_value.items():
+        #             idx = self._socket_joint_indices[joint_name]
+        #             all_joint_values[idx] = value
 
-                data.qpos = all_joint_values
-            # model = self._set_attribute_in_model(model, "qpos0", all_joint_values, backend)
-            # jax.debug.print('data.qpos after: {qpos}', qpos = data.qpos)
+        #         # data.qpos = all_joint_values
+        #     # model = self._set_attribute_in_model(model, "qpos0", all_joint_values, backend)
+        #     # jax.debug.print('data.qpos after: {qpos}', qpos = data.qpos)
 
-            # Set qpos depeding on randomization
-            updated_springref, carry = self._set_joint_springref(model,domrand_state.prosthesis_socket_joint_value,carry, backend)
-            # jax.debug.print('model_updated_qpos0 before: {springref}', springref=model.qpos_spring)
-            model = self._set_attribute_in_model(model, 'qpos_spring', updated_springref, backend)
-            # jax.debug.print('model_updated_qpos0 after: {springref}', springref=model.qpos_spring)
+        #     # Set qpos depeding on randomization
+        #     updated_springref, carry = self._set_joint_springref(model,domrand_state.prosthesis_socket_joint_value,carry, backend)
+        #     # jax.debug.print('model_updated_qpos0 before: {springref}', springref=model.qpos_spring)
+        #     model = self._set_attribute_in_model(model, 'qpos_spring', updated_springref, backend)
+        #     # jax.debug.print('model_updated_qpos0 after: {springref}', springref=model.qpos_spring)
 
-            # if backend == np:
-            #     mujoco.mj_forward(model, data)
-            # elif backend == jnp:
-            #     mjx.forward(model, data)
-            if 'socket_ty'+self.prosthesis_side_str in self._socket_joint_indices:
+        #     # if backend == np:
+        #     #     mujoco.mj_forward(model, data)
+        #     # elif backend == jnp:
+        #     #     mjx.forward(model, data)
+        #     if 'socket_ty'+self.prosthesis_side_str in self._socket_joint_indices:
 
-                # if not np.any(self.init_talus_pos):
-                    # jax.debug.print("IN LOOOOOOPPPPP")    
-                self.init_talus_pos = model.body_pos[self._talus_idx].copy()
-                # print(f"init_talus_pos:", self.init_talus_pos)
+        #         # if not np.any(self.init_talus_pos):
+        #             # jax.debug.print("IN LOOOOOOPPPPP")    
+        #         # self.init_talus_pos = model.body_pos[self._talus_idx].copy()
+        #         # jax.debug.print("init_talus_pos: {init_talus_pos}", init_talus_pos=self.init_talus_pos)
                 
-                talus_offset_y = domrand_state.prosthesis_socket_joint_value[f"socket_ty"+self.prosthesis_side_str]
-                # jax.debug.print("pos_y: {pos_y}", pos_y = pos_y)
-                # talus_pos = self._init_prosthesis_body_position[self._talus_idx].copy() #model.body_pos[self._talus_idx].copy()
-                # jax.debug.print("talus_pos: {talus_pos}", talus_pos = talus_pos)
-                new_talus_pos = self.init_talus_pos - backend.array([0,talus_offset_y,0])
+        #         talus_offset_y = domrand_state.prosthesis_socket_joint_value[f"socket_ty"+self.prosthesis_side_str]
+        #         jax.debug.print("talus_offset_y: {talus_offset_y}", talus_offset_y = talus_offset_y)
+        #         # jax.debug.print("pos_y: {pos_y}", pos_y = pos_y)
+        #         # talus_pos = self._init_prosthesis_body_position[self._talus_idx].copy() #model.body_pos[self._talus_idx].copy()
+        #         # jax.debug.print("talus_pos: {talus_pos}", talus_pos = talus_pos)
+        #         new_talus_pos = self._init_talus_pos - backend.array([0, talus_offset_y, 0])  
 
-                if not self.rand_conf["randomize_prosthesis_body_position"]:
-                    # jax.debug.print("new talus pos: {new_talus_pos}", new_talus_pos=new_talus_pos) 
-                    if backend == np: 
-                        body_pos = self._init_prosthesis_body_position.copy()
-                        body_pos[self._talus_idx] = new_talus_pos
-                    elif backend == jnp: 
-                        body_pos = model.body_pos.at[jnp.array(self._talus_idx)].set(new_talus_pos)
-                    # jax.debug.print("body_pos: {body_pos}", body_pos=body_pos)
-                    model = self._set_attribute_in_model(model, "body_pos", body_pos, backend)
+        #         if not self.rand_conf["randomize_prosthesis_body_position"]:
+        #             # jax.debug.print("new talus pos: {new_talus_pos}", new_talus_pos=new_talus_pos) 
+        #             if backend == np: 
+        #                 body_pos = self._init_prosthesis_body_position.copy()
+        #                 body_pos[self._talus_idx] = new_talus_pos
+        #             elif backend == jnp: 
+        #                 body_pos = model.body_pos.at[jnp.array(self._talus_idx)].set(new_talus_pos)
+        #             # jax.debug.print("body_pos: {body_pos}", body_pos=body_pos)
+        #             model = self._set_attribute_in_model(model, "body_pos", body_pos, backend)
 
 
-            # # # print('qpos after:', data.qpos)
-            # #### Adapt tibia and socket mass, inertia, and center of mass 
-            if "adapt_tibia_socket_parameters" in self.rand_conf:
-                if 'socket_ty'+self.prosthesis_side_str in self._socket_joint_indices and self.rand_conf["adapt_tibia_socket_parameters"]:
-                # print('socket_ty in rand')
-                # Adapt the tibia or prosthesis properties depending on length
-                    body_mass, body_inertia, body_center_of_mass = self._adapt_tibia_socket_parameters(model, data, carry, backend)
+        #     # # # print('qpos after:', data.qpos)
+        #     # #### Adapt tibia and socket mass, inertia, and center of mass 
+        #     if "adapt_tibia_socket_parameters" in self.rand_conf:
+        #         if 'socket_ty'+self.prosthesis_side_str in self._socket_joint_indices and self.rand_conf["adapt_tibia_socket_parameters"]:
+        #         # print('socket_ty in rand')
+        #         # Adapt the tibia or prosthesis properties depending on length
+        #             body_mass, body_inertia, body_center_of_mass = self._adapt_tibia_socket_parameters(model, env, data, carry, backend, talus_offset_y)
 
-                    model = self._set_attribute_in_model(model, "body_mass", body_mass, backend)
-                    model = self._set_attribute_in_model(model, "body_inertia", body_inertia, backend)
-                    model = self._set_attribute_in_model(model, "body_ipos", body_center_of_mass, backend)
+        #             model = self._set_attribute_in_model(model, "body_mass", body_mass, backend)
+        #             model = self._set_attribute_in_model(model, "body_inertia", body_inertia, backend)
+        #             model = self._set_attribute_in_model(model, "body_ipos", body_center_of_mass, backend)
 
+        #     # if backend == jnp:
+        #     #     data = mjx.forward(model, data)
+        #     # else: 
+        #     #     data = mujoco.mj_forward(model, data)
 
 
         if self.rand_conf["randomize_prosthesis_body_position"]:
@@ -875,8 +775,11 @@ class ProsthesisRandomizer(DomainRandomizer):
 
                 body_indices = jnp.array(body_indices)
                 body_values = jnp.array(body_values)
+                # Squeeze out the extra dimension: (n_bodies, 1, 3) -> (n_bodies, 3)
+                # body_values = jnp.squeeze(body_values, axis=1)
 
                 body_pos = model.body_pos.at[jnp.array(body_indices)].set(body_values)
+
             elif backend == np: 
                 body_pos = self._init_prosthesis_body_position.copy()
                 for body_name, value in domrand_state.prosthesis_body_position.items():
@@ -884,30 +787,216 @@ class ProsthesisRandomizer(DomainRandomizer):
                     idx = self._body_pos_indices[body_name]
                     body_pos[idx] = value
 
-            # If talus height needs to be adapted depending on socket_ty (so if socket_ty in randomize_prosthesis_socket_joint)
-            if hasattr(self, '_talus_idx'):
-                talus_offset_y = domrand_state.prosthesis_socket_joint_value[f"socket_ty"+self.prosthesis_side_str]
-                # jax.debug.print("new talus pos: {new_talus_pos}", new_talus_pos=new_talus_pos) 
-                talus_offset_array = backend.array([0,talus_offset_y,0])
-                if backend == np: 
-                    body_pos[self._talus_idx] -= talus_offset_array
-                elif backend == jnp: 
-                    body_pos = body_pos.at[jnp.array(self._talus_idx)].set(body_pos.at[jnp.array(self._talus_idx)].get() - talus_offset_array)
+
+            #if 'y' in keys in "prosthesis_body_position_range" then get the body_name for the y position. If body is socket_pylon then adapt: 
+            # - talus position accordingly
+            # - tibia/socket mass, inertia, center of mass accordingly
+            # - reattach muscles sites accordingly
+            if 'pylon_socket' in domrand_state.prosthesis_body_position and 'y' in self.prosthesis_body_position_range_dict.get('pylon_socket', {}):
+                # Get new socket pylon y position
+                socket_body_name = 'pylon_socket' #+ self.prosthesis_side_str
+                new_socket_pos = domrand_state.prosthesis_body_position[socket_body_name]
+                new_socket_pos_y = new_socket_pos[1]
+
+                if backend == jnp:
+                    init_socket_pos = model.body_pos.at[jnp.array(self._socket_idx)].get()
+                elif backend == np:
+                    init_socket_pos = self._init_prosthesis_body_position[self._socket_idx]
+
+                # jax.debug.print('original_pylon_socket_pos_y : {original_pylon_socket_pos_y}', original_pylon_socket_pos_y=init_socket_pos[1])
+                
+                    
+
+                # Get initial socket pylon y position
+                # init_socket_pos = self._init_prosthesis_body_position[self._socket_idx]
+                init_socket_pos_y = init_socket_pos[1]
+                # jax.debug.print('init_socket_pos_y : {init_socket_pos_y}', init_socket_pos_y=init_socket_pos_y)
+                # jax.debug.print('new_socket_pos_y : {new_socket_pos_y}', new_socket_pos_y=new_socket_pos_y)
+
+                # Calculate talus offset based on change in socket pylon y position
+                talus_offset_y = init_socket_pos_y - new_socket_pos_y 
+
+                # Set new talus position based on socket pylon y position change
+                talus_offset_array = backend.array([0, talus_offset_y, 0])
+                if backend == np:
+                    body_pos[self._talus_idx] +=  talus_offset_array
+                elif backend == jnp:
+                    body_pos = body_pos.at[jnp.array(self._talus_idx)].set(body_pos.at[jnp.array(self._talus_idx)].get() + talus_offset_array)
+                
+                # jax.debug.print('Talus_offset_y: {talus_offset_y}', talus_offset_y=talus_offset_y)
+                # jax.debug.print('body_pos with talus update: {body_pos}', body_pos=body_pos.at[jnp.array(self._talus_idx)].get())
+
+                # Code wokring on 
+                # Adapt & Set tibia/socket parameters based on new socket pylon y position
+                body_mass, body_inertia, body_center_of_mass = self._adapt_tibia_socket_parameters(model, env, data, carry, backend, talus_offset_y)
+
+                model = self._set_attribute_in_model(model, "body_mass", body_mass, backend)
+                model = self._set_attribute_in_model(model, "body_inertia", body_inertia, backend)
+                model = self._set_attribute_in_model(model, "body_ipos", body_center_of_mass, backend)
+
+                # # Adapt & Set muscle attachment sites based on new socket pylon y position
+                # muscle_site_pos, muscle_lengthrange = self._adapt_muscle_parameters(model, env, backend, talus_offset_y)
+                # muscle_site_pos,  model = self._adapt_muscle_parameters(model, env, backend, talus_offset_y)
+                if hasattr(env, 'reattach_muscle') and env.reattach_muscle:
+                    muscle_site_pos, P3_org_all = self._adapt_muscle_parameters(model, backend, talus_offset_y, env.amputated_tibia_length)
+
+                model = self._set_attribute_in_model(model, "site_pos", muscle_site_pos, backend)
+
+
+                # # iterate over P3_org_all to modify lengthrange 
+                # # from the updated model get P2 and P3 for the act_names in P3_org_all 
+                # # Calculate the difference length_ratio and update lengthrange accordingly
+                # # NOTE: For JAX backend, skip lengthrange update as it cannot be done inside JIT
+                # # without making the model traceable. The muscle forces are based on site_pos
+                # # which is already updated, so lengthrange constraint is not critical during step.
+                # if backend == np:
+                #     # For NumPy: direct indexing works fine (not in trace)
+                #     muscle_lengthrange = np.array(model.actuator_lengthrange, copy=True)
+                #     for act_name, P3_org in P3_org_all.items():
+                #         act_idx = self._muscles_to_reattach_act_indices[act_name]
+                #         site_P2_name = f"{act_name}-P2"
+                #         site_P3_name = f"{act_name}-P3"
+                #         site_P2_idx = self._muscles_to_reattach_site_indices[site_P2_name][0]
+                #         site_P3_idx = self._muscles_to_reattach_site_indices[site_P3_name][0]
+
+                #         P2_org = model.site_pos[site_P2_idx]
+                #         P3_new = model.site_pos[site_P3_idx]
+
+                #         new_length = backend.linalg.norm(P3_new - P2_org)
+                #         old_length = backend.linalg.norm(P3_org - P2_org)
+                #         length_ratio = new_length / old_length
+                        
+                #         orig_lengthrange = muscle_lengthrange[act_idx]
+                #         muscle_lengthrange[act_idx] = orig_lengthrange * length_ratio
+
+                #     model = self._set_attribute_in_model(model, "actuator_lengthrange", muscle_lengthrange, backend)
+                # # For JAX: skip lengthrange update to avoid making model traceable
+
+
+                # model = self._set_attribute_in_model(model, "site_pos", muscle_site_pos, backend)
+                # model = self._set_attribute_in_model(model, "actuator_lengthrange", muscle_lengthrange, backend)
+                
+
+
+
+                # Adapt muscle parameters based on new tibia length
+                # model = self._adapt_muscle_parameters(model, env, backend, talus_offset_y)
+
+            # # If talus height needs to be adapted depending on socket_ty (so if socket_ty in randomize_prosthesis_socket_joint)
+            # if hasattr(self, '_talus_idx'):
+            #     talus_offset_y = domrand_state.prosthesis_socket_joint_value[f"socket_ty"+self.prosthesis_side_str]
+            #     # jax.debug.print("new talus pos: {new_talus_pos}", new_talus_pos=new_talus_pos) 
+            #     jax.debug.print("talus_offset_y: {talus_offset_y}", talus_offset_y=talus_offset_y)
+            #     talus_offset_array = backend.array([0,talus_offset_y,0])
+            #     if backend == np: 
+            #         body_pos[self._talus_idx] -= talus_offset_array
+            #     elif backend == jnp: 
+            #         body_pos = body_pos.at[jnp.array(self._talus_idx)].set(body_pos.at[jnp.array(self._talus_idx)].get() - talus_offset_array)
 
             model = self._set_attribute_in_model(model, "body_pos", body_pos, backend)
             # print('model.body_pos after: ', model.body_pos)
+            # if backend == jnp:
+            #     data = mjx.forward(model, data)
+            # else: 
+            #     data = mujoco.mj_forward(model, data)
+
+        # if self.rand_conf["randomize_amputation_height"]:
+        #     # print('model.body_pos before: ', model.body_pos)
+        #     if backend == jnp: 
+        #         # Adapt Socket Pylon Body Pos 
+        #         body_names = list(domrand_state.amputation_height_body_position.keys())
+        #         body_values = list(domrand_state.amputation_height_body_position.values())
+        #         # body_names = [name  for name in body_names]
+        #         body_indices = [self._amputation_height_body_indices[name] for name in body_names] #[self._body_pos_indices[name] for name in body_names]
+
+        #         body_indices = jnp.array(body_indices)
+        #         body_pos_values = model.body_pos.at[jnp.array(body_indices)].get() + jnp.array(body_values)
+        #         # Squeeze out the extra dimension: (n_bodies, 1, 3) -> (n_bodies, 3)
+        #         # body_values = jnp.squeeze(body_values, axis=1)
+
+        #         body_pos = model.body_pos.at[jnp.array(body_indices)].set(body_pos_values)
+
+
+        #         # Adapt talus position based on amputation height changes
+        #         talus_offset_y = list(domrand_state.amputation_height_body_position.values())[0] #[1]
+        #         talus_offset_array = backend.array([0, talus_offset_y, 0])
+        #         body_pos = body_pos.at[jnp.array(self._talus_idx)].set(body_pos.at[jnp.array(self._talus_idx)].get() - talus_offset_array)
+
+
+
+        #     elif backend == np: 
+        #         # Adapt Socket Pylon Body Pos 
+        #         body_pos = self._init_prosthesis_body_position.copy()
+        #         for body_name, value in domrand_state.amputation_height_body_position.items():
+        #             body_name = body_name + self.prosthesis_side_str
+        #             idx = self._body_pos_indices[body_name]
+        #             body_pos[idx] = value
+
+        #         # Adapt talus position based on amputation height changes
+        #         talus_offset_y = list(domrand_state.amputation_height_body_position.values())[0][1]
+        #         talus_offset_array = backend.array([0, talus_offset_y, 0])
+        #         body_pos[self._talus_idx] -= talus_offset_array
+
+            
+        #     body_mass, body_inertia, body_center_of_mass = self._adapt_tibia_socket_parameters(model, env, data, carry, backend, talus_offset_y)
+
+        #     model = self._set_attribute_in_model(model, "body_mass", body_mass, backend)
+        #     model = self._set_attribute_in_model(model, "body_inertia", body_inertia, backend)
+        #     model = self._set_attribute_in_model(model, "body_ipos", body_center_of_mass, backend)
+
+        #     # Adapt muscle parameters based on new tibia length
+        #     model = self._adapt_muscle_parameters(model, env, backend, talus_offset_y)
+
+
+
+            
+
+
+        #     # if "adapt_tibia_socket_parameters" in self.rand_conf:
+        # #         # print('socket_ty in rand')
+        # #         # Adapt the tibia or prosthesis properties depending on length
+        # #             body_mass, body_inertia, body_center_of_mass = self._adapt_tibia_socket_parameters(model, env, data, carry, backend, talus_offset_y)
+
+        # #             model = self._set_attribute_in_model(model, "body_mass", body_mass, backend)
+        # #             model = self._set_attribute_in_model(model, "body_inertia", body_inertia, backend)
+        # #             model = self._set_attribute_in_model(model, "body_ipos", body_center_of_mass, backend)
+
+
+            
+            
+
+        #     # # If talus height needs to be adapted depending on socket_ty (so if socket_ty in randomize_prosthesis_socket_joint)
+        #     # if hasattr(self, '_talus_idx'):
+        #     #     talus_offset_y = domrand_state.prosthesis_socket_joint_value[f"socket_ty"+self.prosthesis_side_str]
+        #     #     # jax.debug.print("new talus pos: {new_talus_pos}", new_talus_pos=new_talus_pos) 
+        #     #     jax.debug.print("talus_offset_y: {talus_offset_y}", talus_offset_y=talus_offset_y)
+        #     #     talus_offset_array = backend.array([0,talus_offset_y,0])
+        #     #     if backend == np: 
+        #     #         body_pos[self._talus_idx] -= talus_offset_array
+        #     #     elif backend == jnp: 
+        #     #         body_pos = body_pos.at[jnp.array(self._talus_idx)].set(body_pos.at[jnp.array(self._talus_idx)].get() - talus_offset_array)
+
+        #     model = self._set_attribute_in_model(model, "body_pos", body_pos, backend)
+        #     # print('model.body_pos after: ', model.body_pos)
+        #     # if backend == jnp:
+        #     #     data = mjx.forward(model, data)
+        #     # else: 
+        #     #     data = mujoco.mj_forward(model, data)
+        #     # if backend == jnp: 
+        #     #     amp_height = domrand_state.tibia_amputation_height
+        #     #     model.body_pos.at[jnp.array(self._socket_idx)].set()
 
 
 
 
-        # jax.debug.print("model.jnt_stiffness: {jnt_stiffness}", jnt_stiffness=model.jnt_stiffness)
-        # jax.debug.print("model.dof_damping: {dof_damping}", dof_damping=model.dof_damping)
-        # jax.debug.print("model.body_pos after: {body_pos}", body_pos=model.body_pos)
-        # jax.debug.print("model.body_quat: {body_quat}", body_quat=model.body_quat)
-        # print("model.jnt_stiffness: ", model.jnt_stiffness)
-        # print("model.dof_damping: ", model.dof_damping)
-        # print("model.body_pos: ", model.body_pos)
-        # print("model.body_quat: ", model.body_quat)
+        # # jax.debug.print("model.jnt_stiffness: {jnt_stiffness}", jnt_stiffness=model.jnt_stiffness)
+        # # jax.debug.print("model.dof_damping: {dof_damping}", dof_damping=model.dof_damping)
+        # # jax.debug.print("model.body_pos after: {body_pos}", body_pos=model.body_pos)
+        # # jax.debug.print("model.body_quat: {body_quat}", body_quat=model.body_quat)
+        # # print("model.jnt_stiffness: ", model.jnt_stiffness)
+        # # print("model.dof_damping: ", model.dof_damping)
+        # # print("model.body_pos: ", model.body_pos)
+        # # print("model.body_quat: ", model.body_quat)
 
         return model, data, carry
 
@@ -1148,6 +1237,10 @@ class ProsthesisRandomizer(DomainRandomizer):
 
                 # Store the reconstructed 3D offset vector for this body in the dictionary
                 sampled_offsets_for_bodies[body_name] = current_body_offset_vector + original_positions
+
+                # jax.debug.print('Sampled offset for body {body_name}: {offset}', body_name=body_name, offset=sampled_offsets_for_bodies[body_name])
+                # jax.debug.print('Original position for body {body_name}: {orig_pos}', body_name=body_name, orig_pos=original_positions)
+                # jax.debug.print('current_body_offset_vector {current_body_offset_vector} ', current_body_offset_vector=current_body_offset_vector)
 
             # At this point, sampled_offsets_for_bodies contains {body_name: [dx, dy, dz]} for all randomized bodies.
             # Now, populate sampled_positions using these offsets and initial body positions.
@@ -1651,58 +1744,92 @@ class ProsthesisRandomizer(DomainRandomizer):
         return updated_springref, carry 
 
 
+    
 
-    def _adapt_tibia_socket_parameters(self, model: Union[MjModel, Model], data: Union[MjData, Data],
-                                       carry: Any, backend: ModuleType) -> Tuple[Union[np.ndarray, jnp.ndarray], Any]:
-          
-        # tibia_name = 'tibia' + self.prosthesis_side_str
-        # socket_name = 'pylon_socket' + self.prosthesis_side_str
-        # talus_name = 'talus' + self.prosthesis_side_str
-        # socket_joints = ['socket_flexion', 'socket_adduction', 'socket_rotation', 'socket_tx', 'socket_ty', 'socket_tz']
-        # socket_joints = [j + self.prosthesis_side_str for j in socket_joints]
-
-        # # Iterate over socket joints and find them in model and get their pos
-        # socket_joint_indices = {}
-        # joint_pos = {}
-        # valid_socket_joints = {}
-        # for j in socket_joints: 
-        #     idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, j)
-        #     if idx != -1: 
-        #         joint_pos[j] = model.jnt_pos[idx]
-        #         socket_joint_indices[j] =idx
-        #         valid_socket_joints[j] = j
-
-        # Check if all elements are the same
-        pos_y = []
-        for j in self.valid_socket_joints:
-            pos_y.append(self.joint_pos[j][1])
-
-        different_values_in_list = len(set(pos_y))
+    def _sample_amputation_height(self, model: Union[MjModel, Model], data: Union[MjData, Data],
+                              carry: Any,
+                              backend: ModuleType) -> Tuple[Union[np.ndarray, jnp.ndarray], Any]:
         
-        assert different_values_in_list ==1,"Socket joints are not all in the same position"
+        assert_backend_is_supported(backend)
+        sampled_amputation_height_value = {}
 
+        sampled_amputation_height_value = {body_name+self.prosthesis_side_str: 0.0 for body_name in self.amputation_height_range_dict}
+
+        if self.rand_conf["randomize_amputation_height"]:
+
+            if backend == jnp:
+                key = carry.key
+                key, _k = jax.random.split(key)
+                rand_values = jax.random.uniform(_k, shape=(len(self.amputation_height_range_dict),))
+                carry = carry.replace(key=key)
+
+                for i, (body_name, (body_min, body_max)) in enumerate(self.amputation_height_range_dict.items()):
+                    body_name = body_name + self.prosthesis_side_str
+                    # joint_value = joint_min + (joint_max - joint_min) * rand_values[...,i]
+                    body_value = body_min + (body_max - body_min) * rand_values[i]
+                    sampled_amputation_height_value[body_name] = body_value
+            else:
+                rand_values = np.random.uniform(size=(len(self.amputation_height_range_dict),))
+            
+                for i, (body_name, (body_min, body_max)) in enumerate(self.amputation_height_range_dict.items()):
+                    body_name = body_name + self.prosthesis_side_str
+                    body_value = body_min + (body_max - body_min) * rand_values[i]
+                    sampled_amputation_height_value[body_name] = body_value
+
+        else:
+            # Use existing model damping for defined dofs
+            for i, (body_name, (body_min, body_max)) in enumerate(self.amputation_height_range_dict.items()):
+                body_name = body_name + self.prosthesis_side_str
+                if body_name not in self._amputation_height_body_indices:
+                    raise KeyError(f"Socket joint '{body_name}' not found in dof indices.")
+                idx = self._amputation_height_body_indices[body_name]
+                if backend == np:
+                    #value = data.qpos[:,idx]
+                    value = data.qpos[idx]
+                else:
+                    # value = data.qpos.at[...,idx].get()
+                    value = data.qpos.at[idx].get()
+                sampled_amputation_height_value[body_name] = value
+
+        return sampled_amputation_height_value, carry
+    
+
+
+    def _adapt_tibia_socket_parameters(self, model: Union[MjModel, Model], env: Any, data: Union[MjData, Data],
+                                   carry: Any, backend: ModuleType, talus_offset_y) -> Tuple[Union[np.ndarray, jnp.ndarray], Any]:
+    
+        """ Adapt the tibia body parameters based on the socket joint positions.
+            This function modifies the tibia's mass, inertia, and center of mass to account for the moved socket_joint_positions (amputation height).
+        """ 
         # Get tibia data
-        # tibia_idx= mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, tibia_name)
         org_tibia_mass = model.body_mass[self._tibia_idx].copy()
         org_tibia_inertia = model.body_inertia[self._tibia_idx].copy()
         org_tibia_iquat =model.body_iquat[self._tibia_idx].copy()
         org_tibia_center_of_mass = model.body_ipos[self._tibia_idx].copy()
+        org_amp_tibia_length = env.amputated_tibia_length
+        new_amp_tibia_length = org_amp_tibia_length - talus_offset_y
     
-
         # Get socket data 
-        # socket_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, socket_name)
         org_socket_mass = model.body_mass[self._socket_idx].copy()
         org_socket_inertia = model.body_inertia[self._socket_idx].copy()
         org_socket_iquat = model.body_iquat[self._socket_idx].copy()
         org_socket_center_of_mass = model.body_ipos[self._socket_idx].copy()
-        # org_socket_pos = model.body_pos[self._socket_idx]
         socket_top_pos_in_tibia = model.body_pos[self._socket_idx].copy()
-        
-        socket_jnt_pos_in_socket = pos_y[0] # Position where overlap between tibia and socket end 
+        org_socket_length = env.tibia_socket_overlap + backend.abs(model.body_pos[self._talus_idx][1]) - talus_offset_y
+        new_socket_length = org_socket_length + talus_offset_y
 
-        jax.debug.print('org_tibia_mass: {org_tibia_mass}', org_tibia_mass=org_tibia_mass)
-        jax.debug.print('org_socket_mass: {org_socket_mass}', org_socket_mass=org_socket_mass)
-       
+        # jax.debug.print('socket_top_pos_in_tibia: {socket_top_pos_in_tibia}', socket_top_pos_in_tibia=socket_top_pos_in_tibia)
+        # # Check if all elements are the same
+        # pos_y = []
+        # for j in self.valid_socket_joints:
+        #     pos_y.append(self.joint_pos[j][1]) #DEFINED AS (1/3)*amp_tibia_length
+
+        # different_values_in_list = len(set(pos_y))
+        
+        # assert different_values_in_list ==1,"Socket joints are not all in the same position"
+
+        # socket_jnt_pos_in_socket = pos_y[0] # Position where overlap between tibia and socket ends 
+
         org_tibia_quat_sort = backend.concatenate([org_tibia_iquat[1:4], org_tibia_iquat[0:1]],axis=0)
         org_socket_quat_sort = backend.concatenate([org_socket_iquat[1:4], org_socket_iquat[0:1]],axis=0)
 
@@ -1714,21 +1841,21 @@ class ProsthesisRandomizer(DomainRandomizer):
             socket_rot = R.from_quat(org_socket_quat_sort)
 
         # jax.debug.print('org_tibia_inertia: {org_tibia_inertia}', org_tibia_inertia=org_tibia_inertia)
-        jax.debug.print('org_socket_inertia: {org_socket_inertia}', org_socket_inertia=org_socket_inertia)
+        # jax.debug.print('org_socket_inertia: {org_socket_inertia}', org_socket_inertia=org_socket_inertia)
 
         org_tibia_inertia_rot= tibia_rot.apply(org_tibia_inertia)
         org_socket_inertia_rot = socket_rot.apply(org_socket_inertia)
         
         # jax.debug.print('org_tibia_inertia_rot: {org_tibia_inertia_rot}', org_tibia_inertia_rot=org_tibia_inertia_rot)
-        jax.debug.print('org_socket_inertia_rot: {org_socket_inertia_rot}', org_socket_inertia_rot=org_socket_inertia_rot)
+        # jax.debug.print('org_socket_inertia_rot: {org_socket_inertia_rot}', org_socket_inertia_rot=org_socket_inertia_rot)
 
         
-
-        # Tibia length before changes through socket_ty 
-        tibia_length = backend.abs(socket_top_pos_in_tibia[1] + socket_jnt_pos_in_socket)
-        # talus_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, talus_name)
-        socket_length = backend.abs(model.body_pos[self._talus_idx][1])# top until talus pos 
-
+        # # Tibia length before changes through socket_ty 
+        # tibia_length = env.amputated_tibia_length #backend.abs(socket_top_pos_in_tibia[1]) # amputated tibia length #backend.abs(socket_top_pos_in_tibia[1] + socket_jnt_pos_in_socket)
+        # # talus_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, talus_name)
+        # socket_length = backend.abs(model.body_pos[self._talus_idx][1])# top until talus pos 
+        # jax.debug.print('tibia_length: {tibia_length}', tibia_length=tibia_length)
+        # jax.debug.print('socket_length: {socket_length}', socket_length=socket_length)
 
         # if socket_ty positive (moving up): decrease tibia and increase socket 
         # If socket_ty negative (moving down): incirease tibia and decrease socket
@@ -1738,16 +1865,23 @@ class ProsthesisRandomizer(DomainRandomizer):
         # socket_ty_name = 'socket_ty' + self.prosthesis_side_str
         # socket_ty_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, socket_ty_name)
         # socket_ty_idx =  model.jnt_qposadr[socket_ty_idx]
-        tibia_ratio = tibia_length -  model.qpos0[self._socket_ty_idx] / tibia_length
-        socket_ratio = socket_length + model.qpos0[self._socket_ty_idx] /socket_length
+        tibia_ratio = (org_amp_tibia_length -  talus_offset_y) / org_amp_tibia_length
+        socket_ratio = (org_socket_length + talus_offset_y) / org_socket_length
+
+        # jax.debug.print('tibia_ratio: {tibia_ratio}', tibia_ratio=tibia_ratio)
+        # jax.debug.print('socket_ratio: {socket_ratio}', socket_ratio=socket_ratio)
+
+        # jax.debug.print('socket_ty: {socket_ty}', socket_ty=model.qpos0[self._socket_ty_idx])
+        # jax.debug.print('tibia_length: {tibia_length}', tibia_length=tibia_length)
+        # jax.debug.print('socket_length: {socket_length}', socket_length=socket_length)
 
 
         # Update values depending on level of amputation
         tibia_mass = org_tibia_mass * tibia_ratio
         socket_mass = org_socket_mass * socket_ratio
 
-        jax.debug.print('org_tibia_mass: {org_tibia_mass}', org_tibia_mass=org_tibia_mass)
-        jax.debug.print('org_socket_mass: {org_socket_mass}', org_socket_mass=org_socket_mass)
+        # jax.debug.print('tibia_mass: {org_tibia_mass}', org_tibia_mass=tibia_mass)
+        # jax.debug.print('socket_mass: {org_socket_mass}', org_socket_mass=socket_mass)
 
 
         # tibia_inertia_rot = org_tibia_inertia_rot
@@ -1765,9 +1899,9 @@ class ProsthesisRandomizer(DomainRandomizer):
         # socket_inertia_rot[0] = self._calculate_cylinder_inertia_xorz(org_socket_mass, socket_radius, socket_length[1] + data.qpos[self._socket_ty_idx])
         # socket_inertia_rot[2] = socket_inertia_rot[0]
 
-        tibia_inertia_rot_x_z= self._calculate_cylinder_inertia_xorz(org_tibia_mass, tibia_radius, tibia_length -  data.qpos[self._socket_ty_idx])
+        tibia_inertia_rot_x_z= self._calculate_cylinder_inertia_xorz(org_tibia_mass, tibia_radius, new_amp_tibia_length) #tibia_length -  data.qpos[self._socket_ty_idx])
 
-        socket_inertia_rot_x_z=self._calculate_cylinder_inertia_xorz(org_socket_mass, socket_radius, socket_length + data.qpos[self._socket_ty_idx])
+        socket_inertia_rot_x_z=self._calculate_cylinder_inertia_xorz(org_socket_mass, socket_radius, new_socket_length) #socket_length + data.qpos[self._socket_ty_idx])
 
 
         # socket_inertia = socket_rot.apply(socket_inertia_rot, inverse = True)
@@ -1786,7 +1920,7 @@ class ProsthesisRandomizer(DomainRandomizer):
             socket_inertia_rot = socket_inertia_rot.at[jnp.array([0])].set(socket_inertia_rot_x_z)
             socket_inertia_rot = socket_inertia_rot.at[jnp.array([2])].set(socket_inertia_rot_x_z)
 
-            jax.debug.print('socket_inertia_rot: {socket_inertia_rot}', socket_inertia_rot=socket_inertia_rot)
+            # jax.debug.print('socket_inertia_rot: {socket_inertia_rot}', socket_inertia_rot=socket_inertia_rot)
 
             tibia_center_of_mass = org_tibia_center_of_mass
             tibia_center_of_mass= tibia_center_of_mass.at[1].set(org_tibia_center_of_mass[1] * tibia_ratio)
@@ -1813,7 +1947,7 @@ class ProsthesisRandomizer(DomainRandomizer):
             socket_inertia_rot[0] = socket_inertia_rot_x_z
             socket_inertia_rot[2] = socket_inertia_rot_x_z
 
-            jax.debug.print('socket_inertia_rot: {socket_inertia_rot}', socket_inertia_rot=socket_inertia_rot)
+            # jax.debug.print('socket_inertia_rot: {socket_inertia_rot}', socket_inertia_rot=socket_inertia_rot)
 
         
             tibia_center_of_mass = org_tibia_center_of_mass
@@ -1830,7 +1964,7 @@ class ProsthesisRandomizer(DomainRandomizer):
         tibia_inertia_temp = backend.abs(tibia_rot.inv().apply(tibia_inertia_rot))
         socket_inertia_temp = backend.abs(socket_rot.inv().apply(socket_inertia_rot))
 
-        jax.debug.print('socket_inertia_temp: {socket_inertia_temp}', socket_inertia_temp=socket_inertia_temp)
+        # jax.debug.print('socket_inertia_temp: {socket_inertia_temp}', socket_inertia_temp=socket_inertia_temp)
         # jax.debug.print('tibia_inertia_temp: {tibia_inertia_temp}', tibia_inertia_temp)
 
         tibia_inertia = tibia_center_of_mass
@@ -1851,7 +1985,7 @@ class ProsthesisRandomizer(DomainRandomizer):
 
         
         # jax.debug.print('tibia_inertia: {tibia_inertia}', tibia_inertia=tibia_inertia)
-        jax.debug.print('socket_inertia: {socket_inertia}', socket_inertia=socket_inertia)
+        # jax.debug.print('socket_inertia: {socket_inertia}', socket_inertia=socket_inertia)
 
         if backend == jnp: 
             modified_body_idx = jnp.array([self._tibia_idx, self._socket_idx])
@@ -1885,6 +2019,435 @@ class ProsthesisRandomizer(DomainRandomizer):
 
 
         return all_mass, all_inertia, all_center_of_mass
+
+
+
+    def _adapt_muscle_parameters(self, model: Union[MjModel, Model],  
+                                        backend: ModuleType, talus_offset_y, amputated_tibia_length) -> Union[MjModel, Model]:
+        """
+        Adapt muscle parameters (attachment sites) based on the new tibia length.
+        
+        This method recalculates muscle attachment site positions on the tibia based on
+        the change in amputation height (talus_offset_y).
+        
+        Args:
+            model (Union[MjModel, Model]): The simulation model.
+            env (Any): The environment instance (contains reattach_muscle_names, etc.).
+            backend (ModuleType): Backend module used for calculation (e.g., numpy or jax.numpy).
+            talus_offset_y (float): The offset in Y position of talus due to amputation height change.
+        
+        Returns:
+            Union[MjModel, Model]: The modified model with updated muscle attachment sites.
+        """
+        # Check if reattach_muscle is enabled in environment
+        # if not hasattr(env, 'reattach_muscle') or not env.reattach_muscle:
+        #     return model
+        
+        if not hasattr(self, '_muscles_to_reattach_site_indices') or not self._muscles_to_reattach_site_indices:
+            return model
+        
+        assert_backend_is_supported(backend)
+        
+        # Get new tibia length
+        org_amp_tibia_length = amputated_tibia_length  #env.amputated_tibia_length
+        new_amp_tibia_length = org_amp_tibia_length - talus_offset_y
+        
+        # Calculate the scaling factor for muscle attachment positions
+        # tibia_length_ratio = new_amp_tibia_length / org_amp_tibia_length if org_amp_tibia_length > 0 else 1.0
+        
+        # Update muscle attachment sites
+        length_ratio = 1.0  # Initialize with identity
+        P3_org_all={}
+        if backend == np:
+            site_pos = model.site_pos.copy()
+            
+            for act_name, act_idx in self._muscles_to_reattach_act_indices.items():
+                p2_site_name = act_name + '-P2'
+                p3_site_name = act_name + '-P3'
+                
+                if p2_site_name in self._muscles_to_reattach_site_indices and p3_site_name in self._muscles_to_reattach_site_indices:
+                    p2_idx = self._muscles_to_reattach_site_indices[p2_site_name][0]
+                    p3_idx = self._muscles_to_reattach_site_indices[p3_site_name][0]
+                    
+                    P2 = site_pos[p2_idx]
+                    P3 = site_pos[p3_idx]
+                    P3_org_all[act_name]=P3
+                    # Calculate slopes
+                    delta_y = P2[1] - P3[1]
+                    if delta_y != 0:
+                        m_x_y = (P2[0] - P3[0]) / delta_y
+                        m_z_y = (P2[2] - P3[2]) / delta_y
+                        d_x_y = P2[0] - m_x_y * P2[1]
+                        d_z_y = P2[2] - m_z_y * P2[1]
+                    else:
+                        m_x_y = 0.0
+                        m_z_y = 0.0
+                        d_x_y = P2[0]
+                        d_z_y = P2[2]
+                    
+                    # Calculate new position
+                    new_y = -new_amp_tibia_length
+                    new_x = m_x_y * new_y + d_x_y
+                    new_z = m_z_y * new_y + d_z_y
+                    
+                    new_pos = backend.array([new_x, new_y, new_z])
+                    site_pos[p3_idx] = new_pos
+                    
+                    # # Calculate length ratio
+                    # new_diff = backend.linalg.norm(new_pos - P2)
+                    # old_diff = backend.linalg.norm(P3 - P2)
+                    # length_ratio = new_diff / old_diff
+                    
+
+        elif backend == jnp:
+            # For JAX, update sites immutably
+            site_pos = model.site_pos
+            lengthrange = model.actuator_lengthrange.copy()
+            
+            for act_name, act_idx in self._muscles_to_reattach_act_indices.items():
+                p2_site_name = act_name + '-P2'
+                p3_site_name = act_name + '-P3'
+                
+                p2_idx = self._muscles_to_reattach_site_indices[p2_site_name][0]
+                p3_idx = self._muscles_to_reattach_site_indices[p3_site_name][0]
+                
+                P2 = site_pos.at[p2_idx].get()
+                P3 = site_pos.at[p3_idx].get()
+                P3_org_all[act_name]=P3
+                # Calculate slopes
+                delta_y = P2[1] - P3[1]
+                m_x_y = jnp.where(delta_y != 0, (P2[0] - P3[0]) / delta_y, 0.0)
+                m_z_y = jnp.where(delta_y != 0, (P2[2] - P3[2]) / delta_y, 0.0)
+                d_x_y = P2[0] - m_x_y * P2[1]
+                d_z_y = P2[2] - m_z_y * P2[1]
+                
+                # Calculate new position
+                new_y = -new_amp_tibia_length
+                new_x = m_x_y * new_y + d_x_y
+                new_z = m_z_y * new_y + d_z_y
+                
+                new_pos = jnp.array([new_x, new_y, new_z])
+                site_pos = site_pos.at[p3_idx].set(new_pos)
+                
+        #         # Calculate length ratio and apply it immediately to avoid tracer leaks
+        #         new_diff = backend.linalg.norm(new_pos - P2)
+        #         old_diff = backend.linalg.norm(P3 - P2)
+        #         ratio = new_diff / old_diff
+                
+        #         # Update lengthrange immediately within the loop
+        #         current_range = lengthrange[act_idx]
+        #         new_range = current_range * ratio
+        #         # lengthrange[act_idx] = new_range
+        #         lengthrange = jnp.array(model.actuator_lengthrange)
+        #         new_lengthrange = lengthrange.at[act_idx].set(new_range)
+        #         model = model.replace(actuator_lengthrange=new_lengthrange)
+        
+        # # # Update lengthrange for numpy backend
+        # # if backend == np:
+        # #     lengthrange = model.actuator_lengthrange.copy()
+        # #     for _, act_idx in self._muscles_to_reattach_act_indices.items():
+        # #         current_range = lengthrange[act_idx]
+        # #         new_range = current_range * length_ratio
+        # #         lengthrange[act_idx] = new_range
+        
+        # jax.debug.print('old_site_pos: {site_pos}', site_pos=P3)
+        # jax.debug.print('new_site_pos: {site_pos}', site_pos=new_pos )
+        return site_pos, P3_org_all #, model#, lengthrange
+    
+    # def _adapt_muscle_lengthrange(self, model: Union[MjModel, Model], backend: ModuleType, 
+    #                                 tibia_length_ratio: float) -> Union[np.ndarray, jnp.ndarray]:
+    #     """
+    #     Adapt muscle lengthrange based on the new tibia length ratio.
+        
+    #     Args:
+    #         model (Union[MjModel, Model]): The simulation model.
+    #         backend (ModuleType): Backend module used for calculation (e.g., numpy or jax.numpy).
+    #         tibia_length_ratio (float): The ratio of new tibia length to original tibia length.
+        
+    #     Returns:
+    #         Union[np.ndarray, jnp.ndarray]: Updated muscle lengthrange array.
+    #     """
+    #     if not hasattr(self, '_muscles_to_reattach_site_indices') or not self._muscles_to_reattach_site_indices:
+    #         if backend == np:
+    #             return model.muscle_lengthrange.copy()
+    #         else:
+    #             return model.muscle_lengthrange
+        
+    #     if backend == np:
+    #         lengthrange = model.a_lengthrange.copy()
+            
+    #         # Scale lengthrange for affected muscles
+    #         for site_name in self._muscles_to_reattach_site_indices.keys():
+    #             # Extract muscle name from site name (remove -P2/-P3 suffix)
+    #             muscle_name = site_name.rsplit('-', 1)[0]
+    #             muscle_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_MUSCLE, muscle_name)
+                
+    #             if muscle_idx != -1:
+    #                 # Scale both min and max lengthrange by the tibia length ratio
+    #                 lengthrange[muscle_idx, 0] *= tibia_length_ratio
+    #                 lengthrange[muscle_idx, 1] *= tibia_length_ratio
+        
+    #     elif backend == jnp:
+    #         lengthrange = model.muscle_lengthrange
+            
+    #         for site_name in self._muscles_to_reattach_site_indices.keys():
+    #             muscle_name = site_name.rsplit('-', 1)[0]
+    #             muscle_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_MUSCLE, muscle_name)
+                
+    #             if muscle_idx != -1:
+    #                 current_range = lengthrange[muscle_idx]
+    #                 new_range = current_range * tibia_length_ratio
+    #                 lengthrange = lengthrange.at[muscle_idx].set(new_range)
+        
+    #     return lengthrange
+
+
+
+
+
+
+
+    ### WRONG?
+    # def _adapt_tibia_socket_parameters(self, model: Union[MjModel, Model], data: Union[MjData, Data],
+    #                                    carry: Any, backend: ModuleType) -> Tuple[Union[np.ndarray, jnp.ndarray], Any]:
+          
+    #     # tibia_name = 'tibia' + self.prosthesis_side_str
+    #     # socket_name = 'pylon_socket' + self.prosthesis_side_str
+    #     # talus_name = 'talus' + self.prosthesis_side_str
+    #     # socket_joints = ['socket_flexion', 'socket_adduction', 'socket_rotation', 'socket_tx', 'socket_ty', 'socket_tz']
+    #     # socket_joints = [j + self.prosthesis_side_str for j in socket_joints]
+
+    #     # # Iterate over socket joints and find them in model and get their pos
+    #     # socket_joint_indices = {}
+    #     # joint_pos = {}
+    #     # valid_socket_joints = {}
+    #     # for j in socket_joints: 
+    #     #     idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, j)
+    #     #     if idx != -1: 
+    #     #         joint_pos[j] = model.jnt_pos[idx]
+    #     #         socket_joint_indices[j] =idx
+    #     #         valid_socket_joints[j] = j
+
+    #     # Check if all elements are the same
+    #     pos_y = []
+    #     for j in self.valid_socket_joints:
+    #         pos_y.append(self.joint_pos[j][1])
+
+    #     different_values_in_list = len(set(pos_y))
+        
+    #     assert different_values_in_list ==1,"Socket joints are not all in the same position"
+
+    #     # Get tibia data
+    #     # tibia_idx= mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, tibia_name)
+    #     org_tibia_mass = model.body_mass[self._tibia_idx].copy()
+    #     org_tibia_inertia = model.body_inertia[self._tibia_idx].copy()
+    #     org_tibia_iquat =model.body_iquat[self._tibia_idx].copy()
+    #     org_tibia_center_of_mass = model.body_ipos[self._tibia_idx].copy()
+    
+
+    #     # Get socket data 
+    #     # socket_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, socket_name)
+    #     org_socket_mass = model.body_mass[self._socket_idx].copy()
+    #     org_socket_inertia = model.body_inertia[self._socket_idx].copy()
+    #     org_socket_iquat = model.body_iquat[self._socket_idx].copy()
+    #     org_socket_center_of_mass = model.body_ipos[self._socket_idx].copy()
+    #     # org_socket_pos = model.body_pos[self._socket_idx]
+    #     socket_top_pos_in_tibia = model.body_pos[self._socket_idx].copy()
+        
+    #     socket_jnt_pos_in_socket = pos_y[0] # Position where overlap between tibia and socket end 
+
+    #     jax.debug.print('org_tibia_mass: {org_tibia_mass}', org_tibia_mass=org_tibia_mass)
+    #     jax.debug.print('org_socket_mass: {org_socket_mass}', org_socket_mass=org_socket_mass)
+       
+    #     org_tibia_quat_sort = backend.concatenate([org_tibia_iquat[1:4], org_tibia_iquat[0:1]],axis=0)
+    #     org_socket_quat_sort = backend.concatenate([org_socket_iquat[1:4], org_socket_iquat[0:1]],axis=0)
+
+    #     if backend == jnp: 
+    #         tibia_rot = jaxR.from_quat(org_tibia_quat_sort)
+    #         socket_rot = jaxR.from_quat(org_socket_quat_sort)
+    #     elif backend == np: 
+    #         tibia_rot = R.from_quat(org_tibia_quat_sort)
+    #         socket_rot = R.from_quat(org_socket_quat_sort)
+
+    #     # jax.debug.print('org_tibia_inertia: {org_tibia_inertia}', org_tibia_inertia=org_tibia_inertia)
+    #     jax.debug.print('org_socket_inertia: {org_socket_inertia}', org_socket_inertia=org_socket_inertia)
+
+    #     org_tibia_inertia_rot= tibia_rot.apply(org_tibia_inertia)
+    #     org_socket_inertia_rot = socket_rot.apply(org_socket_inertia)
+        
+    #     # jax.debug.print('org_tibia_inertia_rot: {org_tibia_inertia_rot}', org_tibia_inertia_rot=org_tibia_inertia_rot)
+    #     jax.debug.print('org_socket_inertia_rot: {org_socket_inertia_rot}', org_socket_inertia_rot=org_socket_inertia_rot)
+
+        
+
+    #     # Tibia length before changes through socket_ty 
+    #     tibia_length = backend.abs(socket_top_pos_in_tibia[1] + socket_jnt_pos_in_socket)
+    #     # talus_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, talus_name)
+    #     socket_length = backend.abs(model.body_pos[self._talus_idx][1])# top until talus pos 
+
+
+    #     # if socket_ty positive (moving up): decrease tibia and increase socket 
+    #     # If socket_ty negative (moving down): incirease tibia and decrease socket
+
+    #     # assert model.qpos0[self._socket_ty_idx] < tibia_length  
+    #     # 
+    #     # socket_ty_name = 'socket_ty' + self.prosthesis_side_str
+    #     # socket_ty_idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, socket_ty_name)
+    #     # socket_ty_idx =  model.jnt_qposadr[socket_ty_idx]
+    #     tibia_ratio = tibia_length -  model.qpos0[self._socket_ty_idx] / tibia_length
+    #     socket_ratio = socket_length + model.qpos0[self._socket_ty_idx] /socket_length
+
+    #     jax.debug.print('tibia_ratio: {tibia_ratio}', tibia_ratio=tibia_ratio)
+    #     jax.debug.print('socket_ratio: {socket_ratio}', socket_ratio=socket_ratio)
+
+    #     jax.debug.print('socket_ty: {socket_ty}', socket_ty=model.qpos0[self._socket_ty_idx])
+    #     jax.debug.print('tibia_length: {tibia_length}', tibia_length=tibia_length)
+    #     jax.debug.print('socket_length: {socket_length}', socket_length=socket_length)
+
+
+    #     # Update values depending on level of amputation
+    #     tibia_mass = org_tibia_mass * tibia_ratio
+    #     socket_mass = org_socket_mass * socket_ratio
+
+    #     # jax.debug.print('tibia_mass: {org_tibia_mass}', org_tibia_mass=tibia_mass)
+    #     # jax.debug.print('socket_mass: {org_socket_mass}', org_socket_mass=socket_mass)
+
+
+    #     # tibia_inertia_rot = org_tibia_inertia_rot
+    #     tibia_radius = self._calculate_cylinder_radius(org_tibia_mass, org_tibia_inertia_rot[1])
+    #     # tibia_inertia_rot[1] = org_tibia_inertia_rot[1] * tibia_ratio
+    #     # tibia_inertia_rot[0] = self._calculate_cylinder_inertia_xorz(org_tibia_mass, tibia_radius, tibia_length -  data.qpos[self._socket_ty_idx])
+    #     # tibia_inertia_rot[2] = tibia_inertia_rot[0]
+
+    #     # tibia_inertia = tibia_rot.apply(tibia_inertia_rot, inverse = True)
+        
+
+    #     # socket_inertia_rot = []
+    #     socket_radius = self._calculate_cylinder_radius(org_socket_mass, org_socket_inertia_rot[1])
+    #     # socket_inertia_rot[1] = org_socket_inertia_rot[1] * socket_ratio
+    #     # socket_inertia_rot[0] = self._calculate_cylinder_inertia_xorz(org_socket_mass, socket_radius, socket_length[1] + data.qpos[self._socket_ty_idx])
+    #     # socket_inertia_rot[2] = socket_inertia_rot[0]
+
+    #     tibia_inertia_rot_x_z= self._calculate_cylinder_inertia_xorz(org_tibia_mass, tibia_radius, tibia_length -  data.qpos[self._socket_ty_idx])
+
+    #     socket_inertia_rot_x_z=self._calculate_cylinder_inertia_xorz(org_socket_mass, socket_radius, socket_length + data.qpos[self._socket_ty_idx])
+
+
+    #     # socket_inertia = socket_rot.apply(socket_inertia_rot, inverse = True)
+
+    #     if backend == jnp: 
+    #         # tibia_inertia = org_tibia_inertia
+    #         # tibia_inertia = tibia_inertia.at[1].set(org_tibia_inertia[1] * tibia_ratio)
+    #         # tibia_inertia = 
+    #         tibia_inertia_rot = org_tibia_inertia_rot
+    #         tibia_inertia_rot = tibia_inertia_rot.at[1].set(org_tibia_inertia_rot[1] * tibia_ratio)
+    #         tibia_inertia_rot = tibia_inertia_rot.at[jnp.array([0])].set(tibia_inertia_rot_x_z)
+    #         tibia_inertia_rot = tibia_inertia_rot.at[jnp.array([2])].set(tibia_inertia_rot_x_z)
+
+    #         socket_inertia_rot = org_socket_inertia_rot
+    #         socket_inertia_rot = socket_inertia_rot.at[1].set(org_socket_inertia_rot[1] * socket_ratio)
+    #         socket_inertia_rot = socket_inertia_rot.at[jnp.array([0])].set(socket_inertia_rot_x_z)
+    #         socket_inertia_rot = socket_inertia_rot.at[jnp.array([2])].set(socket_inertia_rot_x_z)
+
+    #         jax.debug.print('socket_inertia_rot: {socket_inertia_rot}', socket_inertia_rot=socket_inertia_rot)
+
+    #         tibia_center_of_mass = org_tibia_center_of_mass
+    #         tibia_center_of_mass= tibia_center_of_mass.at[1].set(org_tibia_center_of_mass[1] * tibia_ratio)
+
+    #         socket_center_of_mass = org_socket_center_of_mass
+    #         socket_center_of_mass= socket_center_of_mass.at[1].set(org_socket_center_of_mass[1] * socket_ratio)
+
+    #     elif backend == np: 
+    #         # tibia_inertia = org_tibia_inertia
+    #         # tibia_inertia[1] = org_tibia_inertia * tibia_ratio
+
+
+    #         tibia_inertia_rot = org_tibia_inertia_rot
+    #         tibia_inertia_rot[1] = org_tibia_inertia_rot[1] * tibia_ratio
+    #         tibia_inertia_rot[0] = tibia_inertia_rot_x_z
+    #         tibia_inertia_rot[2] = tibia_inertia_rot_x_z
+
+    #         # jax.debug.print('tibia_inertia_rot: {tibia_inertia_rot} ', tibia_inertia_rot=tibia_inertia_rot)
+
+
+
+    #         socket_inertia_rot = org_socket_inertia_rot
+    #         socket_inertia_rot[1] = org_socket_inertia_rot[1] * socket_ratio
+    #         socket_inertia_rot[0] = socket_inertia_rot_x_z
+    #         socket_inertia_rot[2] = socket_inertia_rot_x_z
+
+    #         jax.debug.print('socket_inertia_rot: {socket_inertia_rot}', socket_inertia_rot=socket_inertia_rot)
+
+        
+    #         tibia_center_of_mass = org_tibia_center_of_mass
+    #         tibia_center_of_mass[1] = org_tibia_center_of_mass[1] * tibia_ratio
+
+    #         # socket_inertia = org_socket_inertia
+    #         # socket_inertia[1] = org_socket_inertia *socket_ratio
+
+    #         # socket_inertia = org_socket_inertia * socket_ratio
+    #         socket_center_of_mass = org_socket_center_of_mass
+    #         socket_center_of_mass[1] = org_socket_center_of_mass[1] *socket_ratio
+
+        
+    #     tibia_inertia_temp = backend.abs(tibia_rot.inv().apply(tibia_inertia_rot))
+    #     socket_inertia_temp = backend.abs(socket_rot.inv().apply(socket_inertia_rot))
+
+    #     jax.debug.print('socket_inertia_temp: {socket_inertia_temp}', socket_inertia_temp=socket_inertia_temp)
+    #     # jax.debug.print('tibia_inertia_temp: {tibia_inertia_temp}', tibia_inertia_temp)
+
+    #     tibia_inertia = tibia_center_of_mass
+    #     socket_inertia = socket_center_of_mass
+        
+    #     if backend == jnp: 
+    #         tibia_inertia = tibia_inertia.at[...,0].set(tibia_inertia_temp[0,...])
+    #         tibia_inertia = tibia_inertia.at[...,1].set(tibia_inertia_temp[1,...])
+    #         tibia_inertia = tibia_inertia.at[...,2].set(tibia_inertia_temp[2,...])
+
+    #         socket_inertia = socket_inertia.at[...,0].set(socket_inertia_temp[0,...])
+    #         socket_inertia = socket_inertia.at[...,1].set(socket_inertia_temp[1,...])
+    #         socket_inertia = socket_inertia.at[...,2].set(socket_inertia_temp[2,...])
+    #     elif backend == np: 
+    #         tibia_inertia = tibia_inertia_temp
+    #         socket_inertia = socket_inertia_temp
+
+
+        
+    #     # jax.debug.print('tibia_inertia: {tibia_inertia}', tibia_inertia=tibia_inertia)
+    #     jax.debug.print('socket_inertia: {socket_inertia}', socket_inertia=socket_inertia)
+
+    #     if backend == jnp: 
+    #         modified_body_idx = jnp.array([self._tibia_idx, self._socket_idx])
+    #         modified_mass = jnp.array([tibia_mass, socket_mass])
+    #         modified_inertia = jnp.array([tibia_inertia, socket_inertia])
+    #         modified_center_of_mass = jnp.array([tibia_center_of_mass, socket_center_of_mass])
+
+
+    #         all_mass = model.body_mass.at[modified_body_idx].set(modified_mass)
+    #         all_inertia = model.body_inertia.at[modified_body_idx].set(modified_inertia)
+    #         all_center_of_mass = model.body_ipos.at[modified_body_idx].set(modified_center_of_mass)
+    #         # all_mass = model.body_mass.at[...,self._tibia_idx].set(tibia_mass)
+    #         # all_mass = model.body_mass.at[...,self._socket_idx].set(socket_mass)
+    #         # all_inertia = model.body_inertia.at[...,self._tibia_idx].set(tibia_inertia)
+    #         # all_inertia = model.body_inertia.at[...,self._socket_idx].set(socket_inertia)
+    #         # all_center_of_mass = model.body_ipos.at[...,self._tibia_idx].set(tibia_center_of_mass)
+    #         # all_center_of_mass = model.body_ipos.at[...,self._socket_idx].set(socket_center_of_mass)
+
+    #     elif backend == np: 
+    #         all_mass = model.body_mass.copy()
+    #         all_mass[self._tibia_idx] = tibia_mass
+    #         all_mass[self._socket_idx] = socket_mass
+
+    #         all_inertia = model.body_inertia.copy()
+    #         all_inertia[self._tibia_idx] = tibia_inertia
+    #         all_inertia[self._socket_idx] = socket_inertia
+
+    #         all_center_of_mass = model.body_ipos.copy()
+    #         all_center_of_mass[self._tibia_idx] = tibia_center_of_mass
+    #         all_center_of_mass[self._socket_idx] = socket_center_of_mass
+
+
+    #     return all_mass, all_inertia, all_center_of_mass
 
 
 

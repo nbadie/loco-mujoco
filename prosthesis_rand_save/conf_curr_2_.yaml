@@ -1,0 +1,158 @@
+defaults:
+  - override hydra/job_logging: default
+  - override hydra/launcher: basic
+
+
+wandb:
+  project: "deepmimic"
+  run_name: "SACHFoot_LatRange05Coeff01_ActPenSquare00_3SpheresScone_solref_900_200_Gas_SlackRange002_SocketTySlack_ObsPosOriSocket_RandPosOriSocketTalus_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal"
+  #"SACHFoot_LatRange05Coeff01_ActPenSquare003_ContSphere2_Gas_SlackRange002_SocketTySlack_ObsPosOriSocket_RandPosOriSocketTalus_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal"
+experiment:
+  task_factory:
+    name: ImitationFactory
+    params:
+      default_dataset_conf:
+        task: walk
+  env_params:
+    env_name: MjxSkeletonMuscleProsthesis
+    prosthesis_side: 'left_side'
+    prosthesis_type: 'transtibial'
+    prosthesis_subtype: SACH
+    delete_joints: false
+    remove_joint_names: ['subtalar_angle']
+    tibia_socket_offset_z: 0
+    tibia_socket_offset_x: 0
+    tibia_socket_overlap: 0.2
+    amputated_tibia_length: 0.2
+    limit_knee_extension: False #True #False #true
+    knee_extension_limit: {'knee_angle_r': [-120,0]} # 5
+    # contact_solref: [0.03, 1]
+    contact_geom_type: '3spheres_scone' #'sphere_scone_exact' #'sphere_tiptoe' #'cylinder' #'sphere' # 'box' or  'sphere'
+    socket_ty_slack: true
+    # socket_tx_joint: false
+    # socket_tz_joint: false
+    contact_solref: [-900,-200] #[-3000,-150]
+    add_pos_ori_to_observation: true
+    joint_stiffness: {'ankle_angle': 1200}
+    reattach_muscle: true
+    reattach_muscles_offset: {'med_gas': [0,0,0]}
+    use_2_box_per_foot: true
+    headless: true
+    disable_arms: false
+    horizon: 1000
+    goal_type: GoalTrajMimic
+    goal_params:
+      visualize_goal: true
+    control_type: ${control_config.torque_control.control_type}
+    control_params: ${control_config.torque_control.control_params}
+    reward_type: MimicRewardVelArm
+    reward_params:
+      qpos_w_sum: 0.4
+      qvel_w_sum: 0.2
+      rpos_w_sum: 0.5
+      rquat_w_sum: 0.3
+      rvel_w_sum: 0.1
+      action_coeff: 0.03
+      lateral_range_coeff: 0.1
+      lateral_pos_reward_range: 0.5
+      sites_for_mimic:
+      - upper_body_mimic
+      # - left_hand_mimic
+      # - left_knee_mimic
+      # - left_foot_mimic
+      # - right_hand_mimic
+      # - right_knee_mimic
+      # - right_foot_mimic
+  hidden_layers:
+  - 512
+  - 256
+  lr: 0.0001
+  num_envs: 2048
+  num_steps: 200
+  total_timesteps: 600e6 #1500000000.0
+  result_dir: None
+  checkpoint_num: 6
+  update_epochs: 4
+  proportion_env_reward: 0.0
+  num_minibatches: 32
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.2
+  init_std: 0.2
+  learnable_std: true
+  ent_coef: 0.0
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  activation: tanh
+  anneal_lr: false
+  weight_decay: 0.0
+  normalize_env: true
+  debug: false
+  n_seeds: 1
+  vmap_across_seeds: true
+  validation:
+    active: true
+    num_steps: 100
+    num_envs: 100
+    num: 10
+    quantities:
+    - JointPosition
+    - JointVelocity
+    - RelSitePosition
+    - RelSiteVelocity
+    - RelSiteOrientation
+    measures:
+    - EuclideanDistance
+    - DynamicTimeWarping
+    - DiscreteFrechetDistance
+    rel_site_names:
+    - upper_body_mimic
+    - left_hand_mimic
+    - left_foot_mimic
+    - right_hand_mimic
+    - right_foot_mimic
+control_config:
+  torque_control:
+    control_type: SkeletonMuscleControlFunction #DefaultControl
+    control_params: 
+
+randomization_config:
+    randomization_type: ProsthesisRandomizer
+    randomization_params:
+      randomize_prosthesis_dof_damping: False 
+      prosthesis_dof_damping_range: {'ankle_angle': [2, 10]} 
+
+      randomize_prosthesis_joint_stiffness: False 
+
+      prosthesis_joint_stiffness_range: {'ankle_angle': [50, 100]} 
+
+      randomize_prosthesis_body_position: True
+      # prosthesis_body_position_range: {'pylon_socket': {'x': [-0.01,0.01],'z': [-0.01,0.01]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
+      prosthesis_body_position_range: {'pylon_socket': {'x': [-0.02,0.02],'z': [-0.02,0.02]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
+      #,'talus': {'x': [-0.02,0.02],'z': [-0.02,0.02]}}
+
+      # prosthesis_body_position_range: {'pylon_socket': {'x': [-0.02,0.02],'z': [-0.02,0.02]}} #,'talus': {'z': [0.08726, 0.08726]}}
+
+
+      # prosthesis_body_position_range: {'pylon_socket': {'z': [-0.015,-0.015]}}
+      # prosthesis_body_position_range: {'pylon_socket': {'x': [-0.01,0.01],'z': [-0.01,0.01]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
+
+
+      randomize_prosthesis_body_orientation: True
+      # prosthesis_body_orientation_range: {'pylon_socket': {'y': [-0.1,-0.1]}}
+      # prosthesis_body_orientation_range: {'pylon_socket': {'x': [-0.1,0.1],'y': [-0.3,0.3],'z': [-0.1,0.1]},'talus': {'x': [-0.1,0.1],'y': [-0.3,0.3],'z': [-0.1,0.1]}}
+      prosthesis_body_orientation_range: {'pylon_socket': {'x': [-0.2,0.2],'y': [-0.3,0.3],'z': [-0.2,0.2]},'talus': {'x': [-0.1,0.1],'z': [-0.1,0.1]}}
+      # talus': {'x': [-0.2,0.2],'y': [-0.3,0.3],'z': [-0.2,0.2]}}
+
+      # prosthesis_body_orientation_range: {'pylon_socket': {'x': [-0.2,0.2],'y': [-0.3,0.3],'z': [-0.2,0.2]},'talus': {'z': [0.08726, 0.08726]}}
+
+
+
+      randomize_prosthesis_socket_joint: False 
+      socket_joint_range: {
+          'socket_ty': [-0.25,0.025]  
+      }
+      adapt_tibia_socket_parameters: False
+
+
+checkpoint_path: ''

@@ -5,7 +5,7 @@ defaults:
 
 wandb:
   project: "deepmimic"
-  run_name: "SACHFoot_Cont1Box_Gas_SlackRange002_SocketTySlack_ObsPosOriSocket_RandPosOriSocketTalus_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal"
+  run_name: "SACHFoot_SphereSconeExact_solref_900_200_KneeHLin0_Gas_SlackRange002_SocketTySlack_ObsPosOriSocket_RandPosOriSocket_KneeMimic_LaPreStiffDamp_BothSideToeSameStiffDamp_NoAnkleSubTal"
 experiment:
   task_factory:
     name: ImitationFactory
@@ -23,16 +23,20 @@ experiment:
     tibia_socket_offset_x: 0
     tibia_socket_overlap: 0.2
     amputated_tibia_length: 0.2
-    limit_knee_extension: False #true
-    knee_extension_limit: 5
+    limit_knee_extension: False #True #true
+    knee_extension_limit: {'knee_angle_r': [-120,0]} # 5
     # contact_solref: [0.03, 1]
-    # contact_geom_type: 'sphere' #'cylinder' #'sphere' # 'box' or  'sphere'
+    contact_geom_type: 'sphere_scone_exact' #'sphere_scone' #'3spheres' #'cylinder' #'sphere' # 'box' or  'sphere'
     socket_ty_slack: true
+    # socket_tx_joint: false 
+    # socket_tz_joint: false 
+    # socket_ty_joint_range:  [-0.0005, 0.0005] # [-0.000005, 0.000005] #[-0.01, 0.01] #[-0.02, 0.02]
+    contact_solref: [-900,-200] #[-500,-800]
     add_pos_ori_to_observation: true
     joint_stiffness: {'ankle_angle': 1200}
     reattach_muscle: true
     reattach_muscles_offset: {'med_gas': [0,0,0]}
-    # use_2_box_per_foot: true
+    use_2_box_per_foot: true
     headless: true
     disable_arms: false
     horizon: 1000
@@ -125,6 +129,8 @@ randomization_config:
       randomize_prosthesis_body_position: True
       # prosthesis_body_position_range: {'pylon_socket': {'x': [-0.01,0.01],'z': [-0.01,0.01]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
       prosthesis_body_position_range: {'pylon_socket': {'x': [-0.02,0.02],'z': [-0.02,0.02]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
+      
+      # prosthesis_body_position_range: {'pylon_socket': {'x': [-0.02,0.02],'z': [-0.02,0.02]}} #,'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
       #,'talus': {'x': [-0.02,0.02],'z': [-0.02,0.02]}}
 
       # prosthesis_body_position_range: {'pylon_socket': {'z': [-0.015,-0.015]}}
@@ -134,8 +140,13 @@ randomization_config:
       randomize_prosthesis_body_orientation: True
       # prosthesis_body_orientation_range: {'pylon_socket': {'y': [-0.1,-0.1]}}
       # prosthesis_body_orientation_range: {'pylon_socket': {'x': [-0.1,0.1],'y': [-0.3,0.3],'z': [-0.1,0.1]},'talus': {'x': [-0.1,0.1],'y': [-0.3,0.3],'z': [-0.1,0.1]}}
+      
       prosthesis_body_orientation_range: {'pylon_socket': {'x': [-0.2,0.2],'y': [-0.3,0.3],'z': [-0.2,0.2]},'talus': {'x': [-0.1,0.1],'z': [-0.1,0.1]}}
+      
       # 'talus': {'x': [-0.2,0.2],'y': [-0.3,0.3],'z': [-0.2,0.2]}}
+
+
+      # prosthesis_body_orientation_range: {'pylon_socket': {'x': [-0.2,0.2],'y': [-0.3,0.3],'z': [-0.2,0.2]},'talus': {'z': [-0.08726, -0.08726]}}
 
 
       randomize_prosthesis_socket_joint: False 

@@ -108,11 +108,14 @@ def experiment(config: DictConfig):
 
 
         # jit and vmap training function
-        train_fn = jax.jit(jax.vmap(train_fn)) if config.experiment.n_seeds > 1 else jax.jit(train_fn)
+        # train_fn = jax.jit(jax.vmap(train_fn)) if config.experiment.n_seeds > 1 else jax.jit(train_fn)
+        train_fn = jax.jit(jax.vmap(train_fn, axis_name='batch')) if config.experiment.n_seeds > 1 else jax.jit(train_fn)
 
         # get rng keys and run training
-        # skip_seed = 1
-        # rngs = [jax.random.PRNGKey(i) for i in range(skip_seed,config.experiment.n_seeds+1)]  # create rngs from seed
+        # if config.experiment.n_seeds > 1: 
+        #     skip_seed = 1
+        #     rngs = [jax.random.PRNGKey(i) for i in range(skip_seed,config.experiment.n_seeds+1)]  # create rngs from seed
+        # else:
         rngs = [jax.random.PRNGKey(i) for i in range(config.experiment.n_seeds+1)]  # create rngs from seed
         rng, _rng = rngs[0], jnp.squeeze(jnp.vstack(rngs[1:]))
         out = train_fn(_rng) #, agent_state=agent_state)
@@ -159,11 +162,18 @@ def experiment(config: DictConfig):
                     run.log(metrics_to_log, step=int(training_metrics.max_timestep[i]))
 
                     # metric for used for wandb sweep (optional)
-                    site_rpos = validation_metrics.euclidean_distance.site_rpos[i]
-                    site_rrotvec = validation_metrics.euclidean_distance.site_rpos[i]
-                    site_rvel = validation_metrics.euclidean_distance.site_rpos[i]
-                    run.log({"Metric for Sweep": site_rpos + site_rrotvec + site_rvel},
-                            step=int(training_metrics.max_timestep[i]))
+                    if jnp.all(validation_metrics.euclidean_distance.site_rpos == 0):
+                        metric_value = validation_metrics.euclidean_distance.vel_x[i] + validation_metrics.euclidean_distance.vel_z[i] + validation_metrics.euclidean_distance.torque_at_limit[i]
+                    else:
+                        site_rpos = validation_metrics.euclidean_distance.site_rpos[i]
+                        site_rrotvec = validation_metrics.euclidean_distance.site_rrotvec[i]
+                        site_rvel = validation_metrics.euclidean_distance.site_rvel[i]
+                        metric_value = site_rpos + site_rrotvec + site_rvel
+                    # site_rpos = validation_metrics.euclidean_distance.site_rpos[i]
+                    # site_rrotvec = validation_metrics.euclidean_distance.site_rpos[i]
+                    # site_rvel = validation_metrics.euclidean_distance.site_rpos[i]
+                    # run.log({"Metric for Sweep": site_rpos + site_rrotvec + site_rvel},
+                    #         step=int(training_metrics.max_timestep[i]))
 
         print(f"Time taken to log metrics: {time.time() - t_start}s")
 

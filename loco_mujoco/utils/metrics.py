@@ -14,7 +14,8 @@ from loco_mujoco.core.utils.mujoco import mj_jntid2qposid, mj_jntid2qvelid, mj_j
 
 SUPPORTED_QUANTITIES = ["JointPosition", "JointVelocity", "BodyPosition", "BodyVelocity", "BodyOrientation",
                         "SitePosition", "SiteVelocity",
-                        "SiteOrientation", "RelSitePosition", "RelSiteVelocity", "RelSiteOrientation"]
+                        "SiteOrientation", "RelSitePosition", "RelSiteVelocity", "RelSiteOrientation",
+                        "VelX", "VelZ", "TorqueAtLimit"]
 
 SUPPORTED_MEASURES = ["EuclideanDistance", "DynamicTimeWarping", "DiscreteFrechetDistance"]
 
@@ -32,7 +33,9 @@ class QuantityContainer:
     site_rpos: jnp.ndarray = struct.field(default_factory=lambda: jnp.array([]))
     site_rrotvec: jnp.ndarray = struct.field(default_factory=lambda: jnp.array([]))
     site_rvel: jnp.ndarray = struct.field(default_factory=lambda: jnp.array([]))
-
+    vel_x: jnp.ndarray = struct.field(default_factory=lambda: jnp.array([]))
+    vel_z: jnp.ndarray = struct.field(default_factory=lambda: jnp.array([]))
+    torque_at_limit: jnp.ndarray = struct.field(default_factory=lambda: jnp.array([]))
 
 @struct.dataclass
 class ValidationSummary(SummaryMetrics):
@@ -63,10 +66,19 @@ class MetricsHandler:
         rel_body_names = OmegaConf.select(self._config, "validation.rel_body_names")
         rel_site_names = OmegaConf.select(self._config, "validation.rel_site_names")
 
+        self.target_body_x = OmegaConf.select(self._config, "validation.target_body_x") or "pelvis"
+        self.target_body_z = OmegaConf.select(self._config, "validation.target_body_z") or "pelvis"
+        self.target_vel_x = OmegaConf.select(self._config, "validation.target_vel_x") or 1.2
+        self.target_vel_z = OmegaConf.select(self._config, "validation.target_vel_z") or 0
+
         if joints_to_ignore is None:
             joints_to_ignore = []
 
         model = env.get_model()
+
+        self.target_body_x_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, self.target_body_x)
+        self.target_body_z_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, self.target_body_z)
+       
         if rel_joint_names is not None:
             self.rel_qpos_ids = [jnp.array(mj_jntid2qposid(name, model)) for name in rel_joint_names
                                  if name not in joints_to_ignore]
@@ -132,6 +144,20 @@ class MetricsHandler:
         self.rel_body_ids = jnp.array(self.rel_body_ids)
         self.rel_site_ids = jnp.array(self.rel_site_ids)
 
+
+        # Extract model properties needed for torque at limit calculation
+        self.joint_limit_ranges = jnp.array([model.jnt_range[i] for i in range(model.njnt) if model.jnt_type[i] in [mujoco.mjtJoint.mjJNT_HINGE.value, mujoco.mjtJoint.mjJNT_SLIDE.value]])
+        # get joint types (0: hinge, 1: slide, 2: ball, 3: free, 4: fixed)
+        self.joint_types = jnp.array([model.jnt_type[i] for i in range(model.njnt) if model.jnt_type[i] in [mujoco.mjtJoint.mjJNT_HINGE.value, mujoco.mjtJoint.mjJNT_SLIDE.value]])
+        self.joint_hinge_margin = 0.12  # margin for hinge joint limits
+        self.joint_slide_margin = 0.003
+
+        # get joint id and qpos id mapping
+        self.joint_id_to_qpos_id = jnp.array([mj_jntid2qposid(i, model) for i in range(model.njnt) if model.jnt_type[i] in [mujoco.mjtJoint.mjJNT_HINGE.value, mujoco.mjtJoint.mjJNT_SLIDE.value]])
+        self.joint_id_to_qvel_id = jnp.array([mj_jntid2qvelid(i, model) for i in range(model.njnt) if model.jnt_type[i] in [mujoco.mjtJoint.mjJNT_HINGE.value, mujoco.mjtJoint.mjJNT_SLIDE.value]])
+
+        
+
     def __call__(self, env_states):
 
         # calculate default metrics
@@ -190,15 +216,50 @@ class MetricsHandler:
         else:
             rel_site_pos = rel_site_rotvec = rel_site_vel = traj_rel_site_pos =\
                 traj_rel_site_rotvec = traj_rel_site_vel = jnp.empty(0)
+        
+        if "VelX" in self.quantaties:
+            velx = self.get_target_body_velocity_x(env_states, self.target_body_x_id)
+            traj_velx = self.target_vel_x * jnp.ones_like(velx)
+            # expand to 4D: (S, E, 1, 1) to match other quantities structure
+            velx = jnp.expand_dims(velx, axis=2)
+            velx = jnp.expand_dims(velx, axis=-1)
+            traj_velx = jnp.expand_dims(traj_velx, axis=2)
+            traj_velx = jnp.expand_dims(traj_velx, axis=-1)
+        else:
+            velx = traj_velx = jnp.empty(0)
+        if "VelZ" in self.quantaties:
+            velz = self.get_target_body_velocity_z(env_states, self.target_body_z_id)
+            traj_velz = self.target_vel_z * jnp.ones_like(velz)
+            # expand to 4D: (S, E, 1, 1) to match other quantities structure
+            velz = jnp.expand_dims(velz, axis=2)
+            velz = jnp.expand_dims(velz, axis=-1)
+            traj_velz = jnp.expand_dims(traj_velz, axis=2)
+            traj_velz = jnp.expand_dims(traj_velz, axis=-1)
+        else:
+            velz = traj_velz = jnp.empty(0)
+        if "TorqueAtLimit" in self.quantaties:
+            torque_at_limit = self.get_torque_at_limit(env_states)
+            traj_torque_at_limit = jnp.zeros_like(torque_at_limit)
+            # expand to 4D: (S, E, 1, 1) to match other quantities structure
+            # torque_at_limit = jnp.expand_dims(torque_at_limit, axis=2)
+            torque_at_limit = jnp.expand_dims(torque_at_limit, axis=-1)
+            # traj_torque_at_limit = jnp.expand_dims(traj_torque_at_limit, axis=2)
+            traj_torque_at_limit = jnp.expand_dims(traj_torque_at_limit, axis=-1)
+        else:
+            torque_at_limit = traj_torque_at_limit = jnp.empty(0)
+
+
 
         # create containers
         container = QuantityContainer(qpos=qpos, qvel=qvel, xpos=xpos, xrotvec=xrotvec, cvel=cvel,
                                       site_xpos=site_xpos, site_xrotvec=site_xrotvec, site_xvel=site_xvel,
-                                      site_rpos=rel_site_pos, site_rrotvec=rel_site_rotvec, site_rvel=rel_site_vel)
+                                      site_rpos=rel_site_pos, site_rrotvec=rel_site_rotvec, site_rvel=rel_site_vel, 
+                                      vel_x=velx, vel_z=velz, torque_at_limit=torque_at_limit)
         container_traj = QuantityContainer(qpos=traj_qpos, qvel=traj_qvel, xpos=traj_xpos, xrotvec=traj_xrotvec,
                                            cvel=traj_cvel, site_xpos=traj_site_xpos, site_xrotvec=traj_site_xrotvec,
                                            site_xvel=traj_site_xvel, site_rpos=traj_rel_site_pos,
-                                           site_rrotvec=traj_rel_site_rotvec, site_rvel=traj_rel_site_vel)
+                                           site_rrotvec=traj_rel_site_rotvec, site_rvel=traj_rel_site_vel, 
+                                           vel_x=traj_velx, vel_z=traj_velz, torque_at_limit=traj_torque_at_limit)
 
         # the dimensions for each quantity is (S, N, D) where S is the number of samples, N is the number of elements
         # (e.g., joints, bodies, site) and D is the dimension of the quantity (e.g., position, velocity, orientation).
@@ -206,6 +267,7 @@ class MetricsHandler:
 
         container = jax.tree.map(lambda x: jnp.swapaxes(x, 0, 2) if x.size > 0 else x, container)
         container_traj = jax.tree.map(lambda x: jnp.swapaxes(x, 0, 2) if x.size > 0 else x, container_traj)
+
 
         return ValidationSummary(
             mean_episode_return=mean_episode_return,
@@ -331,6 +393,50 @@ class MetricsHandler:
         traj_states = env_states.additional_carry.traj_state
         start_idx = self._traj_data.split_points[traj_states.traj_no]
         return start_idx + traj_states.subtraj_step_no
+    
+
+    def get_target_body_velocity_x(self, env_states, target_body_id):
+        # get from data
+        body_vel = env_states.data.cvel
+
+
+        return body_vel[..., target_body_id, 3]
+
+    def get_target_body_velocity_z(self, env_states, target_body_id):
+        # get from data
+        body_vel = env_states.data.cvel
+
+
+        return body_vel[..., target_body_id, 4]
+    
+    def get_torque_at_limit(self, env_states):
+        # get from data
+        joint_pos = env_states.data.qpos
+        torque = env_states.data.qfrc_actuator
+        
+        # Compute limit margins: slide margin for slides, hinge margin for hinges
+        # Note: self.joint_types is already filtered to only hinge/slide joints in __init__
+        is_slide = self.joint_types == mujoco.mjtJoint.mjJNT_SLIDE.value
+        limit_margins = jnp.where(is_slide, self.joint_slide_margin, self.joint_hinge_margin)
+        
+        # Filter to only hinge/slide joints
+        joint_pos = joint_pos[..., self.joint_id_to_qpos_id]  # shape: (100, 100, 22, 1)
+        torque = torque[..., self.joint_id_to_qvel_id]
+        
+        # Squeeze out the last dimension to get (100, 100, 22)
+        joint_pos = jnp.squeeze(joint_pos, axis=-1)
+        torque = jnp.squeeze(torque, axis=-1)
+        # Check if each joint is at limit
+        lower_limits = self.joint_limit_ranges[:, 0]
+        upper_limits = self.joint_limit_ranges[:, 1]
+        at_limit = jnp.where((joint_pos <= lower_limits + limit_margins) | 
+                             (joint_pos >= upper_limits - limit_margins), 1.0, 0.0)
+        
+        # Apply mask: only include torques for hinge/slide joints at limits
+        torque_at_limit = jnp.where(at_limit == 1.0, torque, 0.0)
+
+        return torque_at_limit
+    
 
     @property
     def requires_trajectory(self):
@@ -351,7 +457,10 @@ class MetricsHandler:
                                       site_xvel=_zeros_if_exists("SiteVelocity"),
                                       site_rpos=_zeros_if_exists("RelSitePosition"),
                                       site_rrotvec=_zeros_if_exists("RelSiteOrientation"),
-                                      site_rvel=_zeros_if_exists("RelSiteVelocity"))
+                                      site_rvel=_zeros_if_exists("RelSiteVelocity"), 
+                                      vel_x=_zeros_if_exists("VelX"),
+                                      vel_z=_zeros_if_exists("VelZ"), 
+                                      torque_at_limit=_zeros_if_exists("TorqueAtLimit"))
 
         return ValidationSummary(mean_episode_return=jnp.array(0.0), mean_episode_length=jnp.array(0.0),
                                  max_timestep=jnp.array(0), euclidean_distance=container,

@@ -274,12 +274,12 @@ class Mjx(Mujoco):
 
             #if hasattr(self,'socket_ty_slack') and self.socket_ty_slack: 
             # Socket_ty hysterisis
-            high_stiffness = 43500 #50000 #46000 #43500 #46000 #43500 #70000 #30000 #43500
+            high_stiffness = 43500 #20000 #43500 #60000 #50000 #43500 #50000 #46000 #43500 #46000 #43500 #70000 #30000 #43500
             # middle_stiffness = 2000 #10000 #8000
-            low_stiffness = 4350 #10000 #4350 #6000 #7000 #4350 #1000
-            a = 0.02 #0.038 #0.2 #0.02 #0.038#2 #0.038 #0.02 #0.038
-            H = 0.02 #0.025 #0.02 #0.025
-            delta_shift =  0 #0.01
+            low_stiffness = 4350 #0 #10 #500 #4350 #2000 #5000 #4350 #10000 #4350 #6000 #7000 #4350 #1000
+            a = 0.02 #0.020 #0.02 #2 #0.02 #0.038 #0.2 #0.02 #0.038#2 #0.038 #0.02 #0.038
+            H = 0.02 #0.020 #0.02 #0.02 #0.025 #0.02 #0.025
+            delta_shift = 0 #-0.00015 #0 #-0.00015 #0 #-0.0003 #0 #0.02 #0 #0.01
             self.xp = jnp.array([-a+delta_shift, 0+delta_shift, H+delta_shift, H+a+delta_shift])
             self.fp = jnp.array([-high_stiffness*(a+delta_shift), 0+delta_shift, low_stiffness*(H+delta_shift), low_stiffness*(H+delta_shift)+high_stiffness*(a+delta_shift)])
             
@@ -322,7 +322,10 @@ class Mjx(Mujoco):
             #     high_stiffness * (H + a)
             # ])
         
-
+            self.transition_width = 0.05
+            self.damping = 50 
+            self.high_stiffness = high_stiffness #2000 #high_stiffness
+            self.low_stiffness = low_stiffness
 
         
 
@@ -421,6 +424,7 @@ class Mjx(Mujoco):
         # modify data and model *before* step if needed
         sys, data, carry = self._mjx_simulation_pre_step(self.sys, data, carry)
 
+        
         def _adapt_qfrc_applied(_data):
             #Adapt qfrc_applied for socket_ty slack during swing phase 
             joint_id= mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, 'socket_ty'+self.prosthesis_side)
@@ -442,6 +446,127 @@ class Mjx(Mujoco):
             # jax.debug.print('self.xp: {xp}', xp=self.xp)
 
             return _data
+
+        
+        # def _smooth_stiffness_transition(_data): 
+        #     """Smooth transition between low and high stiffness using a sigmoid-like function."""
+        #     joint_id= mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, 'socket_ty'+self.prosthesis_side)
+        #     qpos_address = self._model.jnt_qposadr[joint_id]
+        #     pistoning_qpos_adr = qpos_address
+        #     pistoning_dof_adr = self._model.jnt_dofadr[joint_id]
+        #     joint_pos = _data.qpos[pistoning_qpos_adr]
+        #     joint_vel = _data.qvel[pistoning_dof_adr]
+
+
+        #     # if self.transition_width == 0: 
+        #     #     return self.low_stiffness if joint_pos > 0 else self.high_stiffness
+            
+        #     normalized_pos = jnp.clip(joint_pos / self.transition_width, -1.0, 1.0)
+        #     blend_factor = (jnp.tanh(normalized_pos * 2) + 1) / 2 
+        #     stiffness = self.high_stiffness + (self.low_stiffness - self.high_stiffness) * blend_factor
+
+        #     spring_force = -stiffness * joint_pos
+        #     damping_force = -self.damping * joint_vel
+        #     total_force = spring_force + damping_force
+        #     # jax.debug.print('qfrc before: {qfrc_here}', qfrc_here=_data.qfrc_applied.at[pistoning_dof_adr].get())
+        #     _data = _data.replace(qfrc_applied=_data.qfrc_applied.at[pistoning_dof_adr].set(total_force))
+        #     jax.debug.print('joint_pos: {joint_pos}', joint_pos=joint_pos)
+        #     jax.debug.print('qfrc after: {qfrc_here}', qfrc_here=_data.qfrc_applied.at[pistoning_dof_adr].get())
+        #     return _data
+
+        # def _smooth_stiffness_transition(_data):
+        #     joint_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, 'socket_ty' + self.prosthesis_side)
+        #     qpos_address = self._model.jnt_qposadr[joint_id]
+        #     pistoning_qpos_adr = qpos_address
+        #     pistoning_dof_adr = self._model.jnt_dofadr[joint_id]
+        #     joint_pos = _data.qpos[pistoning_qpos_adr]
+        #     joint_vel = _data.qvel[pistoning_dof_adr]
+
+        #     # tuneable parameters (use attributes if you prefer)
+        #     slack_width = getattr(self, 'socket_ty_slack_width', 0.002)   # 1-3 mm recommended
+        #     max_range   = getattr(self, 'socket_ty_max_range',   0.01)    # reduce from 0.02 -> e.g. 0.01
+        #     t_w         = getattr(self, 'transition_width',      0.005)   # smoother/shorter transition
+        #     tanh_gain   = 2.0
+        #     max_force   = getattr(self, 'socket_ty_max_force',   500.0)  # safety clamp (N)
+
+        #     abspos = jnp.abs(joint_pos)
+        #     # effective position: zero in slack, otherwise subtract slack offset (keeps continuity)
+        #     effective_pos = jnp.where(abspos <= slack_width,
+        #                             0.0,
+        #                             jnp.sign(joint_pos) * (abspos - slack_width))
+
+        #     # clamp to the desired mechanical range
+        #     clamp_pos = jnp.clip(effective_pos, -max_range, max_range)
+
+        #     # normalized for blend (avoid division by zero)
+        #     safe_tw = jnp.maximum(t_w, 1e-6)
+        #     normalized = jnp.clip(clamp_pos / safe_tw, -3.0, 3.0)
+        #     blend = (jnp.tanh(normalized * tanh_gain) + 1.0) * 0.5
+
+        #     # linear mix from high -> low (swap if you want opposite)
+        #     stiffness = self.high_stiffness + (self.low_stiffness - self.high_stiffness) * blend
+
+        #     spring_force = -stiffness * clamp_pos
+        #     # zero damping inside slack zone
+        #     damping_force = jnp.where(abspos <= slack_width, 0.0, -self.damping * joint_vel)
+
+        #     total_force = spring_force + damping_force
+        #     total_force = jnp.clip(total_force, -max_force, max_force)
+
+        #     _data = _data.replace(qfrc_applied=_data.qfrc_applied.at[pistoning_dof_adr].set(total_force))
+        #     return _data
+
+        def _smooth_stiffness_transition(_data):
+            joint_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, 'socket_ty' + self.prosthesis_side)
+            qpos_address = self._model.jnt_qposadr[joint_id]
+            pistoning_qpos_adr = qpos_address
+            pistoning_dof_adr = self._model.jnt_dofadr[joint_id]
+            joint_pos = _data.qpos[pistoning_qpos_adr]
+            joint_vel = _data.qvel[pistoning_dof_adr]
+
+            # tuneables (use attributes or change constants)
+            slack_neg = getattr(self, "socket_ty_slack_neg", 0.02)   # 1-3 mm slack on negative side
+            soft_limit = getattr(self, "socket_ty_soft_limit", 0.01)  # beyond this negative displacement we add gentle restraint
+            transition_width = max(getattr(self, "transition_width", 0.005), 1e-6)
+            tanh_gain = 4.0
+            max_force = getattr(self, "socket_ty_max_force", 600.0)
+
+            # regions:
+            # 1) joint_pos >= 0 : normal (compressive) spring behaviour
+            # 2) -slack_neg <= joint_pos < 0 : slack zone -> zero spring and zero damping
+            # 3) joint_pos < -slack_neg : tension region; allow separation but optionally apply small return stiffness
+            # compute smooth masks
+            is_pos = joint_pos >= 0.0
+            in_slack = jnp.logical_and(joint_pos < 0.0, joint_pos >= -slack_neg)
+            in_tension = joint_pos < -slack_neg
+
+            # continuous shifted position for tension region (zero at slack boundary)
+            tension_pos = jnp.where(in_tension, joint_pos + slack_neg, 0.0)
+
+            # stiffness: for compressive side use blended stiffness (high->low controlled by transition_width)
+            norm_pos = jnp.clip(joint_pos / transition_width, -3.0, 3.0)
+            blend = (jnp.tanh(norm_pos * tanh_gain) + 1.0) * 0.5
+            # blend = 0 -> use high_stiffness; blend = 1 -> use low_stiffness
+            comp_stiff = self.high_stiffness + (self.low_stiffness - self.high_stiffness) * blend
+
+            # tension stiffness (should be low so prosthesis can be pulled, but non-zero if you want gentle return)
+            tension_stiff = getattr(self, "socket_ty_tension_stiff", 200.0)
+
+            # spring forces per region
+            spring_comp = -comp_stiff * jnp.where(is_pos, joint_pos, 0.0)
+            spring_tension = -tension_stiff * tension_pos  # tension_pos is negative + slack shift -> sign handled
+
+            # damping: zero inside slack, normal outside
+            damping_comp = -self.damping * joint_vel
+            damping_force = jnp.where(in_slack, 0.0, damping_comp)
+
+            # total force = comp spring (if pos) + tension spring (if tension) + damping (except slack)
+            total_force = spring_comp + spring_tension + damping_force
+            # total_force = jnp.clip(total_force, -max_force, max_force)
+
+            _data = _data.replace(qfrc_applied=_data.qfrc_applied.at[pistoning_dof_adr].set(total_force))
+            return _data
+        
 
         # Method to add velocity perturbation based on randomization in domain_randomizer/prosthesis body_vel_perturb in carry 
         def _adapt_vel_applied(_data, _carry):
@@ -497,6 +622,8 @@ class Mjx(Mujoco):
             _data = _data.replace(ctrl=ctrl)
 
             _data = jax.lax.cond(self.socket_ty_slack, _adapt_qfrc_applied, _no_adaptation, _data)
+
+            # _data = jax.lax.cond(self.socket_ty_slack, _smooth_stiffness_transition, _no_adaptation, _data)
 
         
             # Apply velocity perturbation only if randomize_body_vel_perturb is present and True
@@ -949,6 +1076,56 @@ class Mjx(Mujoco):
         return self._viewer.parallel_render(state, record)
 
 
+    def mjx_render_test(self, state, sys_test: Model,
+                   record: bool = False) -> np.ndarray:
+        """
+        Renders all environments in parallel.
+
+        Args:
+            state: Current environment state.
+            record (bool): Whether to record the rendering.
+
+        Returns:
+            np.ndarray: Rendered image.
+        """
+        if self._viewer is None:
+            if "default_camera_mode" not in self._viewer_params.keys():
+                self._viewer_params["default_camera_mode"] = "static"
+            if 'ignore_modify_mjx_contact' in self._viewer_params.keys():
+                del self._viewer_params['ignore_modify_mjx_contact']
+            if 'add_sensors' in self._viewer_params.keys():
+                del self._viewer_params['add_sensors']
+            if 'socket_ty_slack' in self._viewer_params.keys():
+                del self._viewer_params['socket_ty_slack']
+            if 'add_pos_ori_to_observation' in self._viewer_params.keys():
+                del self._viewer_params['add_pos_ori_to_observation']
+            if 'limit_knee_extension' in self._viewer_params.keys():
+                del self._viewer_params['limit_knee_extension']
+            if 'knee_extension_limit' in self._viewer_params.keys():
+                del self._viewer_params['knee_extension_limit']
+            if 'socket_type' in self._viewer_params.keys():
+                del self._viewer_params['socket_type']
+            if 'limit_hip_joints' in self._viewer_params.keys():
+                del self._viewer_params['limit_hip_joints']
+            if 'joint_stiffness_both_sides' in self._viewer_params.keys():
+                del self._viewer_params['joint_stiffness_both_sides']
+            if 'contact_solref' in self._viewer_params.keys():
+                del self._viewer_params['contact_solref']
+            if 'contact_geom_type' in self._viewer_params.keys():
+                del self._viewer_params['contact_geom_type']
+            self._viewer = MujocoViewer(sys_test, self.dt, record=record, **self._viewer_params)
+
+        if self._terrain.is_dynamic:
+            terrain_state = state.additional_carry.terrain_state
+            assert hasattr(terrain_state, "height_field_raw"), "Terrain state does not have height_field_raw."
+            assert self._terrain.hfield_id is not None, "Terrain hfield id is not set."
+            hfield_data = np.array(terrain_state.height_field_raw)
+            sys_test.hfield_data = hfield_data[0]
+            self._viewer.upload_hfield(sys_test, hfield_id=self._terrain.hfield_id)
+
+        return self._viewer.parallel_render(state, record)
+
+
     def mjx_render_trajectory(self, trajectory,
                               record: bool = False) -> None:
         """
@@ -1068,15 +1245,14 @@ class Mjx(Mujoco):
         #     # print('Position updated:', model.body_pos)
 
         if self._domain_randomizer.rand_conf["randomize_prosthesis_body_position"]:
+
             # The sampled_position_dict holds {body_name: [x,y,z] array}
             sampled_position_dict = domain_randomizer_state.prosthesis_body_position 
 
             # Make a *mutable* copy of the current model's body positions.
-            # This is crucial for NumPy, as model.body_pos might be read-only or we want to modify a copy.
             current_model_body_pos = model.body_pos.copy()
 
-            #jax.debug.print("current_model_body_pos_shape: {shape}", shape=current_model_body_pos.shape)
-
+            # First pass: update all body positions
             for body_name_str, position_value_array in sampled_position_dict.items():
                 prefix = ""
                 if self._domain_randomizer.rand_conf["prosthesis_side"] == "left_side":
@@ -1085,40 +1261,59 @@ class Mjx(Mujoco):
                     prefix = "_r"
 
                 full_mujoco_body_name = body_name_str + prefix
-
                 body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, full_mujoco_body_name)
 
                 if body_id == -1:
                     print(f"Warning: MuJoCo body '{full_mujoco_body_name}' (from semantic name '{body_name_str}') not found in model. Skipping position update for this body.")
                     continue
                 
-                # Update the position for this specific body ID in our mutable copy
-
-                # jax.debug.print("position_value_array_shape: {shape}", shape = position_value_array.shape)
-
-                
+                # Update the position for this specific body ID
                 current_model_body_pos[body_id] = np.array(position_value_array[0], dtype=np.float64).squeeze()
 
-            if 'socket_ty'+self._domain_randomizer.prosthesis_side_str in self._domain_randomizer._socket_joint_indices and self._domain_randomizer.rand_conf["randomize_prosthesis_socket_joint"]:
-                talus_offset_y = domain_randomizer_state.prosthesis_socket_joint_value[f"socket_ty"+self._domain_randomizer.prosthesis_side_str]
-                talus_offset_array = np.array([0,talus_offset_y[0], 0])
-                # jax.debug.print("pos_y view: {pos_y}", pos_y = pos_y)
-                # if not np.any(self.init_talus_pos):
-                #     jax.debug.print("IN LOOOOOOPPPPP")
-                #     self.init_talus_pos = model.body_pos[self._domain_randomizer._talus_idx].copy()
-                # # jax.debug.print("talus_pos view: {talus_pos}", talus_pos = self.init_talus_pos)
-                # new_talus_pos = self.init_talus_pos - np.array([0,pos_y[0],0])
+            # Second pass: apply talus offset if needed (only once)
+            if 'pylon_socket' in sampled_position_dict and 'y' in self._domain_randomizer.prosthesis_body_position_range_dict.get('pylon_socket', {}):
+                # Store initial talus position if not already stored
+                if not hasattr(self, '_init_talus_pos') or self._init_talus_pos is None:
+                    self._init_talus_pos = self._model.body_pos[self._domain_randomizer._talus_idx].copy()
+                
+                new_pylon_socket_pos_y = domain_randomizer_state.prosthesis_body_position['pylon_socket'][0][1]
+                talus_offset_y = self.amputated_tibia_length + new_pylon_socket_pos_y
+                talus_offset_array = np.array([0, talus_offset_y, 0])
+                
+                # If talus was also in the position dict, use the updated value; otherwise use initial
+                if 'talus' in sampled_position_dict:
+                    # Talus was updated in the loop, now adjust it further with offset
+                    current_talus_pos = current_model_body_pos[self._domain_randomizer._talus_idx]
+                    current_model_body_pos[self._domain_randomizer._talus_idx] = (
+                        current_talus_pos - np.array(talus_offset_array, dtype=np.float64).squeeze()
+                    )
+                else:
+                    # Talus was not in the dict, calculate from initial position
+                    current_model_body_pos[self._domain_randomizer._talus_idx] = (
+                        self._init_talus_pos - np.array(talus_offset_array, dtype=np.float64).squeeze()
+                    )
+                
+                # jax.debug.print('new_pylon_socket_pos_y viewer: {new_pylon_socket_pos_y}', new_pylon_socket_pos_y=new_pylon_socket_pos_y)
+                # jax.debug.print('talus position after adjustment: {talus_pos}', talus_pos=current_model_body_pos[self._domain_randomizer._talus_idx])
 
-                # current_model_body_pos = model.body_pos.copy()
-                current_model_body_pos[self._domain_randomizer._talus_idx] -= np.array(talus_offset_array, dtype=np.float64).squeeze()
+                
+                #if  reattach_muscle is True reattach_muscles: then reattach the muscle based on the talus_offset_y calculate new position 
+                if self._domain_randomizer.reattach_muscles_after_rand: 
+                    muscle_site_pos, P3_org_all = self._domain_randomizer._adapt_muscle_parameters(model, np, talus_offset_y, self.amputated_tibia_length)
 
-                # Assign the modified copy back to the model's body_pos
-                model.body_pos = current_model_body_pos
+                    model.site_pos = muscle_site_pos
+
+
+
+
 
             # Assign the modified copy back to the model's body_pos
             model.body_pos = current_model_body_pos
 
             # print('Position updated:', model.body_pos)
+
+            
+        
 
         # print("Orientation before update:", model.body_quat)
         if self._domain_randomizer.rand_conf["randomize_prosthesis_body_orientation"]:
@@ -1145,59 +1340,72 @@ class Mjx(Mujoco):
             # Assign the modified copy back to the model's body_pos
             model.body_quat = current_model_body_quat
 
-        if self._domain_randomizer.rand_conf["randomize_prosthesis_socket_joint"] and not self._domain_randomizer.rand_conf["randomize_prosthesis_body_position"]:
+        # if self._domain_randomizer.rand_conf["randomize_prosthesis_socket_joint"] and not self._domain_randomizer.rand_conf["randomize_prosthesis_body_position"]:
             
-            if 'socket_ty'+self._domain_randomizer.prosthesis_side_str in self._domain_randomizer._socket_joint_indices:
+        #     if 'socket_ty'+self._domain_randomizer.prosthesis_side_str in self._domain_randomizer._socket_joint_indices:
                 
-                pos_y = domain_randomizer_state.prosthesis_socket_joint_value[f"socket_ty"+self._domain_randomizer.prosthesis_side_str]
-                # jax.debug.print("pos_y view: {pos_y}", pos_y = pos_y)
-                if not np.any(self.init_talus_pos):
-                    jax.debug.print("IN LOOOOOOPPPPP")
-                    self.init_talus_pos = model.body_pos[self._domain_randomizer._talus_idx].copy()
-                # jax.debug.print("talus_pos view: {talus_pos}", talus_pos = self.init_talus_pos)
-                new_talus_pos = self.init_talus_pos - np.array([0,pos_y[0],0])
+        #         pos_y = domain_randomizer_state.prosthesis_socket_joint_value[f"socket_ty"+self._domain_randomizer.prosthesis_side_str]
+        #         jax.debug.print("pos_y view: {pos_y}", pos_y = pos_y)
+        #         if not np.any(self.init_talus_pos):
+        #             jax.debug.print("IN LOOOOOOPPPPP")
+        #             self.init_talus_pos = model.body_pos[self._domain_randomizer._talus_idx].copy()
+        #         jax.debug.print("talus_pos view: {talus_pos}", talus_pos = self.init_talus_pos)
+        #         new_talus_pos = self.init_talus_pos - np.array([0,pos_y[0],0])
+        #         jax.debug.print("new_talus_pos view: {new_talus_pos}", new_talus_pos = new_talus_pos)
 
-                current_model_body_pos = model.body_pos.copy()
-                current_model_body_pos[self._domain_randomizer._talus_idx] = np.array(new_talus_pos, dtype=np.float64).squeeze()
+        #         current_model_body_pos = model.body_pos.copy()
+        #         current_model_body_pos[self._domain_randomizer._talus_idx] = np.array(new_talus_pos, dtype=np.float64).squeeze()
 
-                # Assign the modified copy back to the model's body_pos
-                model.body_pos = current_model_body_pos
-                # jax.debug.print('current_model_body_pos view: {current_model_body_pos}', current_model_body_pos=current_model_body_pos)
+        #         # Assign the modified copy back to the model's body_pos
+        #         model.body_pos = current_model_body_pos
+        #         # jax.debug.print('current_model_body_pos view: {current_model_body_pos}', current_model_body_pos=current_model_body_pos)
                 
+        #         # Also adapt qpos_spring
+        #         current_model_qpos_spring = model.qpos_spring.copy()
+        #         # current_model_body_mass = model.body_mass.copy()
+        #         # current_model_body_inertia = model.body_inertia.copy()
+        #         socket_ty_idx = self._domain_randomizer._socket_joint_indices['socket_ty'+self._domain_randomizer.prosthesis_side_str]
+        #         current_model_qpos_spring[socket_ty_idx] = np.array(pos_y[0], dtype=np.float64).squeeze()
+        #         model.qpos_spring = current_model_qpos_spring
+
+        #         # body_mass, body_inertia, body_center_of_mass = self._domain_randomizer._adapt_tibia_socket_parameters(model, self.data, carry, np, pos_y )
+        #         # model.body_mass = body_mass
+        #         # model.body_inertia = body_inertia
+        #         # model.body_com = body_center_of_mass
             
-            # # The sampled_position_dict holds {body_name: [x,y,z] array}
-            # sampled_position_dict = domain_randomizer_state.prosthesis_body_position 
+        #     # # The sampled_position_dict holds {body_name: [x,y,z] array}
+        #     # sampled_position_dict = domain_randomizer_state.prosthesis_body_position 
 
-            # # Make a *mutable* copy of the current model's body positions.
-            # # This is crucial for NumPy, as model.body_pos might be read-only or we want to modify a copy.
-            # current_model_body_pos = model.body_pos.copy()
+        #     # # Make a *mutable* copy of the current model's body positions.
+        #     # # This is crucial for NumPy, as model.body_pos might be read-only or we want to modify a copy.
+        #     # current_model_body_pos = model.body_pos.copy()
 
-            # #jax.debug.print("current_model_body_pos_shape: {shape}", shape=current_model_body_pos.shape)
+        #     # #jax.debug.print("current_model_body_pos_shape: {shape}", shape=current_model_body_pos.shape)
 
-            # for body_name_str, position_value_array in sampled_position_dict.items():
-            #     prefix = ""
-            #     if self._domain_randomizer.rand_conf["prosthesis_side"] == "left_side":
-            #         prefix = "_l"
-            #     elif self._domain_randomizer.rand_conf["prosthesis_side"] == "right_side":
-            #         prefix = "_r"
+        #     # for body_name_str, position_value_array in sampled_position_dict.items():
+        #     #     prefix = ""
+        #     #     if self._domain_randomizer.rand_conf["prosthesis_side"] == "left_side":
+        #     #         prefix = "_l"
+        #     #     elif self._domain_randomizer.rand_conf["prosthesis_side"] == "right_side":
+        #     #         prefix = "_r"
 
-            #     full_mujoco_body_name = body_name_str + prefix
+        #     #     full_mujoco_body_name = body_name_str + prefix
 
-            #     body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, full_mujoco_body_name)
+        #     #     body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, full_mujoco_body_name)
 
-            #     if body_id == -1:
-            #         print(f"Warning: MuJoCo body '{full_mujoco_body_name}' (from semantic name '{body_name_str}') not found in model. Skipping position update for this body.")
-            #         continue
+        #     #     if body_id == -1:
+        #     #         print(f"Warning: MuJoCo body '{full_mujoco_body_name}' (from semantic name '{body_name_str}') not found in model. Skipping position update for this body.")
+        #     #         continue
                 
-            #     # Update the position for this specific body ID in our mutable copy
+        #     #     # Update the position for this specific body ID in our mutable copy
 
-            #     # jax.debug.print("position_value_array_shape: {shape}", shape = position_value_array.shape)
+        #     #     # jax.debug.print("position_value_array_shape: {shape}", shape = position_value_array.shape)
 
                 
-            #     current_model_body_pos[body_id] = np.array(position_value_array[0], dtype=np.float64).squeeze()
+        #     #     current_model_body_pos[body_id] = np.array(position_value_array[0], dtype=np.float64).squeeze()
 
-            # # Assign the modified copy back to the model's body_pos
-            # model.body_pos = current_model_body_pos
+        #     # # Assign the modified copy back to the model's body_pos
+        #     # model.body_pos = current_model_body_pos
         
         
         
@@ -1238,6 +1446,192 @@ class Mjx(Mujoco):
         # modify data and model *before* step if needed
         sys, data, carry = self._mjx_simulation_pre_step(self.sys, data, carry)
 
+        def _adapt_qfrc_applied(_data):
+            #Adapt qfrc_applied for socket_ty slack during swing phase 
+            joint_id= mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, 'socket_ty'+self.prosthesis_side)
+            # jax.debug.print("joint_id: {joint_id}", joint_id = joint_id)
+            qpos_address = self._model.jnt_qposadr[joint_id]
+            # jax.debug.print("qpos_address: {qpos_address}", qpos_address = qpos_address)
+            pistoning_qpos_adr = qpos_address
+            pistoning_dof_adr = self._model.jnt_dofadr[joint_id]
+            # jax.debug.print("pistoning_dof_adr: {pistoning_dof_adr}", pistoning_dof_adr = pistoning_dof_adr)
+            f_kp = jnp.interp(data.qpos[pistoning_qpos_adr],xp=self.xp, fp=self.fp, left="extrapolate", right="extrapolate")#self.fp[-1]) #"extrapolate")
+            _data = _data.replace(qfrc_applied=_data.qfrc_applied.at[pistoning_dof_adr].set(f_kp))
+            # damping_force = -self.damping_constant * data.qvel[pistoning_dof_adr]
+            # # Combine the stiffness force and the damping force
+            # total_force = f_kp + damping_force
+
+            # # Apply the total force to the joint
+            # _data = _data.replace(qfrc_applied=_data.qfrc_applied.at[pistoning_dof_adr].set(total_force))
+            # _data = _data.replace(qfrc_applied=_data.qfrc_applied.at[pistoning_dof_adr].set(total_force))
+            # jax.debug.print('self.xp: {xp}', xp=self.xp)
+
+            return _data
+
+        
+        # def _smooth_stiffness_transition(_data): 
+        #     """Smooth transition between low and high stiffness using a sigmoid-like function."""
+        #     joint_id= mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, 'socket_ty'+self.prosthesis_side)
+        #     qpos_address = self._model.jnt_qposadr[joint_id]
+        #     pistoning_qpos_adr = qpos_address
+        #     pistoning_dof_adr = self._model.jnt_dofadr[joint_id]
+        #     joint_pos = _data.qpos[pistoning_qpos_adr]
+        #     joint_vel = _data.qvel[pistoning_dof_adr]
+
+
+        #     # if self.transition_width == 0: 
+        #     #     return self.low_stiffness if joint_pos > 0 else self.high_stiffness
+            
+        #     normalized_pos = jnp.clip(joint_pos / self.transition_width, -1.0, 1.0)
+        #     blend_factor = (jnp.tanh(normalized_pos * 2) + 1) / 2 
+        #     stiffness = self.high_stiffness + (self.low_stiffness - self.high_stiffness) * blend_factor
+
+        #     spring_force = -stiffness * joint_pos
+        #     damping_force = -self.damping * joint_vel
+        #     total_force = spring_force + damping_force
+        #     # jax.debug.print('qfrc before: {qfrc_here}', qfrc_here=_data.qfrc_applied.at[pistoning_dof_adr].get())
+        #     _data = _data.replace(qfrc_applied=_data.qfrc_applied.at[pistoning_dof_adr].set(total_force))
+        #     jax.debug.print('joint_pos: {joint_pos}', joint_pos=joint_pos)
+        #     jax.debug.print('qfrc after: {qfrc_here}', qfrc_here=_data.qfrc_applied.at[pistoning_dof_adr].get())
+        #     return _data
+
+        # def _smooth_stiffness_transition(_data):
+        #     joint_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, 'socket_ty' + self.prosthesis_side)
+        #     qpos_address = self._model.jnt_qposadr[joint_id]
+        #     pistoning_qpos_adr = qpos_address
+        #     pistoning_dof_adr = self._model.jnt_dofadr[joint_id]
+        #     joint_pos = _data.qpos[pistoning_qpos_adr]
+        #     joint_vel = _data.qvel[pistoning_dof_adr]
+
+        #     # tuneable parameters (use attributes if you prefer)
+        #     slack_width = getattr(self, 'socket_ty_slack_width', 0.002)   # 1-3 mm recommended
+        #     max_range   = getattr(self, 'socket_ty_max_range',   0.01)    # reduce from 0.02 -> e.g. 0.01
+        #     t_w         = getattr(self, 'transition_width',      0.005)   # smoother/shorter transition
+        #     tanh_gain   = 2.0
+        #     max_force   = getattr(self, 'socket_ty_max_force',   500.0)  # safety clamp (N)
+
+        #     abspos = jnp.abs(joint_pos)
+        #     # effective position: zero in slack, otherwise subtract slack offset (keeps continuity)
+        #     effective_pos = jnp.where(abspos <= slack_width,
+        #                             0.0,
+        #                             jnp.sign(joint_pos) * (abspos - slack_width))
+
+        #     # clamp to the desired mechanical range
+        #     clamp_pos = jnp.clip(effective_pos, -max_range, max_range)
+
+        #     # normalized for blend (avoid division by zero)
+        #     safe_tw = jnp.maximum(t_w, 1e-6)
+        #     normalized = jnp.clip(clamp_pos / safe_tw, -3.0, 3.0)
+        #     blend = (jnp.tanh(normalized * tanh_gain) + 1.0) * 0.5
+
+        #     # linear mix from high -> low (swap if you want opposite)
+        #     stiffness = self.high_stiffness + (self.low_stiffness - self.high_stiffness) * blend
+
+        #     spring_force = -stiffness * clamp_pos
+        #     # zero damping inside slack zone
+        #     damping_force = jnp.where(abspos <= slack_width, 0.0, -self.damping * joint_vel)
+
+        #     total_force = spring_force + damping_force
+        #     total_force = jnp.clip(total_force, -max_force, max_force)
+
+        #     _data = _data.replace(qfrc_applied=_data.qfrc_applied.at[pistoning_dof_adr].set(total_force))
+        #     return _data
+
+        def _smooth_stiffness_transition(_data):
+            joint_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, 'socket_ty' + self.prosthesis_side)
+            qpos_address = self._model.jnt_qposadr[joint_id]
+            pistoning_qpos_adr = qpos_address
+            pistoning_dof_adr = self._model.jnt_dofadr[joint_id]
+            joint_pos = _data.qpos[pistoning_qpos_adr]
+            joint_vel = _data.qvel[pistoning_dof_adr]
+
+            # tuneables (use attributes or change constants)
+            slack_neg = getattr(self, "socket_ty_slack_neg", 0.02)   # 1-3 mm slack on negative side
+            soft_limit = getattr(self, "socket_ty_soft_limit", 0.01)  # beyond this negative displacement we add gentle restraint
+            transition_width = max(getattr(self, "transition_width", 0.005), 1e-6)
+            tanh_gain = 4.0
+            max_force = getattr(self, "socket_ty_max_force", 600.0)
+
+            # regions:
+            # 1) joint_pos >= 0 : normal (compressive) spring behaviour
+            # 2) -slack_neg <= joint_pos < 0 : slack zone -> zero spring and zero damping
+            # 3) joint_pos < -slack_neg : tension region; allow separation but optionally apply small return stiffness
+            # compute smooth masks
+            is_pos = joint_pos >= 0.0
+            in_slack = jnp.logical_and(joint_pos < 0.0, joint_pos >= -slack_neg)
+            in_tension = joint_pos < -slack_neg
+
+            # continuous shifted position for tension region (zero at slack boundary)
+            tension_pos = jnp.where(in_tension, joint_pos + slack_neg, 0.0)
+
+            # stiffness: for compressive side use blended stiffness (high->low controlled by transition_width)
+            norm_pos = jnp.clip(joint_pos / transition_width, -3.0, 3.0)
+            blend = (jnp.tanh(norm_pos * tanh_gain) + 1.0) * 0.5
+            # blend = 0 -> use high_stiffness; blend = 1 -> use low_stiffness
+            comp_stiff = self.high_stiffness + (self.low_stiffness - self.high_stiffness) * blend
+
+            # tension stiffness (should be low so prosthesis can be pulled, but non-zero if you want gentle return)
+            tension_stiff = getattr(self, "socket_ty_tension_stiff", 200.0)
+
+            # spring forces per region
+            spring_comp = -comp_stiff * jnp.where(is_pos, joint_pos, 0.0)
+            spring_tension = -tension_stiff * tension_pos  # tension_pos is negative + slack shift -> sign handled
+
+            # damping: zero inside slack, normal outside
+            damping_comp = -self.damping * joint_vel
+            damping_force = jnp.where(in_slack, 0.0, damping_comp)
+
+            # total force = comp spring (if pos) + tension spring (if tension) + damping (except slack)
+            total_force = spring_comp + spring_tension + damping_force
+            # total_force = jnp.clip(total_force, -max_force, max_force)
+
+            _data = _data.replace(qfrc_applied=_data.qfrc_applied.at[pistoning_dof_adr].set(total_force))
+            return _data
+        
+
+        # Method to add velocity perturbation based on randomization in domain_randomizer/prosthesis body_vel_perturb in carry 
+        def _adapt_vel_applied(_data, _carry):
+            if hasattr(_carry.domain_randomizer_state, "body_vel_perturb"):
+                body_vel_perturb = _carry.domain_randomizer_state.body_vel_perturb
+                body_vel_perturb_names = list(body_vel_perturb.keys())
+                for i in range(len(body_vel_perturb_names)):
+                    # get time and length entries from body_vel_perturb
+                    body_vel_perturb_time = body_vel_perturb[body_vel_perturb_names[i]]['time']
+                    body_vel_perturb_length = body_vel_perturb[body_vel_perturb_names[i]]['length']
+                    _data = jax.lax.cond(jnp.logical_and(carry.cur_step_in_episode >= body_vel_perturb_time,carry.cur_step_in_episode < body_vel_perturb_time + body_vel_perturb_length),
+                        _apply_vel_perturb,
+                        _no_adaptation_two_inputs,
+                        _data, 
+                        _carry)
+            return _data
+        
+        # Method to apply velocity perturbation to specified bodies
+        # Assumes body_vel_perturb dict has body names as keys and dicts with 'vel', 'time', 'length' as values
+        # 'vel' should be a jnp.array of shape (3,) representing linear velocity perturbation
+        def _apply_vel_perturb(_data, _carry):
+            body_vel_perturb = _carry.domain_randomizer_state.body_vel_perturb
+            body_vel_perturb_names = list(body_vel_perturb.keys())
+            for i in range(len(body_vel_perturb_names)):
+                body_id= mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_vel_perturb_names[i])
+                # jax.debug.print("body_id: {body_id}", body_id = body_id)
+                # vel_address = self._model.body_dofadr[body_id]
+                # jax.debug.print("vel_address: {vel_address}", vel_address = vel_address)
+                body_vel_perturb_per_body = body_vel_perturb[body_vel_perturb_names[i]]
+                # cvel linear then angualr velocity
+                curr_cvel = _data.cvel[body_id] 
+                linear_vel = body_vel_perturb_per_body['vel']
+                angular_vel_zeros = jnp.zeros(3, dtype=linear_vel.dtype)
+                full_6d_velocity = jnp.concatenate([linear_vel, angular_vel_zeros], axis=0)
+                _data = _data.replace(cvel=_data.cvel.at[body_id].set(curr_cvel + full_6d_velocity))
+            return _data
+        
+    
+        def _no_adaptation_two_inputs(_data, _carry):
+            return _data
+
+        def _no_adaptation(_data):
+            return _data
+
         def _inner_loop(idx, _runner_state):
 
             _data, _carry = _runner_state
@@ -1247,6 +1641,34 @@ class Mjx(Mujoco):
             # step in the environment using the action
             ctrl = _data.ctrl.at[jnp.array(self._action_indices)].set(ctrl_action)
             _data = _data.replace(ctrl=ctrl)
+
+            _data = jax.lax.cond(self.socket_ty_slack, _adapt_qfrc_applied, _no_adaptation, _data)
+
+            # _data = jax.lax.cond(self.socket_ty_slack, _smooth_stiffness_transition, _no_adaptation, _data)
+
+        
+            # Apply velocity perturbation only if randomize_body_vel_perturb is present and True
+            _data = jax.lax.cond(
+                # jnp.logical_and(hasattr(self._domain_randomizer.rand_conf, "randomize_body_vel_perturb"), self._domain_randomizer.rand_conf["randomize_body_vel_perturb"]),
+                ("randomize_body_vel_perturb" in self._domain_randomizer.rand_conf and
+                self._domain_randomizer.rand_conf["randomize_body_vel_perturb"]),
+                # lambda d: _adapt_vel_applied(d, _carry),
+                _adapt_vel_applied,
+                _no_adaptation_two_inputs,
+                _data, 
+                _carry,
+            )
+
+            # _data = jax.lax.cond(_carry.domain_randomizer_state.body_vel_perturb, _adapt_vel_applied, _no_adaptation_two_inputs, _data, _carry)
+            
+            # body_vel_perturb_names = list(_carry.domain_randomizer_state.body_vel_perturb.keys())
+            # for i in range(len(body_vel_perturb_names)):
+            #     # get time and length entries from body_vel_perturb
+            #     body_vel_perturb_time = _carry.domain_randomizer_state.body_vel_perturb[body_vel_perturb_names[i]]['time']
+            #     body_vel_perturb_length = _carry.domain_randomizer_state.body_vel_perturb[body_vel_perturb_names[i]]['length']
+
+            #     _data = jax.lax.cond(jnp.logical_and(self.cur_step_in_episode >= body_vel_perturb_time,self.cur_step_in_episode < body_vel_perturb_time + body_vel_perturb_length), _adapt_vel_applied, _no_adaptation_two_inputs, _data, _carry)
+
             step_fn = lambda _, x: mjx.step(sys, x)
             _data = jax.lax.fori_loop(0, self._n_substeps, step_fn, _data)
 
@@ -1284,12 +1706,7 @@ class Mjx(Mujoco):
         state = state.replace(data=data, observation=cur_obs, reward=reward,
                               absorbing=absorbing, done=done, info=cur_info, additional_carry=carry)
 
-        # def print_identity(x):
-        #     jax.debug.print("Identity function called")
-        #     return x
-
         # reset state if done
-        # state = jax.lax.cond(state.done, self._mjx_reset_in_step, print_identity, state)
         state = jax.lax.cond(state.done, self._mjx_reset_in_step, lambda x: x, state)
 
         return state, sys

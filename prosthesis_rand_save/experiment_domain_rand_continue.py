@@ -78,6 +78,29 @@ def experiment(config: DictConfig):
             agent_conf, agent_state = SavePPOJax.load_agent(config.checkpoint_path)
             print("Agent state loaded successfully.")
             new_agent_conf = SavePPOJax.init_agent_conf(env, config)
+            
+            # ################# TEST FOR MULTIPLE SEEDS: 
+            # # Reset init value and run_stats for multi-seed vmap compatibility
+            # rng = jax.random.key(0)
+            # rng, _rng1, _rng2 = jax.random.split(rng, 3)
+            # init_x = jnp.zeros(env.info.observation_space.shape)
+            # network_params = new_agent_conf.network.init(_rng1, init_x)
+            
+            # # Reinitialize run_stats to match the new network initialization
+            # updated_train_state = agent_state.train_state.replace(
+            #     run_stats=network_params['run_stats']
+            # )
+            
+            # # If using multiple seeds, replicate the loaded params across the vmap dimension
+            # if config.experiment.n_seeds > 1:
+            #     replicated_params = jax.tree_util.tree_map(
+            #         lambda x: jnp.repeat(jnp.expand_dims(x, 0), config.experiment.n_seeds, axis=0),
+            #         updated_train_state.params
+            #     )
+            #     updated_train_state = updated_train_state.replace(params=replicated_params)
+            
+            # agent_state = SavePPOJax._agent_state(train_state=updated_train_state)
+            ############################################
             agent_conf = new_agent_conf 
         else:
             print("No checkpoint path provided or file not found. Initializing new agent.")
@@ -91,7 +114,6 @@ def experiment(config: DictConfig):
         # agent_conf = 
         # get initial agent configuration
         # agent_conf = PPOJax.init_agent_conf(env, config) #PPOJax.init_agent_conf(env, config)
-
         # setup metric handler (optional)
         mh = MetricsHandler(config, env) if config.experiment.validation.active else None
 
@@ -103,9 +125,12 @@ def experiment(config: DictConfig):
         train_fn = jax.jit(jax.vmap(train_fn)) if config.experiment.n_seeds > 1 else jax.jit(train_fn)
 
         # get rng keys and run training
-        # skip_seed = 1
-        # rngs = [jax.random.PRNGKey(i) for i in range(skip_seed,config.experiment.n_seeds+1)]  # create rngs from seed
-        rngs = [jax.random.PRNGKey(i) for i in range(config.experiment.n_seeds+1)]  # create rngs from seed
+        # if config.experiment.n_seeds > 1: 
+        #     skip_seed = 1
+        #     rngs = [jax.random.PRNGKey(i) for i in range(skip_seed,config.experiment.n_seeds+1)]  # create rngs from seed
+        # else:
+        rngs = [jax.random.PRNGKey(i) for i in range(config.experiment.n_seeds+1)]   # create rngs from seed
+        # rngs = [jax.random.PRNGKey(i) for i in range(config.experiment.n_seeds+1)]  # create rngs from seed
         rng, _rng = rngs[0], jnp.squeeze(jnp.vstack(rngs[1:]))
         out = train_fn(_rng) #, agent_state=agent_state)
 
@@ -151,10 +176,20 @@ def experiment(config: DictConfig):
                     run.log(metrics_to_log, step=int(training_metrics.max_timestep[i]))
 
                     # metric for used for wandb sweep (optional)
-                    site_rpos = validation_metrics.euclidean_distance.site_rpos[i]
-                    site_rrotvec = validation_metrics.euclidean_distance.site_rpos[i]
-                    site_rvel = validation_metrics.euclidean_distance.site_rpos[i]
-                    run.log({"Metric for Sweep": site_rpos + site_rrotvec + site_rvel},
+                    # if site_rpos is jnp.empty(0) then calculate metric sweep differently: vel_x + vel_z + torque_at_limit else keep it as it is 
+                    # site_rpos = validation_metrics.euclidean_distance.site_rpos[i]
+                    # site_rrotvec = validation_metrics.euclidean_distance.site_rrotvec[i]
+                    # site_rvel = validation_metrics.euclidean_distance.site_rvel[i]
+
+                    if jnp.all(validation_metrics.euclidean_distance.site_rpos == 0):
+                        metric_value = validation_metrics.euclidean_distance.vel_x[i] + validation_metrics.euclidean_distance.vel_z[i] + validation_metrics.euclidean_distance.torque_at_limit[i]
+                    else:
+                        site_rpos = validation_metrics.euclidean_distance.site_rpos[i]
+                        site_rrotvec = validation_metrics.euclidean_distance.site_rrotvec[i]
+                        site_rvel = validation_metrics.euclidean_distance.site_rvel[i]
+                        metric_value = site_rpos + site_rrotvec + site_rvel
+
+                    run.log({"Metric for Sweep": metric_value},
                             step=int(training_metrics.max_timestep[i]))
 
         print(f"Time taken to log metrics: {time.time() - t_start}s")

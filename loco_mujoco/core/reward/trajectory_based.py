@@ -17,6 +17,9 @@ from loco_mujoco.core.utils.math import calculate_relative_site_quatities, quate
 from loco_mujoco.core.utils.math import quat_scalarfirst2scalarlast
 from loco_mujoco.core.reward.utils import out_of_bounds_action_cost
 
+from loco_mujoco.core.control_functions.skeleton_muscle import SkeletonMuscleControlFunction
+
+
 
 def check_traj_provided(method):
     """
@@ -185,6 +188,7 @@ class MimicReward(TrajectoryBasedReward):
         self._joint_acc_coeff = kwargs.get("joint_acc_coeff", 0.0)
         self._joint_torque_coeff = kwargs.get("joint_torque_coeff", 0.0)
         self._action_rate_coeff = kwargs.get("action_rate_coeff", 0.0)
+        self._action_coeff = kwargs.get("action_coeff", 0.0)
 
         # get main body name of the environment
         self.main_body_name = self._info_props["upper_body_xml_name"]
@@ -374,11 +378,26 @@ class MimicReward(TrajectoryBasedReward):
         else:
             action_rate_reward = 0.0
 
+        # Action rate reward with original action 
+        # Other action penalties below use normalized action with sigmoid to muscle actuators
+        muscle_skeleton_control_activation = SkeletonMuscleControlFunction(env)
+
+        # call as an instance so the method receives the correct 'self' and capture updated carry
+        _action, carry = muscle_skeleton_control_activation.generate_action(env, action, model, data, carry, backend)
+
+
+        if self._action_coeff > 0.0:
+            action_reward = -backend.sum(backend.power(backend.abs(_action),3)) # cubic penalty on action magnitude
+        else: 
+            action_reward = 0.0
+
+
         # total penality rewards
         total_penalities = (self._action_out_of_bounds_coeff * out_of_bound_reward
                             + self._joint_acc_coeff * acceleration_reward
                             + self._joint_torque_coeff * torque_reward
-                            + self._action_rate_coeff * action_rate_reward)
+                            + self._action_rate_coeff * action_rate_reward
+                            + self._action_coeff * action_reward)
         total_penalities = backend.maximum(total_penalities, -1.0)
         # jax.debug.print('total_penalities: {total_penalities}', total_penalities=total_penalities)
 

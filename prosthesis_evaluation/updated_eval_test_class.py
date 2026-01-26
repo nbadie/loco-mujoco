@@ -68,8 +68,8 @@ if "prosthesis_side" in config.experiment.env_params:
     randomization_params["prosthesis_side"] = config.experiment.env_params["prosthesis_side"]
 
 
-ori_ang = np.deg2rad(3)
-randomization_params['prosthesis_body_orientation_range'] = {'pylon_socket': {'z': [-ori_ang, -ori_ang]}, 'talus': {'z': [ori_ang, ori_ang]}}
+# ori_ang = np.deg2rad(3)
+# randomization_params['prosthesis_body_orientation_range'] = {'pylon_socket': {'z': [-ori_ang, -ori_ang]}, 'talus': {'z': [ori_ang, ori_ang]}}
 
 # randomization_params["randomize_prosthesis_body_position"] = True
 # randomization_params["prosthesis_body_position_range"] = {'pylon_socket': {'x': [0.05,0.05]}} #[-0.01,-0.01]}} 

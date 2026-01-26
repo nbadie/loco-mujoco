@@ -221,6 +221,8 @@ class BaseSkeleton(LocoEnv):
 
         return observation_spec
 
+
+    # Original function 
     def _add_box_feet_to_spec(self, spec: MjSpec,
                               alpha_box_feet: float) -> MjSpec:
         """
@@ -256,6 +258,111 @@ class BaseSkeleton(LocoEnv):
                 g.conaffinity = 0
 
         return spec
+
+    ### WRONG function 
+    # def _add_box_feet_to_spec(self, spec: MjSpec,
+    #                           alpha_box_feet: float) -> MjSpec:
+    #     """
+    #     Adds box feet to Mujoco spec and makes old feet non-collidable.
+
+    #     Args:
+    #         spec (MjSpec): Mujoco specification.
+    #         alpha_box_feet (float): Alpha parameter of the boxes.
+
+    #     Returns:
+    #         Modified Mujoco spec.
+    #     """
+    #     if hasattr(self, 'contact_geom_type'):
+    #         if self.contact_geom_type == '3spheres_1body':
+    #             # # Other tests: 
+    #             # # Sphere 
+    #             # # find foot and attach box
+    #             alpha_box_feet = 0.5
+    #             scaling  = 1
+
+    #             toe_l = spec.find_body("toes_l")
+    #             toe_r = spec.find_body("toes_r")
+    #             calcn_l = spec.find_body("calcn_l")
+    #             calcn_r = spec.find_body("calcn_r")
+
+    #             # size_foot = np.array([0.09, 0.03, 0.05])* scaling 
+    #             # size_toes =  np.array([0.03, 0.03, 0.048]) * scaling  
+    #             size_spheres_toes = [0.03,0,0] * scaling
+    #             size_spheres_calcn = [0.04,0,0] * scaling
+
+    #             pos_foot = np.array([0.085, 0.015, -0.011]) #* scaling + np.array([0,-0.005,-0.011]) #-0.003
+    #             pos_toes = np.array([0.085 + 0.0425+0.02,0.005, 0.0275+0.01])#np.array([0.05, 0.019, 0.00]) * scaling -np.array([0.04, 0.006, 0.032]) * scaling ##np.array([0.05, 0.019, 0.02]) * scaling
+    #             pos_toes_lat = np.array([0.085 + 0.085+0.02, 0.005, -0.041+0.01]) #* scaling -np.array([0.08, 0.006, -0.04]) * scaling ##np.array([0.05, 0.019, 0.02]) * scaling
+
+
+    #             # Flip the z-axis for the mirrored positions and reassemble
+    #             pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+    #             pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+    #             pos_toes_lat_l = np.concatenate([pos_toes_lat[:2], [-pos_toes_lat[2]]])
+    #             # euler_foot = [0.0, 0.15, 0.0] 
+    #             # euler_toes = [0.0, 0.6, 0.0]  #[0.0, 0.15, 0.0] 
+            
+    #             calcn_l.add_geom(name="toes_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_toes, pos=pos_toes_l, #+np.array([-0.005,0.005,0]),
+    #                         rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0]) #euler_toes)
+    #             calcn_r.add_geom(name="toes_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_toes, pos=pos_toes, #+np.array([-0.005,0.005,0]),
+    #                         rgba=[0, 1, 0, alpha_box_feet], euler =[0,0,0]) #[a*-1 for a in euler_toes])+
+                
+    #             calcn_l.add_geom(name="toes_lat_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_toes, pos=pos_toes_lat_l, #+np.array([-0.005,0.005,0]),
+    #                         rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0]) #euler_toes)
+    #             calcn_r.add_geom(name="toes_lat_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_toes, pos=pos_toes_lat, #+np.array([-0.005,0.005,0]),
+    #                         rgba=[0, 1, 0, alpha_box_feet], euler =[0,0,0]) #[a*-1 for a in euler_toes])
+
+
+    #             calcn_l.add_geom(name="foot_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_calcn, pos=pos_foot_l +np.array([-0.07,0.0,0]), #+np.array([-0.06,0.01,0]),
+    #                         rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+    #             calcn_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_calcn, pos=pos_foot +np.array([-0.07,0.0,0]), #+np.array([-0.06,0.01,0]),
+    #                         rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+    #     else: 
+
+    #         # find foot and attach box
+    #         toe_l = spec.find_body("toes_l")
+    #         size = np.array([0.112, 0.03, 0.05]) * self.scaling
+    #         pos = np.array([-0.09, 0.019, 0.0]) * self.scaling
+    #         toe_l.add_geom(name="foot_box_l", type=mujoco.mjtGeom.mjGEOM_BOX, size=size, pos=pos,
+    #                     rgba=[0.5, 0.5, 0.5, alpha_box_feet], euler=[0.0, 0.15, 0.0]) #, 
+    #                     #    solref=[0.1,1], solimp=[0.0,0.95,0.01,0.5,2]) # Added solref and solimp for softer contact handling
+    #                     #solref=[0.03,1], solimp=[0.9,0.95,0.002,0.5,2]) # Added solref and solimp for softer contact handling
+    #         toe_r = spec.find_body("toes_r")
+    #         toe_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_BOX, size=size, pos=pos, 
+    #                     rgba=[0.5, 0.5, 0.5, alpha_box_feet], euler=[0.0, -0.15, 0.0])#, 
+    #                     #    solref=[0.1,1], solimp=[0.0,0.95,0.01,0.5,2]) # Added solref and solimp for softer contact handling
+    #                     #    solref=[0.03,1], solimp=[0.9,0.95,0.002,0.5,2]) # Added solref and solimp for softer contact handling
+
+    #     # make true foot uncollidable
+    #     foot_geoms = ["r_foot", "r_bofoot", "l_foot", "l_bofoot"]
+    #     for g in spec.geoms:
+    #         if g.name in foot_geoms:
+    #             g.contype = 0
+    #             g.conaffinity = 0
+
+
+    #     # # # --- define contacts between feet and floor --
+    #     if hasattr(self, 'contact_solref'):
+    #         spec.add_pair(geomname1="floor", geomname2="foot_box_r", solref = self.contact_solref) # solimp= [0.999,0.999,0.002,0.5,2])
+    #         spec.add_pair(geomname1="floor", geomname2="foot_box_l", solref = self.contact_solref)#solimp= [0.9,0.95,0.002,0.5,2])
+    #         spec.add_pair(geomname1="floor", geomname2="toes_box_r", solref= self.contact_solref) #, solimp= [0.999,0.999,0.002,0.5,2])
+    #         spec.add_pair(geomname1="floor", geomname2="toes_box_l", solref = self.contact_solref) #, solimp= [0.9,0.95,0.002,0.5,2])
+    #         if self.contact_geom_type == '3spheres_1body':
+    #             spec.add_pair(geomname1="floor", geomname2="toes_lat_box_r", solref= self.contact_solref) #, solimp= [0.999,0.999,0.002,0.5,2])
+    #             spec.add_pair(geomname1="floor", geomname2="toes_lat_box_l", solref = self.contact_solref) #, solimp= [0.9,0.95,0.002,0.5,2])
+    #     else: 
+    #         spec.add_pair(geomname1="floor", geomname2="foot_box_r") # solimp= [0.999,0.999,0.002,0.5,2])
+    #         spec.add_pair(geomname1="floor", geomname2="foot_box_l")#solimp= [0.9,0.95,0.002,0.5,2])
+    #         spec.add_pair(geomname1="floor", geomname2="toes_box_r") #, solimp= [0.999,0.999,0.002,0.5,2])
+    #         spec.add_pair(geomname1="floor", geomname2="toes_box_l") #, solimp= [0.9,0.95,0.002,0.5,2])
+    #         if self.contact_geom_type == '3spheres_1body':
+    #             spec.add_pair(geomname1="floor", geomname2="toes_lat_box_r") #, solimp= [0.999,0.999,0.002,0.5,2])
+    #             spec.add_pair(geomname1="floor", geomname2="toes_lat_box_l") #, solimp= [0.9,0.95,0.002,0.5,2])
+
+        
+
+    #     return spec
+    
     
 
     def _add_2_box_per_foot_to_spec(self, spec: MjSpec):
@@ -286,6 +393,8 @@ class BaseSkeleton(LocoEnv):
         if hasattr(self, 'contact_geom_type'):
             if self.contact_geom_type == 'sphere':
                 
+
+                #### USED FOR TRAINING 
                 # Sphere 
                 # find foot and attach box
                 alpha_box_feet = 0.5
@@ -320,6 +429,86 @@ class BaseSkeleton(LocoEnv):
                             rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
                 calcn_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=[0.03, 0, 0], pos=pos_foot +np.array([-0.07,0.0,0]), #+np.array([-0.06,0.01,0]),
                             rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+
+                ####################################################################
+            elif self.contact_geom_type == 'sphere3':
+                # MORE TESTS 
+                # find foot and attach box
+                alpha_box_feet = 0.5
+                scaling  = 1
+
+                toe_l = spec.find_body("toes_l")
+                toe_r = spec.find_body("toes_r")
+                calcn_l = spec.find_body("calcn_l")
+                calcn_r = spec.find_body("calcn_r")
+
+                size_foot = np.array([0.09, 0.03, 0.05])* scaling 
+                size_toes =  np.array([0.03, 0.03, 0.048]) * scaling  
+
+                pos_foot = np.array([0.085, 0.019, -0.0]) * scaling + np.array([0,-0.003,-0.011])
+                pos_toes = np.array([0.05, 0.019, 0.00]) * scaling -np.array([0.015, 0.0, 0.00]) * scaling ##np.array([0.05, 0.019, 0.02]) * scaling
+
+
+                # Flip the z-axis for the mirrored positions and reassemble
+                pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+                pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+                euler_foot = [0.0, 0.15, 0.0] 
+                euler_toes = [0.0, 0.6, 0.0]  #[0.0, 0.15, 0.0] 
+            
+                toe_l.add_geom(name="toes_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=[size_toes[0], 0, 0], pos=pos_toes_l, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0]) #euler_toes)
+                toe_r.add_geom(name="toes_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=[size_toes[0], 0, 0], pos=pos_toes, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler =[0,0,0]) #[a*-1 for a in euler_toes])
+
+
+                
+                calcn_l.add_geom(name="foot_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=[0.03, 0, 0], pos=pos_foot_l +np.array([-0.07,0.0,-0.01]), #+np.array([-0.06,0.01,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+                calcn_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=[0.03, 0, 0], pos=pos_foot +np.array([-0.07,0.0,0.01]), #+np.array([-0.06,0.01,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+                
+
+                ##################################################################
+            elif self.contact_geom_type == 'sphere4':
+                
+
+                #### USED FOR TRAINING 
+                # Sphere 
+                # find foot and attach box
+                alpha_box_feet = 0.5
+                scaling  = 1
+
+                toe_l = spec.find_body("toes_l")
+                toe_r = spec.find_body("toes_r")
+                calcn_l = spec.find_body("calcn_l")
+                calcn_r = spec.find_body("calcn_r")
+
+                size_foot = np.array([0.09, 0.03, 0.05])* scaling 
+                size_toes =  np.array([0.04, 0.03, 0.048]) * scaling  
+
+                pos_foot = np.array([0.085, 0.019, -0.0]) * scaling + np.array([0,-0.003,-0.011])
+                pos_toes = np.array([0.05, 0.019, 0.00]) * scaling -np.array([0.015, 0.0, 0.00]) * scaling ##np.array([0.05, 0.019, 0.02]) * scaling
+
+
+                # Flip the z-axis for the mirrored positions and reassemble
+                pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+                pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+                euler_foot = [0.0, 0.15, 0.0] 
+                euler_toes = [0.0, 0.6, 0.0]  #[0.0, 0.15, 0.0] 
+            
+                toe_l.add_geom(name="toes_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=[size_toes[0], 0, 0], pos=pos_toes_l, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0]) #euler_toes)
+                toe_r.add_geom(name="toes_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=[size_toes[0], 0, 0], pos=pos_toes, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler =[0,0,0]) #[a*-1 for a in euler_toes])
+
+
+                
+                calcn_l.add_geom(name="foot_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=[size_toes[0], 0, 0], pos=pos_foot_l +np.array([-0.055,0.0,0]), #+np.array([-0.06,0.01,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+                calcn_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=[size_toes[0], 0, 0], pos=pos_foot +np.array([-0.055,0.0,0]), #+np.array([-0.06,0.01,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+
+                ####################################################################
 
                 ##################################################################
                 # geom_type = mujoco.mjtGeom.mjGEOM_SPHERE
@@ -385,9 +574,326 @@ class BaseSkeleton(LocoEnv):
                             rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
                 calcn_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=[0.03, 0, 0], pos=pos_foot +np.array([-0.07,0.0,0]), #+np.array([-0.06,0.01,0]),
                             rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+                
+            elif self.contact_geom_type == '2box': 
+                    alpha_box_feet = 0.5
+                    scaling  = 1
+                    scaling_size = 0.9
+                    size_foot = np.array([0.09, 0.03, 0.05])* scaling_size #np.array([0.100, 0.03, 0.05])* scaling
+                    size_toes = np.array([0.041, 0.03, 0.048]) * scaling_size 
+                    pos_foot = np.array([0.085, 0.019, -0.01]) * scaling
+                    pos_toes = np.array([0.035, 0.019, 0.01]) * scaling
+                    pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+                    pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+                    euler_foot = [0.0, 0.15, 0.0] #[0.0, 0.15, 0.0]
+                    euler_toes = [0.0, 0.15, 0.0]
 
+
+                    geom_type = mujoco.mjtGeom.mjGEOM_BOX
+                    toe_l.add_geom(name="toes_box_l", type=geom_type, size=size_toes, pos=pos_toes_l,
+                            rgba=[0, 1, 0, alpha_box_feet], euler=euler_toes)
+                    toe_r.add_geom(name="toes_box_r", type=geom_type, size=size_toes, pos=pos_toes,
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[a*-1 for a in euler_toes])
+                    calcn_l.add_geom(name="foot_box_l", type=geom_type, size=size_foot, pos=pos_foot_l,
+                            rgba=[1, 0, 0, alpha_box_feet], euler=euler_foot)
+                    calcn_r.add_geom(name="foot_box_r", type=geom_type, size=size_foot, pos=pos_foot,
+                            rgba=[1, 0, 0, alpha_box_feet], euler=[a*-1 for a in euler_foot]) 
+        
+            elif self.contact_geom_type == '3spheres':
+
+                # # Other tests: 
+                # # Sphere 
+                # # find foot and attach box
+                alpha_box_feet = 0.5
+                # scaling  = 1
+
+                toe_l = spec.find_body("toes_l")
+                toe_r = spec.find_body("toes_r")
+                calcn_l = spec.find_body("calcn_l")
+                calcn_r = spec.find_body("calcn_r")
+
+                # size_foot = np.array([0.09, 0.03, 0.05])* scaling 
+                # size_toes =  np.array([0.03, 0.03, 0.048]) * scaling  
+                size_spheres_toes = [0.02,0,0] * scaling
+                size_spheres_calcn = [0.03,0,0] * scaling
+
+                pos_foot = np.array([0.085, 0.019, -0.0]) * scaling + np.array([0,-0.005,-0.011]) #-0.003
+                pos_toes = np.array([0.05, 0.019, 0.00]) * scaling -np.array([0.04, 0.006, 0.032]) * scaling ##np.array([0.05, 0.019, 0.02]) * scaling
+                pos_toes_lat = np.array([0.05, 0.019, 0.00]) * scaling -np.array([0.08, 0.006, -0.04]) * scaling ##np.array([0.05, 0.019, 0.02]) * scaling
+
+
+                # Flip the z-axis for the mirrored positions and reassemble
+                pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+                pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+                pos_toes_lat_l = np.concatenate([pos_toes_lat[:2], [-pos_toes_lat[2]]])
+                # euler_foot = [0.0, 0.15, 0.0] 
+                # euler_toes = [0.0, 0.6, 0.0]  #[0.0, 0.15, 0.0] 
+            
+                toe_l.add_geom(name="toes_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_toes, pos=pos_toes_l, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0]) #euler_toes)
+                toe_r.add_geom(name="toes_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_toes, pos=pos_toes, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler =[0,0,0]) #[a*-1 for a in euler_toes])+
+                
+                toe_l.add_geom(name="toes_lat_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_toes, pos=pos_toes_lat_l, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0]) #euler_toes)
+                toe_r.add_geom(name="toes_lat_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_toes, pos=pos_toes_lat, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler =[0,0,0]) #[a*-1 for a in euler_toes])
+
+
+                calcn_l.add_geom(name="foot_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_calcn, pos=pos_foot_l +np.array([-0.07,0.0,0]), #+np.array([-0.06,0.01,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+                calcn_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_calcn, pos=pos_foot +np.array([-0.07,0.0,0]), #+np.array([-0.06,0.01,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+                
+                ########################################################################
+            elif self.contact_geom_type == 'sphere_scone':
+
+                # # Other tests: 
+                # # Sphere 
+                # # find foot and attach box
+                alpha_box_feet = 0.5
+                # scaling  = 1
+
+                toe_l = spec.find_body("toes_l")
+                toe_r = spec.find_body("toes_r")
+                calcn_l = spec.find_body("calcn_l")
+                calcn_r = spec.find_body("calcn_r")
+
+                size_foot = np.array([0.03, 0,0])* scaling 
+                size_toes =  np.array([0.03, 0,0]) * scaling  
+
+                pos_foot = np.array([0.085-0.016, 0.013, -0.0]) * scaling + np.array([0,-0.003,-0.011])
+                pos_toes = np.array([0.05-0.03, 0.015, -0.0015]) * scaling -np.array([0.015, 0.0, 0.00]) * scaling ##np.array([0.05, 0.019, 0.02]) * scaling
+
+
+                # Flip the z-axis for the mirrored positions and reassemble
+                pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+                pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+                euler_foot = [0.0, 0.15, 0.0] 
+                euler_toes = [0.0, 0.6, 0.0]  #[0.0, 0.15, 0.0] 
+            
+                toe_l.add_geom(name="toes_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_toes, pos=pos_toes_l, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0]) #euler_toes)
+                toe_r.add_geom(name="toes_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_toes, pos=pos_toes, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler =[0,0,0]) #[a*-1 for a in euler_toes])
+
+
+                
+                calcn_l.add_geom(name="foot_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_foot, pos=pos_foot_l +np.array([-0.055,0.0,0]), #+np.array([-0.06,0.01,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+                calcn_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_foot, pos=pos_foot +np.array([-0.055,0.0,0]), #+np.array([-0.06,0.01,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+                
+
+            ####################################################
+            elif self.contact_geom_type == 'sphere_scone_exact':
+
+                # # Other tests: 
+                # # Sphere 
+                # # find foot and attach box
+                alpha_box_feet = 0.5
+                scaling  = 1
+
+                toe_l = spec.find_body("toes_l")
+                toe_r = spec.find_body("toes_r")
+                calcn_l = spec.find_body("calcn_l")
+                calcn_r = spec.find_body("calcn_r")
+
+                size_foot = np.array([0.03, 0,0])* scaling 
+                size_toes =  np.array([0.03, 0,0]) * scaling  
+
+                pos_foot = np.array([0.015, 0.015, -0.005]) * scaling 
+                pos_toes = np.array([-0.005515, 0.017131, -0.00115076]) * scaling 
+
+
+                # Flip the z-axis for the mirrored positions and reassemble
+                pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+                pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+                euler_foot = [0.0, 0.15, 0.0] 
+                euler_toes = [0.0, 0.6, 0.0]  #[0.0, 0.15, 0.0] 
+            
+                toe_l.add_geom(name="toes_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_toes, pos=pos_toes_l, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0]) #euler_toes)
+                toe_r.add_geom(name="toes_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_toes, pos=pos_toes, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler =[0,0,0]) #[a*-1 for a in euler_toes])
+                
+                calcn_l.add_geom(name="foot_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_foot, pos=pos_foot_l, #+np.array([-0.06,0.01,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+                calcn_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_foot, pos=pos_foot, #+np.array([-0.06,0.01,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+                
+            #####################################################
+            elif self.contact_geom_type == 'sphere_tiptoe':
+
+                # # Other tests: 
+                # # Sphere 
+                # # find foot and attach box
+                alpha_box_feet = 0.5
+                # scaling  = 1
+
+                toe_l = spec.find_body("toes_l")
+                toe_r = spec.find_body("toes_r")
+                calcn_l = spec.find_body("calcn_l")
+                calcn_r = spec.find_body("calcn_r")
+
+                size_foot = np.array([0.03, 0,0])* scaling 
+                size_toes =  np.array([0.03, 0,0]) * scaling  
+
+                pos_foot = np.array([0.085-0.016, 0.016, -0.0]) * scaling + np.array([0,-0.003,-0.011])
+                pos_toes = np.array([0.07, 0.01, -0.0015]) * scaling -np.array([0.015, 0.0, 0.00]) * scaling ##np.array([0.05, 0.019, 0.02]) * scaling
+
+
+                # Flip the z-axis for the mirrored positions and reassemble
+                pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+                pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+                euler_foot = [0.0, 0.15, 0.0] 
+                euler_toes = [0.0, 0.6, 0.0]  #[0.0, 0.15, 0.0] 
+            
+                toe_l.add_geom(name="toes_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_toes, pos=pos_toes_l, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0]) #euler_toes)
+                toe_r.add_geom(name="toes_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_toes, pos=pos_toes, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler =[0,0,0]) #[a*-1 for a in euler_toes])
+
+
+                
+                calcn_l.add_geom(name="foot_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_foot, pos=pos_foot_l +np.array([-0.055,0.0,0]), #+np.array([-0.06,0.01,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+                calcn_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_foot, pos=pos_foot +np.array([-0.055,0.0,0]), #+np.array([-0.06,0.01,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+                
+
+            elif self.contact_geom_type == 'cylinderHeel_sphereToe': 
+                alpha_box_feet = 0.5
+                scaling  = 1
+                size_foot = np.array([0.03, 0.08, 0.03])* scaling #np.array([0.100, 0.03, 0.05])* scaling
+                size_toes =  np.array([0.03, 0.03, 0.03]) * scaling
+                pos_foot = np.array([0.085-0.012, 0.019, -0.01]) * scaling
+                pos_toes = np.array([0.05, 0.019, 0.00]) * scaling -np.array([0.015, 0.0, 0.00]) * scaling
+                pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+                pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+                euler_foot = [0.0, 1.57, 0.0] #[0.0, 0.15, 0.0]
+                euler_toes = [0.0, 0, 0.0]
+
+
+                geom_type = mujoco.mjtGeom.mjGEOM_CYLINDER
+                toe_l.add_geom(name="toes_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_toes, pos=pos_toes_l,
+                        rgba=[0, 1, 0, alpha_box_feet], euler=euler_toes)
+                toe_r.add_geom(name="toes_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_toes, pos=pos_toes,
+                        rgba=[0, 1, 0, alpha_box_feet], euler=[a*-1 for a in euler_toes])
+                calcn_l.add_geom(name="foot_box_l", type=geom_type, size=size_foot, pos=pos_foot_l,
+                        rgba=[1, 0, 0, alpha_box_feet], euler=euler_foot)
+                calcn_r.add_geom(name="foot_box_r", type=geom_type, size=size_foot, pos=pos_foot,
+                        rgba=[1, 0, 0, alpha_box_feet], euler=[a*-1 for a in euler_foot]) 
+            
+            ####################################################
+            elif self.contact_geom_type == '3spheres_scone':
+
+                # # Other tests: 
+                # # Sphere 
+                # # find foot and attach box
+                alpha_box_feet = 0.5
+                # scaling  = 1
+
+                toe_l = spec.find_body("toes_l")
+                toe_r = spec.find_body("toes_r")
+                calcn_l = spec.find_body("calcn_l")
+                calcn_r = spec.find_body("calcn_r")
+
+                # size_foot = np.array([0.09, 0.03, 0.05])* scaling 
+                # size_toes =  np.array([0.03, 0.03, 0.048]) * scaling  
+                size_spheres_toes = [0.02,0,0] * scaling
+                size_spheres_calcn = [0.03,0,0] * scaling
+
+                pos_foot = np.array([0.015, 0.015, -0.005]) * scaling 
+                pos_toes = np.array([-0.005515, 0.00213104,-0.02865076]) * scaling 
+                pos_toes_lat = np.array([-0.048015, 0.00213104, 0.03984924]) * scaling
+
+
+                # Flip the z-axis for the mirrored positions and reassemble
+                pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+                pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+                pos_toes_lat_l = np.concatenate([pos_toes_lat[:2], [-pos_toes_lat[2]]])
+                # euler_foot = [0.0, 0.15, 0.0] 
+                # euler_toes = [0.0, 0.6, 0.0]  #[0.0, 0.15, 0.0] 
+            
+                toe_l.add_geom(name="toes_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_toes, pos=pos_toes_l, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0]) #euler_toes)
+                toe_r.add_geom(name="toes_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_toes, pos=pos_toes, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler =[0,0,0]) #[a*-1 for a in euler_toes])+
+                
+                toe_l.add_geom(name="toes_lat_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_toes, pos=pos_toes_lat_l, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0]) #euler_toes)
+                toe_r.add_geom(name="toes_lat_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_toes, pos=pos_toes_lat, #+np.array([-0.005,0.005,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler =[0,0,0]) #[a*-1 for a in euler_toes])
+
+
+                calcn_l.add_geom(name="foot_box_l", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_calcn, pos=pos_foot_l, #+np.array([-0.06,0.01,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+                calcn_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=size_spheres_calcn, pos=pos_foot, #+np.array([-0.06,0.01,0]),
+                            rgba=[0, 1, 0, alpha_box_feet], euler=[0,0,0])
+                
+            #################################################
+            elif self.contact_geom_type == '2boxes_new':
+                alpha_box_feet = 0.5
+                scaling  = 1
+                size_foot = np.array([0.08, 0.03, 0.05])* scaling +np.array([0.003, 0,0])* scaling #np.array([0.09, 0.03, 0.05])* scaling ####np.array([0.100, 0.03, 0.05])* scaling
+                size_toes = np.array([0.015, 0.03, 0.05]) * scaling -np.array([0, 0.015,0.0025])* scaling #np.array([0.025, 0.03, 0.05]) * scaling #np.array([0.041, 0.03, 0.048]) * scaling 
+                pos_foot = np.array([0.085, 0.019, -0.01]) * scaling - np.array([0.008,0.0,0.0])#- np.array([0.01,0.0,0.0]) #- np.array([0.01,0.0,0.0])
+                pos_toes = np.array([0.035, 0.019, 0.01]) * scaling - np.array([0.012,-0.0,-0.003]) - np.array([0.008,0.015,0.0024])
+                pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+                pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+                euler_foot = [0.0, 0.2, 0.0] #[0.0, 0.15, 0.0]
+                euler_toes = [0.0, 0.3, 0.0] #[0.0, 0.3, 0.0] #[0.0, 0.15, 0.0]
+
+
+                geom_type = mujoco.mjtGeom.mjGEOM_BOX
+                toe_l.add_geom(name="toes_box_l", type=geom_type, size=size_toes, pos=pos_toes_l,
+                        rgba=[0, 1, 0, alpha_box_feet], euler=euler_toes)
+                toe_r.add_geom(name="toes_box_r", type=geom_type, size=size_toes, pos=pos_toes,
+                        rgba=[0, 1, 0, alpha_box_feet], euler=[a*-1 for a in euler_toes])
+                calcn_l.add_geom(name="foot_box_l", type=geom_type, size=size_foot, pos=pos_foot_l,
+                        rgba=[1, 0, 0, alpha_box_feet], euler=euler_foot)
+                calcn_r.add_geom(name="foot_box_r", type=geom_type, size=size_foot, pos=pos_foot,
+                        rgba=[1, 0, 0, alpha_box_feet], euler=[a*-1 for a in euler_foot])
+                
+
+            ########################################################
+            elif self.contact_geom_type == '2boxes_small': 
+                alpha_box_feet = 0.5
+                scaling  = 1
+                size_foot = np.array([0.09, 0.03, 0.05])* scaling -np.array([0.01, 0, 0])* scaling #np.array([0.100, 0.03, 0.05])* scaling
+                size_toes = np.array([0.03, 0.03, 0.048]) * scaling  #np.array([0.041, 0.03, 0.048]) * scaling 
+                pos_foot = np.array([0.085, 0.019, -0.01]) * scaling - np.array([0.005, 0, 0]) * scaling
+                pos_toes = np.array([0.035, 0.019, 0.01]) * scaling - np.array([0.01, 0, 0]) * scaling
+                pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+                pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+                euler_foot = [0.0, 0.15, 0.0] #[0.0, 0.15, 0.0]
+                euler_toes = [0.0, 0.15, 0.0]
+
+
+                geom_type = mujoco.mjtGeom.mjGEOM_BOX
+                toe_l.add_geom(name="toes_box_l", type=geom_type, size=size_toes, pos=pos_toes_l,
+                        rgba=[0, 1, 0, alpha_box_feet], euler=euler_toes)
+                toe_r.add_geom(name="toes_box_r", type=geom_type, size=size_toes, pos=pos_toes,
+                        rgba=[0, 1, 0, alpha_box_feet], euler=[a*-1 for a in euler_toes])
+                calcn_l.add_geom(name="foot_box_l", type=geom_type, size=size_foot, pos=pos_foot_l,
+                        rgba=[1, 0, 0, alpha_box_feet], euler=euler_foot)
+                calcn_r.add_geom(name="foot_box_r", type=geom_type, size=size_foot, pos=pos_foot,
+                        rgba=[1, 0, 0, alpha_box_feet], euler=[a*-1 for a in euler_foot])
+
+                
         else:
             geom_type = mujoco.mjtGeom.mjGEOM_BOX
+            alpha_box_feet = 0.5
+            scaling  = 1
+            size_foot = np.array([0.09, 0.03, 0.05])* scaling #np.array([0.100, 0.03, 0.05])* scaling
+            size_toes = np.array([0.041, 0.03, 0.048]) * scaling 
+            pos_foot = np.array([0.085, 0.019, -0.01]) * scaling
+            pos_toes = np.array([0.035, 0.019, 0.01]) * scaling
+            pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+            pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+            euler_foot = [0.0, 0.15, 0.0] #[0.0, 0.15, 0.0]
+            euler_toes = [0.0, 0.15, 0.0]
             toe_l.add_geom(name="toes_box_l", type=geom_type, size=size_toes, pos=pos_toes_l,
                        rgba=[0, 1, 0, alpha_box_feet], euler=euler_toes)
             toe_r.add_geom(name="toes_box_r", type=geom_type, size=size_toes, pos=pos_toes,

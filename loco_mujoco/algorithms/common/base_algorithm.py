@@ -146,3 +146,21 @@ class JaxRLAlgorithmBase:
     def build_train_fn_continue(cls, env, agent_conf: AgentConfBase, mh: MetricsHandler = None, agent_state: AgentStateBase = None):
         """ Returns the main train function of an RL algorithm used to train an agent from scratch. """
         return lambda rng_key: cls._train_fn_continue(rng_key, env, agent_conf, agent_state=agent_state,mh=mh)
+    
+    @classmethod
+    def build_train_fn_continue_multiseeds(cls, env, agent_conf: AgentConfBase, mh: MetricsHandler = None, agent_state: AgentStateBase = None):
+        """ Returns the main train function of an RL algorithm used to train an agent from scratch. """
+        
+        # We define a lambda that takes TWO arguments: the RNG and the state.
+        # If agent_state was provided at build-time, we can still use it as a default, 
+        # but for vmapping we need it to be a positional argument.
+        return lambda rng_key, state=None: cls._train_fn_continue(
+            rng_key, env, agent_conf, 
+            agent_state=(state if state is not None else agent_state), 
+            mh=mh
+        )
+    
+    # @classmethod
+    # def build_train_fn_continue_with_state(cls, env, agent_conf: AgentConfBase, mh: MetricsHandler = None, agent_state: AgentStateBase = None):
+    #     """ Returns the main train function of an RL algorithm used to train an agent from scratch. """
+    #     return lambda rng_key, state: cls._train_fn_continue(rng_key, env, agent_conf, agent_state=state,mh=mh)

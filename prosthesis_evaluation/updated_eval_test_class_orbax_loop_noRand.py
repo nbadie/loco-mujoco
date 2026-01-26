@@ -56,6 +56,8 @@ config = agent_conf.config
 network = agent_conf.network
 tx = agent_conf.tx 
 
+config.experiment.env_params["horizon"] = 3000 
+
 
 
 # Loop over all checkpoints
@@ -97,7 +99,7 @@ for checkpoint_folder in sorted(os.listdir(checkpoint_base_path)):
 
     prosthesis_metrics_handler = ProsthesisMetricsHandler(env) #(config, env)
 
-    n_steps = 1000 #1000 #1000
+    n_steps = 3000 #1000 #1000
     n_envs = 1 #1  # <--- Make sure this matches your training batch size
     rng = jax.random.key(0)
     train_state_seed = 0  # Take first seed 

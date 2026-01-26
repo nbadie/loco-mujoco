@@ -372,6 +372,7 @@ class MimicRewardVelArm(MimicReward):
         self._action_coeff = kwargs.get("action_coeff", 0.0)
         self._lateral_range_coeff = kwargs.get("lateral_range_coeff", 0.0)
         self._lateral_pos_reward_range = kwargs.get("lateral_pos_reward_range",0.1)
+        # joints_for_mimic = kwargs.get("joints_for_mimic", None) # For defining specific joints to mimic 
 
 
         # get main body name of the environment
@@ -398,7 +399,8 @@ class MimicRewardVelArm(MimicReward):
                     quat_in_qpos.append(qposid[3:])
         self._qpos_ind = np.concatenate(qpos_ind)
         self._qvel_ind = np.concatenate(qvel_ind)
-        quat_in_qpos = np.concatenate(quat_in_qpos)
+        if quat_in_qpos:
+            quat_in_qpos = np.concatenate(quat_in_qpos)
         self._quat_in_qpos = np.array([True if q in quat_in_qpos else False for q in self._qpos_ind])
         # calc mask for the root free joint velocities
         self._free_joint_qvel_ind = np.array(mj_jntname2qvelid(self._info_props["root_free_joint_xml_name"], model))
@@ -522,6 +524,11 @@ class MimicRewardVelArm(MimicReward):
             site_rpos, site_rangles, site_rvel = (
                 calculate_relative_site_quatities(data, self._rel_site_ids, self._rel_body_ids,
                                                 model.body_rootid, backend))
+            
+        # jax.debug.print("qpos: {qpos}", qpos=data.qpos[:5])
+        # jax.debug.print("qpos_traj: {qpos_traj}", qpos_traj=traj_data_single.qpos[:5])
+        # jax.debug.print("qvel: {qvel}", qvel=data.qvel[:5])
+        # jax.debug.print("qvel_traj: {qvel_traj}", qvel_traj=traj_data_single.qvel[:5])
 
         # calculate distances
         qpos_dist = backend.mean(backend.square(qpos[~self._quat_in_qpos] - qpos_traj[~self._quat_in_qpos]))
@@ -549,7 +556,7 @@ class MimicRewardVelArm(MimicReward):
                                                              upper_bound=env.mdp_info.action_space.high, backend=backend)
         else:
             out_of_bound_reward = 0.0
-        # jax.debug.print("out_of_bound_reward: {out_of_bound_reward}", out_of_bound_reward=out_of_bound_reward)
+        
         # joint acceleration reward
         if self._joint_acc_coeff > 0.0:
             last_joint_vel = reward_state.last_qvel[~self._free_joint_qvel_mask]
@@ -558,19 +565,22 @@ class MimicRewardVelArm(MimicReward):
             acceleration_reward = self._joint_acc_coeff * -acceleration_norm
         else:
             acceleration_reward = 0.0
+        # jax.debug.print("acceleration_reward: {acceleration_reward}", acceleration_reward=acceleration_reward)
 
         # joint torque reward arm
         if self._joint_torque_vel_arm_coeff>0.0: 
-            torque_vel_arm_norm = backend.sum(backend.square(data.qfrc_actuator[self._arm_root_joint_qvel_mask]*data.qvel[self._arm_root_joint_qvel_mask]))
-            torque_vel_arm_reward = self._joint_torque_vel_arm_coeff * -torque_vel_arm_norm
+            # torque_vel_arm_norm = backend.sum(backend.square(data.qfrc_actuator[self._arm_root_joint_qvel_mask]*data.qvel[self._arm_root_joint_qvel_mask]))
+            torque_vel_arm_reward = -1*(backend.sum(backend.abs(data.qfrc_actuator[self._arm_root_joint_qvel_mask]*data.qvel[self._arm_root_joint_qvel_mask])))
+            # torque_vel_arm_reward = self._joint_torque_vel_arm_coeff * -torque_vel_arm_norm
         else: 
             torque_vel_arm_reward = 0.0
         # jax.debug.print('torque_vel_arm_reward: {torque_vel_norm}', torque_vel_norm=torque_vel_arm_reward)
 
         # joint_torque reward without arm 
         if self._joint_torque_vel_nonarm_coeff>0.0: 
-            torque_vel_nonarm_norm = backend.sum(backend.square(data.qfrc_actuator[~self._arm_root_joint_qvel_mask]*data.qvel[~self._arm_root_joint_qvel_mask]))
-            torque_vel_nonarm_reward = self._joint_torque_vel_nonarm_coeff * -torque_vel_nonarm_norm
+            # torque_vel_nonarm_norm = backend.sum(backend.square(data.qfrc_actuator[~self._arm_root_joint_qvel_mask]*data.qvel[~self._arm_root_joint_qvel_mask]))
+            torque_vel_nonarm_reward = -1*(backend.sum(backend.abs(data.qfrc_actuator[~self._arm_root_joint_qvel_mask]*data.qvel[~self._arm_root_joint_qvel_mask])))
+            # torque_vel_nonarm_reward = self._joint_torque_vel_nonarm_coeff * -torque_vel_nonarm_norm
         else: 
             torque_vel_nonarm_reward = 0.0
         # jax.debug.print('torque_vel_nonarm_reward: {torque_vel_norm}', torque_vel_norm=torque_vel_nonarm_reward)
@@ -620,13 +630,14 @@ class MimicRewardVelArm(MimicReward):
             action_rate_reward = self._action_rate_coeff * -action_rate_norm
         else:
             action_rate_reward = 0.0
+        # jax.debug.print('action_rate_reward: {torque_vel_norm}', torque_vel_norm=self._action_rate_coeff * action_rate_reward)
 
         if self._action_coeff > 0.0:
             action_norm = backend.sum(backend.square(action))
-            action_reward = self._action_coeff * -action_norm
+            action_reward = -action_norm #self._action_coeff * -action_norm
         else: 
             action_reward = 0.0
-        # jax.debug.print('action_reward: {torque_vel_norm}', torque_vel_norm=action_reward)
+        # jax.debug.print('action_reward: {torque_vel_norm}', torque_vel_norm=self._action_coeff *action_reward)
         
 
         # total penality rewards
@@ -642,7 +653,9 @@ class MimicRewardVelArm(MimicReward):
                             # + self._joint_torque_vel_coeff * torque_vel_reward)
         # jax.debug.print('total_penalities before clip: {total_penalities}', total_penalities=total_penalities)
         
-        total_penalities = backend.maximum(total_penalities, -1.0)
+        # jax.debug.print('action out of bounds: {total_penalities}', total_penalities = self._action_out_of_bounds_coeff * out_of_bound_reward)
+        # total_penalities = backend.maximum(total_penalities, -1.0)
+        total_penalities = backend.maximum(total_penalities, -7.0)
         # jax.debug.print('total_penalities with clip: {total_penalities}', total_penalities=total_penalities)
 
         # calculate total reward
@@ -652,6 +665,9 @@ class MimicRewardVelArm(MimicReward):
                         + self._rpos_w_sum * rpos_reward + self._rquat_w_sum * rangles_reward
                         + self._rvel_w_sum * rvel_rot_reward + self._rvel_w_sum * rvel_lin_reward)
         # jax.debug.print('total_reward: {total_reward}', total_reward=total_reward)
+
+        # if total_reward + total_penalities < 0.0:
+        #     jax.debug.print("NEGATIVE REWARD OCCRED")
 
 
         if self._lateral_range_coeff>0.0:
@@ -675,6 +691,12 @@ class MimicRewardVelArm(MimicReward):
         total_reward = total_reward + total_penalities - lateral_pos_reward
 
         # jax.debug.print('total_reward - pen: {total_reward}', total_reward=total_reward)
+# 
+        # avoid Python boolean conversion of JAX tracers; use jax.lax.cond to run debug print only when predicate true
+        # jax.lax.cond(total_reward < 0.0,
+        #              lambda _: jax.debug.print("NEGATIVE REWARD OCCURED"),
+        #              lambda _: None,
+        #              None)
 
         
         # clip to positive values
@@ -691,3 +713,10 @@ class MimicRewardVelArm(MimicReward):
         carry = carry.replace(reward_state=reward_state)
 
         return total_reward, carry
+    
+
+
+
+            
+
+
