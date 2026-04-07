@@ -147,14 +147,14 @@ class PPOJax(JaxRLAlgorithmBase):
         else:
             train_state = None
 
-        if train_state is None:
+        #if train_state is None:
 
-            rng, _rng1, _rng2 = jax.random.split(rng, 3)
-            init_x = jnp.zeros(env.info.observation_space.shape)
-            network_params = network.init(_rng1, init_x)
+        rng, _rng1, _rng2 = jax.random.split(rng, 3)
+        init_x = jnp.zeros(env.info.observation_space.shape)
+        network_params = network.init(_rng1, init_x)
 
-        else:
-            raise NotImplementedError("Loading of train state not implemented yet.")
+        # else:
+        #     raise NotImplementedError("Loading of train state not implemented yet.")
 
         # init new train states from old params
         train_state = TrainState.create(

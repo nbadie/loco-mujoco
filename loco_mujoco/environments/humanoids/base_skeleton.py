@@ -72,6 +72,11 @@ class BaseSkeleton(LocoEnv):
         self._use_muscles = use_muscles
         self._use_box_feet = use_box_feet
         self._disable_arms = disable_arms
+
+        if "keep_feet_joints" in kwargs:
+            self._keep_feet_joints = kwargs.pop("keep_feet_joints")
+
+            
         joints_to_remove, motors_to_remove, equ_constr_to_remove = self._get_spec_modifications()
 
         if self._use_box_feet or self._disable_arms:
@@ -107,10 +112,12 @@ class BaseSkeleton(LocoEnv):
         motors_to_remove = []
         equ_constr_to_remove = []
         if self._use_box_feet:
-            joints_to_remove += ["subtalar_angle_l", "mtp_angle_l", "subtalar_angle_r", "mtp_angle_r"]
-            if not self._use_muscles:
-                motors_to_remove += ["mot_subtalar_angle_l", "mot_mtp_angle_l", "mot_subtalar_angle_r", "mot_mtp_angle_r"]
-            equ_constr_to_remove += [j + "_constraint" for j in joints_to_remove]
+            # Added condition to not remove subtalar and mtp joints if using 2 box feet since joint movement is still working with the contact
+            if not hasattr(self, "_keep_feet_joints") or not self._keep_feet_joints:
+                joints_to_remove += ["subtalar_angle_l", "mtp_angle_l", "subtalar_angle_r", "mtp_angle_r"]
+                if not self._use_muscles:
+                    motors_to_remove += ["mot_subtalar_angle_l", "mot_mtp_angle_l", "mot_subtalar_angle_r", "mot_mtp_angle_r"]
+                equ_constr_to_remove += [j + "_constraint" for j in joints_to_remove]
 
         if self._disable_arms:
             joints_to_remove += ["arm_flex_r", "arm_add_r", "arm_rot_r", "elbow_flex_r", "pro_sup_r", "wrist_flex_r",
@@ -230,24 +237,50 @@ class BaseSkeleton(LocoEnv):
             Modified Mujoco spec.
         """
 
-        # find foot and attach box
         toe_l = spec.find_body("toes_l")
-        size = np.array([0.112, 0.03, 0.05]) * self.scaling
-        pos = np.array([-0.09, 0.019, 0.0]) * self.scaling
-        toe_l.add_geom(name="foot_box_l", type=mujoco.mjtGeom.mjGEOM_BOX, size=size, pos=pos,
-                       rgba=[0.5, 0.5, 0.5, alpha_box_feet], euler=[0.0, 0.15, 0.0])
         toe_r = spec.find_body("toes_r")
-        toe_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_BOX, size=size, pos=pos,
-                       rgba=[0.5, 0.5, 0.5, alpha_box_feet], euler=[0.0, -0.15, 0.0])
+        calcn_l = spec.find_body("calcn_l")
+        calcn_r = spec.find_body("calcn_r")
 
-        # make true foot uncollidable
-        foot_geoms = ["r_foot", "r_bofoot", "l_foot", "l_bofoot"]
-        for g in spec.geoms:
-            if g.name in foot_geoms:
-                g.contype = 0
-                g.conaffinity = 0
+        if hasattr(self, 'multi_contact_geom_type'):
+            if self.multi_contact_geom_type == '2boxes': 
+                size_foot = np.array([0.083, 0.03, 0.05])* self.scaling
+                size_toes = np.array([0.015, 0.015, 0.0475]) * self.scaling
+                pos_foot = np.array([0.077, 0.019, -0.01]) * self.scaling 
+                pos_toes = np.array([0.015, 0.004, 0.0106]) * self.scaling
+                pos_foot_l = np.concatenate([pos_foot[:2], [-pos_foot[2]]])
+                pos_toes_l = np.concatenate([pos_toes[:2], [-pos_toes[2]]])
+                euler_foot = [0.0, 0.2, 0.0] #[0.0, 0.15, 0.0]
+                euler_toes = [0.0, 0.3, 0.0]
+
+                geom_type = mujoco.mjtGeom.mjGEOM_BOX
+                toe_l.add_geom(name="toes_box_l", type=geom_type, size=size_toes, pos=pos_toes_l,
+                        rgba=[0.5, 0.5, 0.5, alpha_box_feet], euler=euler_toes)
+                toe_r.add_geom(name="toes_box_r", type=geom_type, size=size_toes, pos=pos_toes,
+                        rgba=[0.5, 0.5, 0.5, alpha_box_feet], euler=[a*-1 for a in euler_toes])
+                calcn_l.add_geom(name="foot_box_l", type=geom_type, size=size_foot, pos=pos_foot_l,
+                        rgba=[0.5, 0.5, 0.5, alpha_box_feet], euler=euler_foot)
+                calcn_r.add_geom(name="foot_box_r", type=geom_type, size=size_foot, pos=pos_foot,
+                        rgba=[0.5, 0.5, 0.5, alpha_box_feet], euler=[a*-1 for a in euler_foot])
+        else: 
+            # find foot and attach box
+            size = np.array([0.112, 0.03, 0.05]) * self.scaling
+            pos = np.array([-0.09, 0.019, 0.0]) * self.scaling
+            toe_l.add_geom(name="foot_box_l", type=mujoco.mjtGeom.mjGEOM_BOX, size=size, pos=pos,
+                        rgba=[0.5, 0.5, 0.5, alpha_box_feet], euler=[0.0, 0.15, 0.0])
+            toe_r.add_geom(name="foot_box_r", type=mujoco.mjtGeom.mjGEOM_BOX, size=size, pos=pos,
+                        rgba=[0.5, 0.5, 0.5, alpha_box_feet], euler=[0.0, -0.15, 0.0])
+
+        # # make true foot uncollidable
+        # foot_geoms = ["r_foot", "r_bofoot", "l_foot", "l_bofoot"]
+        # for g in spec.geoms:
+        #     if g.name in foot_geoms:
+        #         g.contype = 0
+        #         g.conaffinity = 0
 
         return spec
+    
+
 
     @staticmethod
     def _reorient_arms(spec: MjSpec) -> MjSpec:
@@ -416,8 +449,15 @@ class BaseSkeleton(LocoEnv):
             g.conaffinity = 0
 
         # --- define contacts between feet and floor --
-        spec.add_pair(geomname1="floor", geomname2="foot_box_r")
-        spec.add_pair(geomname1="floor", geomname2="foot_box_l")
+        if hasattr(self, 'multi_contact_geom_type'):
+            if self.multi_contact_geom_type == '2boxes':
+                spec.add_pair(geomname1="floor", geomname2="foot_box_r", solref = self.contact_geom_solref)
+                spec.add_pair(geomname1="floor", geomname2="foot_box_l", solref = self.contact_geom_solref)
+                spec.add_pair(geomname1="floor", geomname2="toes_box_r", solref = self.contact_geom_solref)
+                spec.add_pair(geomname1="floor", geomname2="toes_box_l", solref = self.contact_geom_solref)
+        else: 
+            spec.add_pair(geomname1="floor", geomname2="foot_box_r", solref = self.contact_geom_solref)
+            spec.add_pair(geomname1="floor", geomname2="foot_box_l", solref = self.contact_geom_solref)
 
         return spec
 

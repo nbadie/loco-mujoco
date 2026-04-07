@@ -120,6 +120,8 @@ class ImitationFactory(TaskFactory):
         env_name = env.__class__.__name__
         if "Mjx" in env_name:
             env_name = env_name.replace("Mjx", "")
+        if "Prosthesis" in env_name: # Added to handle Prosthesis envs
+            env_name = env_name.replace("Prosthesis", "")
 
         if isinstance(default_dataset_conf.task, str):
             default_dataset_conf.task = [default_dataset_conf.task]

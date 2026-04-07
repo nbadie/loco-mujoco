@@ -11,6 +11,7 @@ htmlcov/
 loco_mujoco/datasets/
 mushroom_rl_recordings/
 LocoMuJoCo_recordings/
+outputs/
 record_all/
 _build/
 loco_mujoco/models/myo_model/
@@ -25,3 +26,5 @@ data/
 loco_mujoco/LOCOMUJOCO_VARIABLES.yaml
 **/video2images.sh
 **/expert_traj.npz
+
+outputs/

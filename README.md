@@ -1,3 +1,4 @@
+# Prosthetic Socket Fitting and Alignment Effects on Lower-Limb Amputee Gait: A Simulation Study
 <p align="center">
   <img width="70%" src="https://github.com/robfiras/loco-mujoco/assets/69359729/bd2a219e-ddfd-4355-8024-d9af921fb92a">
 </p>
@@ -7,145 +8,44 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Join our Discord](https://img.shields.io/badge/Discord-Join%20Us-7289DA?style=flat&logo=discord&logoColor=white)](https://discord.gg/gEqR3xCVdn)
 
-[//]: # ([![PyPI]&#40;https://img.shields.io/pypi/v/loco-mujoco&#41;]&#40;https://pypi.org/project/loco-mujoco/&#41;)
+# An **end-to-end framework** transforming musculoskeletal models into prosthetic simulations through digital surgery, modular prosthesis fitting, and gait synthesis. Our work expands LocoMuJoCo which is an **imitation learning benchmark** for **whole-body control** with validated, modular design. For more information on LocoMuJoCo See [LocoMuJoCo datasets](https://huggingface.co/datasets/robfiras/loco-mujoco-datasets) and [original repository](https://github.com/robfiras/loco-mujoco) for more details on them. 
 
-> 🚀 **Latest News:**
-> A **major release (v1.0)** just dropped! 🎉  
-> LocoMuJoCo now supports MJX and comes with new Jax algorithms. We also added many new environments and +22k datasets! 🚀   
+Bridging the gap between musculoskeletal modeling and prosthetic engineering. This framework provides an automated, end-to-end pipeline that transforms generic musculoskeletal models into functional prosthetic simulations. By leveraging GPU-accelerated physics (MJX) and Reinforcement Learning, we enable researchers to optimize hardware and alignment in a high-fidelity virtual environment.
 
+Built as an extension of LocoMuJoCo (https://github.com/robfiras/loco-mujoco), this tool is designed for the rapid iteration of prosthetic designs and the study of human-device interaction.
 
-**LocoMuJoCo** is an **imitation learning benchmark** specifically designed for **whole-body control**.  
-It features a diverse set of environments, including **quadrupeds**, **humanoids**, and **(musculo-)skeletal human models**,
-each provided with comprehensive datasets (over 22,000 samples per humanoid).
+### Key Features
+✅ **Virtual Innovation Lab** – Open-source platform for risk-free hardware and alignment optimization  
+✅ **Validated pipeline** – From digital surgery and socket fitting to robust, synthesized gait policies
+# ✅ **Validated Pipeline** – Transforms musculoskeletal models into models with prosthesis using MjSpec  
+# ✅ **Curriculum Learning** - Applies curriculum learning to model with prosthesis to learn dynamic prosthetic simulations with rigorously validated gaits  
+✅ **Precision Alignment** – Quantify the biomechanical sensitivity of prosthetic shifts beyond the resolution of clinical observation   
+✅ **Modular design** – Easily swap components, reward functions, and domain randomization parameters
+✅ **MJX-accelerated** – Harness the power of JAX for massively parallel gait synthesis and curriculum training
 
-Although primarily focused on imitation learning, LocoMuJoCo also supports custom reward function classes,  
-making it suitable for pure reinforcement learning as well.
-
-<div align="center">
-  <img src="imgs/main_lmj.gif"/>
-</div>
-
-### Key Advantages 
-✅ Supports **MuJoCo** (single environment) and **MJX** (parallel environments) \
-✅ Includes **12 humanoid and 4 quadruped environments**, featuring 4 **biomechanical human models** \
-✅ Clean single-file JAX algorithms for quick benchmarking (**PPO**, **GAIL**, **AMP**, **DeepMimic**)\
-✅ Combined training and environment into one JIT‑compiled function for lightning‑fast training 🚀 \
-✅ **Over 22,000 motion capture datasets** (AMASS, LAFAN1, native LocoMuJoCo) retargeted for each humanoid \
-✅ **Robot-to-robot retargeting** allows to retarget any existing dataset from one robot to another \
-✅ Powerful **trajectory comparison metrics** including dynamic time warping and discrete Fréchet distance, all in JAX \
-✅ Interface for Gymnasium \
-✅ Built-in **domain and terrain randomization** \
-✅ Modular design: define, swap, and reuse components like observation types, reward functions, terminal state handlers, and domain randomization \
-✅ [Documentation](https://loco-mujoco.readthedocs.io/)
-
----
-
+```
 ## Installation
-
-[//]: # (You have the choice to install the latest release via PyPI by running )
-
-[//]: # ()
-[//]: # ()
-[//]: # (```bash)
-
-[//]: # ()
-[//]: # (pip install loco-mujoco )
-
-[//]: # ()
-[//]: # (```)
-
-Clone this repo and do an editable installation:
-
-```bash
-cd loco-mujoco
-pip install -e . 
+Follow https://github.com/robfiras/loco-mujoco: 
+1. Clone and install the core framework:
+2. (Optional) Enable GPU acceleration with JAX:
 ```
 
-By default, both will install the CPU-version of Jax. If you want to use Jax on the GPU, you need to install the following:
-
-```bash
-pip install jax["cuda12"]
-````
-
-> [!NOTE]
-> If you want to run the **MyoSkeleton** environment, you need to additionally run
-> `loco-mujoco-myomodel-init` to accept the license and download the model.
+## Quick Start
+We provide comprehensive tutorials in the [examples folder]{./examples} to get you running in minutes:
+* Curriculum Training: Train an RL agent to adapt to a new prosthetic configuration.
+* MJX Environments: Run massive batches of simulations in parallel.
+* Domain Randomization: Test the robustness of your prosthetic alignment across varying conditions.
 
 
-### Datasets
 
-LocoMuJoCo provides three sources of motion capture (mocap) data for humanoid environments: default (provided by us), LAFAN1, and AMASS. The first two datasets
-are available on the [LocoMujoCo HuggingFace dataset repository](https://huggingface.co/datasets/robfiras/loco-mujoco-datasets)
-and will downloaded and cached automatically for you. AMASS needs to be downloaded and installed separately due to
-their licensing. See [here](loco_mujoco/smpl) for more information about the installation.
-
-This is how you can visualize the datasets:
-
-```python
-from loco_mujoco.task_factories import ImitationFactory, LAFAN1DatasetConf, DefaultDatasetConf, AMASSDatasetConf
-
-
-# # example --> you can add as many datasets as you want in the lists!
-env = ImitationFactory.make("UnitreeH1",
-                            default_dataset_conf=DefaultDatasetConf(["squat"]),
-                            lafan1_dataset_conf=LAFAN1DatasetConf(["dance2_subject4", "walk1_subject1"]),
-                            # if SMPL and AMASS are installed, you can use the following:
-                            #amass_dataset_conf=AMASSDatasetConf(["DanceDB/DanceDB/20120911_TheodorosSourmelis/Capoeira_Theodoros_v2_C3D_poses"])
-                            )
-
-env.play_trajectory(n_episodes=3, n_steps_per_episode=500, render=True)
-```
-
-#### Speeding up Dataset Loading
-LocoMuJoCo only stores datasets with joint positions and velocities to save memory. All other attributes are calculated 
-using forward kinematics upon loading. If you want to speed up the dataset loading, you can define caches for the datasets. This will
-store the forward kinematics results in a cache file, which will be loaded on the next run: 
-
-```bash
-loco-mujoco-set-all-caches --path <path to cache>
-```
-
-For instance, you could run:
-```bash
-loco-mujoco-set-all-caches --path "$HOME/.loco-mujoco-caches"
-````
-
----
-
-## Environments 
-You want a quick overview of all **environments** available? You can find it 
-[here](/loco_mujoco/environments) and more detailed in the [Documentation](https://loco-mujoco.readthedocs.io/).
-
-<div align="center">
-  <img src="imgs/lmj_envs.gif"/>
-</div>
-
-And stay tuned! There are many more to come ...
-
----
-
-## Tutorials
-
-We provide a set of tutorials to help you get started with LocoMuJoCo. You can find them in the [tutorials folder](./examples/tutorials)
-or with more explanation in the [documentation](https://loco-mujoco.readthedocs.io/).
-
-If you want to check out training examples of a PPO, GAIL, AMP, or DeepMimic agent, you can find them 
-in the [training examples folder](./examples/training_examples). For instance, [here](./examples/training_examples/jax_rl_mimic) is an example of a DeepMimic agent
-you can train to achieve a human-like walking in all directions, which was trained in 36 min on an RTX 3080 Ti:
-
-<div align="center">
-  <img src="imgs/unitree_h1_walk_anydir.gif"/>
-</div>
-
----
 ## Citation
-```
-@inproceedings{alhafez2023b,
-title={LocoMuJoCo: A Comprehensive Imitation Learning Benchmark for Locomotion},
-author={Firas Al-Hafez and Guoping Zhao and Jan Peters and Davide Tateo},
-booktitle={6th Robot Learning Workshop, NeurIPS},
-year={2023}
-}
+#```
+#@inproceedings{alhafez2023b,
+#title={LocoMuJoCo: A Comprehensive Imitation Learning Benchmark for Locomotion},
+#author={Firas Al-Hafez and Guoping Zhao and Jan Peters and Davide Tateo},
+#booktitle={6th Robot Learning Workshop, NeurIPS},
+#year={2023}
+#}
 ```
 
 

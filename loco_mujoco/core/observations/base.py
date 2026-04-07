@@ -426,6 +426,73 @@ class StatefulObservation(Observation, StatefulObject):
         """
         raise NotImplementedError
 
+class ModelBodyPos(SimpleObs):
+    """
+    Observation Type holding x, y, z position of the body from model definition (static).
+
+    See also:
+        :class:`Obs` for the base observation class.
+    """
+
+    dim = 3
+
+    def _init_from_mj(self, env, model, data, current_obs_size):
+        body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, self.xml_name)
+        dim = 3
+        #dim = len(model.body_pos[body_id]) #self.xml_name))
+        assert dim == self.dim
+        self.min, self.max = [-np.inf] * dim, [np.inf] * dim
+        self.data_type_ind = np.array(self.to_list(body_id)) # #np.array(self.to_list(np.array(model.body_pos[body_id]))) #data.body(self.xml_name).id))
+        self.obs_ind = np.array([j for j in range(current_obs_size, current_obs_size + dim)])
+        self._initialized_from_mj = True
+
+    @classmethod
+    def get_all_obs_of_type(cls, env, model, data, data_ind_cont, backend):
+        """Read static body positions from model, not data."""
+        body_ids = data_ind_cont.ModelBodyPos
+        if len(body_ids) == 0:
+            return backend.empty(shape=(0,))
+        positions = backend.array([model.body_pos[int(bid)] for bid in body_ids])
+        return backend.ravel(positions)
+
+    @classmethod
+    def data_type(cls):
+        return None  # Custom getter, no default data type
+
+
+class ModelBodyRot(SimpleObs):
+    """
+    Observation Type holding the quaternion of the body from model definition (static).
+
+    See also:
+        :class:`Obs` for the base observation class.
+    """
+
+    dim = 4
+
+    def _init_from_mj(self, env, model, data, current_obs_size):
+        body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, self.xml_name)
+        dim = 4
+        # dim = len(model.body_quat[body_id]) #self.xml_name))
+        assert dim == self.dim
+        self.min, self.max = [-np.inf] * dim, [np.inf] * dim
+        self.data_type_ind = np.array(self.to_list(body_id)) #np.array(self.to_list(np.array(model.body_quat[body_id]))) #data.body(self.xml_name).id))
+        self.obs_ind = np.array([j for j in range(current_obs_size, current_obs_size + dim)])
+        self._initialized_from_mj = True
+
+    @classmethod
+    def get_all_obs_of_type(cls, env, model, data, data_ind_cont, backend):
+        """Read static body quaternions from model, not data."""
+        body_ids = data_ind_cont.ModelBodyRot
+        if len(body_ids) == 0:
+            return backend.empty(shape=(0,))
+        quaternions = backend.array([model.body_quat[int(bid)] for bid in body_ids])
+        return backend.ravel(quaternions)
+
+    @classmethod
+    def data_type(cls):
+        return None  # Custom getter, no default data type
+    
 
 class BodyPos(SimpleObs):
     """
@@ -1106,6 +1173,8 @@ class ObservationType:
     LastAction = LastAction
     ModelInfo = ModelInfo
     RelativeSiteQuantaties = RelativeSiteQuantaties
+    ModelBodyPos = ModelBodyPos
+    ModelBodyRot = ModelBodyRot
 
     @classmethod
     def get(cls, obs_name):

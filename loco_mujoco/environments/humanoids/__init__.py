@@ -20,6 +20,7 @@ from .fourier_gr1t2 import FourierGR1T2
 from .fourier_gr1t2_mjx import MjxFourierGR1T2
 from .skeletons import (SkeletonTorque, MjxSkeletonTorque, HumanoidTorque, SkeletonMuscle, MjxSkeletonMuscle,
                         HumanoidMuscle)
+from .skeleton_prosthesis import MjxSkeletonMuscleProsthesis
 
 
 # register environments in mushroom
@@ -47,6 +48,7 @@ SkeletonMuscle.register()
 MjxSkeletonMuscle.register()
 MyoSkeleton.register()
 MjxMyoSkeleton.register()
+MjxSkeletonMuscleProsthesis.register()
 
 # compatability with old names
 HumanoidTorque.register()
