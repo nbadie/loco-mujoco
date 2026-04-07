@@ -17,6 +17,7 @@ Built as an extension of LocoMuJoCo (https://github.com/robfiras/loco-mujoco), t
 ✅ **MJX-accelerated** – Harness the power of JAX for massively parallel gait synthesis and curriculum training.<br/>
 
 
+
 ## Installation
 Follow https://github.com/robfiras/loco-mujoco: 
   1. Clone and install the core framework
