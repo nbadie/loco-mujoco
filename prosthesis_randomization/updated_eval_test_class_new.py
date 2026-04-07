@@ -69,7 +69,7 @@ import sys
 #     "prosthesis_body_orientation": 0.1
 # }
 
-subfolder_name = 'pylon_socket_ori_x'# _TalZ5'
+subfolder_name = 'ckpt_199884800_pylon_socket_ori_x'# _TalZ5'
 # subfolder_name = 'talus_ori_z' #_test_knee_lim' #_3000steps'
 
 dt_str_init = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -102,7 +102,7 @@ randomization_params_eval = {
     # "prosthesis_body_orientation_range": {'talus': {'z': [-talus_ori_ang, talus_ori_ang]}},
     # "prosthesis_body_orientation_range": {'talus': {'z': [talus_ori_ang, talus_ori_ang]}}
     # "prosthesis_body_orientation_range": {'pylon_socket': {'z': [-ori_ang, ori_ang]}, 'talus': {'z': [talus_ori_ang, talus_ori_ang]}}
-    "prosthesis_body_orientation_range": {'pylon_socket': {'x': [-ori_ang,ori_ang]}} 
+    "prosthesis_body_orientation_range": {'pylon_socket': {'x': [ori_ang_test_2,ori_ang]}} 
 }
 randomization_increments = {
     "prosthesis_joint_stiffness": 100, #10,
@@ -179,7 +179,7 @@ prosthesis_metrics_handler = ProsthesisMetricsHandler(env)
 
 n_steps = 2000 #3000
 n_envs = 1  # <--- Make sure this matches your training batch size
-seed =  0 #2 #0 #0
+seed =  1 #2 #0 #0
 rng = jax.random.key(seed)
 train_state_seed = 0  # Take first seed 
 
@@ -199,16 +199,16 @@ def sample_actions_uncompiled(ts, obs, _rng): # Renamed for clarity
 sample_actions = jax.jit(sample_actions_uncompiled)
 
 
-if config.experiment.n_seeds > 1:
-    assert train_state_seed is not None, ("Loaded train state has multiple seeds. Please specify "
-                                            "train_state_seed for replay.")
+# if config.experiment.n_seeds > 1:
+#     assert train_state_seed is not None, ("Loaded train state has multiple seeds. Please specify "
+#                                             "train_state_seed for replay.")
     
-    train_state = jax.tree.map(lambda x: x[train_state_seed], agent_state.train_state)
-else: 
-    # obs, env_state = jit_reset(env_keys) #env.reset(env_keys)
-    train_state = agent_state.train_state
+#     train_state = jax.tree.map(lambda x: x[train_state_seed], agent_state.train_state)
+# else: 
+#     # obs, env_state = jit_reset(env_keys) #env.reset(env_keys)
+#     train_state = agent_state.train_state
 
-# train_state = agent_state.train_state
+train_state = agent_state.train_state
 
 
 # ###### Some params for evaluation 

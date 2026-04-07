@@ -114,6 +114,7 @@ class MimicRewardEmergenceNatural(MimicReward):
         self._target_body = kwargs.get("target_body", "pelvis")
         self._vel_coeff = kwargs.get("vel_coeff", 1.0)
         self._vel_omega = kwargs.get("vel_omega", 1)
+        self._gauss_vel = kwargs.get("gauss_vel", False)
 
         # Target velocity and body in 0 
         self._target_velocity_z = kwargs.get("target_velocity_z", 0.0)  # m/s
@@ -180,6 +181,13 @@ class MimicRewardEmergenceNatural(MimicReward):
         self._free_joint_qvel_ind = np.array(mj_jntname2qvelid(self._info_props["root_free_joint_xml_name"], model))
         self._free_joint_qvel_mask = np.zeros(model.nv, dtype=bool)
         self._free_joint_qvel_mask[self._free_joint_qvel_ind] = True
+
+        # jax.debug.print('qpos  term: {term}', term=self._qpos_w_sum)
+        # jax.debug.print('qvel  term: {term}', term=self._qvel_w_sum)
+        # jax.debug.print('rpos  term: {term}', term=self._rpos_w_sum)
+        # jax.debug.print('rangles  term: {term}', term=self._rquat_w_sum)
+        # jax.debug.print('rvel_rot term: {term}', term=self._rvel_w_sum)
+        # jax.debug.print('rvel_lin term: {term}', term=self._rvel_w_sum)
 
 
 
@@ -301,11 +309,14 @@ class MimicRewardEmergenceNatural(MimicReward):
         # body_vel_rot = data.cvel[target_body_id, :3]  # angular velocity
         body_vel_lin_x = data.cvel[target_body_id, 3]  # linear velocity
 
-        vel_reward = backend.where(
-            body_vel_lin_x < self._target_velocity,
-            backend.exp(-self._vel_omega * (self._target_velocity - body_vel_lin_x)**2),
-            backend.array(1.0),
-        )
+        if self._gauss_vel: 
+            vel_reward = backend.exp(-self._vel_omega * (self._target_velocity - body_vel_lin_x)**2)
+        else: 
+            vel_reward = backend.where(
+                body_vel_lin_x < self._target_velocity,
+                backend.exp(-self._vel_omega * (self._target_velocity - body_vel_lin_x)**2),
+                backend.array(1.0),
+            )
 
 
         # Velocity reward z direction
@@ -710,7 +721,15 @@ class MimicRewardEmergenceNatural(MimicReward):
                         + self._rpos_w_sum * rpos_reward + self._rquat_w_sum * rangles_reward
                         + self._rvel_w_sum * rvel_rot_reward + self._rvel_w_sum * rvel_lin_reward)
 
-        # jax.debug.print('total_reward before penalties: {total_reward}', total_reward=total_reward)
+        # jax.debug.print('total_reward r_sum: {total_reward}', total_reward=total_reward)
+
+        # jax.debug.print('qpos_reward term: {term}', term=self._qpos_w_sum * qpos_reward)
+        # jax.debug.print('qvel_reward term: {term}', term=self._qvel_w_sum * qvel_reward)
+        # if len(self._rel_site_ids) > 1:
+            # jax.debug.print('rpos_reward term: {term}', term=self._rpos_w_sum * rpos_reward)
+            # jax.debug.print('rangles_reward term: {term}', term=self._rquat_w_sum * rangles_reward)
+            # jax.debug.print('rvel_rot_reward term: {term}', term=self._rvel_w_sum * rvel_rot_reward)
+            # jax.debug.print('rvel_lin_reward term: {term}', term=self._rvel_w_sum * rvel_lin_reward)
 
         total_reward += self._vel_coeff * vel_reward + \
                           self._vel_coeff_z * vel_reward_z 

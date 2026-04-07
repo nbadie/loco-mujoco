@@ -279,7 +279,10 @@ class Mjx(Mujoco):
             low_stiffness = 4350 #0 #10 #500 #4350 #2000 #5000 #4350 #10000 #4350 #6000 #7000 #4350 #1000
             a = 0.02 #0.020 #0.02 #2 #0.02 #0.038 #0.2 #0.02 #0.038#2 #0.038 #0.02 #0.038
             H = 0.02 #0.020 #0.02 #0.02 #0.025 #0.02 #0.025
-            delta_shift = 0 #-0.00015 #0 #-0.00015 #0 #-0.0003 #0 #0.02 #0 #0.01
+            if hasattr(self,'set_delta_shift_slack') and self.set_delta_shift_slack:
+                delta_shift = self.delta_shift_slack
+            else:
+                delta_shift = 0 #-0.00015 #0 #-0.0003 #0 #0.02 #0 #0.01
             self.xp = jnp.array([-a+delta_shift, 0+delta_shift, H+delta_shift, H+a+delta_shift])
             self.fp = jnp.array([-high_stiffness*(a+delta_shift), 0+delta_shift, low_stiffness*(H+delta_shift), low_stiffness*(H+delta_shift)+high_stiffness*(a+delta_shift)])
             

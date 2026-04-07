@@ -74,8 +74,12 @@ factory = TaskFactory.get_factory_cls(config.experiment.task_factory.name)
 # create env
 OmegaConf.set_struct(config, False)  # Allow modifications
 config.experiment.env_params["headless"] = True #False
-config.experiment.env_params["goal_type"] = "GoalTrajMimicv2"   # nicer looking than GoalTrajMimic
+config.experiment.env_params["goal_type"] = "GoalTrajMimicv2" #"NoGoal" #"GoalTrajMimicv2"   # nicer looking than GoalTrajMimic
+config.experiment.env_params["goal_params"] = {
+      "visualize_goal": False
+}
 config.experiment.env_params["add_sensors"] = True
+config.experiment.env_params["prosthesis_visualization"] = True
 
 # # Ensure reward_params exists and add missing defaults
 if "reward_params" not in config.experiment.env_params or config.experiment.env_params["reward_params"] is None:
@@ -92,14 +96,14 @@ if "reward_params" not in config.experiment.env_params or config.experiment.env_
 # rp_existing = config.experiment.env_params["reward_params"]
 # rp_container = OmegaConf.to_container(rp_existing, resolve=True) if rp_existing is not None else {}
 # _defaults = {
-#     # "qpos_w_sum": 2*1.6, 
-#     # "qvel_w_sum": 2*0.8,
-#     # "rpos_w_sum": 2*2.0,
-#     # "rquat_w_sum": 2*1.2,
-#     # "rvel_w_sum": 2*0.4,
-#     # "action_coeff": 0.002, #0.005, #0.015, #0.02, 
-#     "action_muscle_coeff": 0.01,
-#     "action_motor_coeff": 0, #0.2, #0.3,
+#     "qpos_w_sum": 0, #2*1.6, 
+#     "qvel_w_sum": 0, #2*0.8,
+#     "rpos_w_sum": 2*0.0625, #0.25, #2*2.0,
+#     "rquat_w_sum": 2*0.0375, #0.15,
+#     "rvel_w_sum": 2*0.0125, #0.05,
+#     "action_coeff": 0.02, #0.0005, #0.002, #0.005, #0.015, #0.02, 
+#     # "action_muscle_coeff": 0.01,
+#     # "action_motor_coeff": 0, #0.2, #0.3,
 
 
 #     "grf_coeff": 0, #0.1, #0.07281
@@ -116,13 +120,16 @@ if "reward_params" not in config.experiment.env_params or config.experiment.env_
 #     "joint_limit_threshold_hinge": 0.1, #0.14,
     
 #     "target_body": "pelvis",
-#     "target_velocity": 1.2,
-#     "vel_coeff": 0.8, #1.3,
+#     "target_velocity": 1.1, #1.2,
+#     "vel_coeff": 0.7, #1.3,
+#     "vel_omega": 10,
+#     "gauss_vel": True, 
 
 #     "joint_torque_vel_arm_coeff": 0, #0.0008,
 
 #     "target_velocity_z": 0.0,
-#     "vel_z_coeff": 0.2, 
+#     "vel_coeff_z": 0.3, 
+#     "vel_omega_z": 10, #50,
 #     "target_body_z": "pelvis",
 # }
 # # # vel: 10.0 
@@ -132,8 +139,10 @@ if "reward_params" not in config.experiment.env_params or config.experiment.env_
 # merged = {**_defaults, **(rp_container or {})}
 # # Re-create a DictConfig from the merged dict to avoid modifying a structured DictConfig in-place
 # rp = OmegaConf.create(merged)
-# config.experiment.env_params["reward_params"] = rp
+# config.experiment.env_params["reward_params"] = _defaults #rp
 # config.experiment.env_params["reward_type"] = "MimicRewardEmergenceNatural"
+
+# print("Final reward_params:", config.experiment.env_params["reward_params"])
 
 # config.experiment.env_params["reward_params"]["qpos_w_sum"] = 2.8
 # config.experiment.env_params["reward_params"]["qvel_w_sum"] = 1.4
@@ -197,7 +206,7 @@ if "prosthesis_side" in config.experiment.env_params:
     randomization_params["prosthesis_side"] = config.experiment.env_params["prosthesis_side"]
 
 
-randomization_params['randomize_prosthesis_body_position'] = True 
+randomization_params['randomize_prosthesis_body_position'] = False 
 randomization_params['prosthesis_body_position_range'] = {'pylon_socket': {'y': [0.05,0.05]}} #{'pylon_socket': {'y': [-0.1,-0.1]}, 'talus': {'x': [0.1,0.1]}} #{'pylon_socket': {'y': [0.1,0.1]}} #, 'y': [0.0,0.0], 'z': [0.0,0.0]}} 
 randomization_params['randomize_prosthesis_body_orientation'] = False #False
 randomization_params['prosthesis_body_orientation_range'] = {'pylon_socket': {'x': [-0.2,0.2],'y': [-0.3,0.3],'z': [-0.2,0.2]},'talus': {'x': [-0.1,0.1],'z': [-0.1,0.1]}}
@@ -212,7 +221,7 @@ env = factory.make(
     **config.experiment.task_factory.params,
     # terrain_type="RoughTerrain", terrain_params=dict(random_min_height=-0.05, random_max_height=0.05),
     # domain_randomization_type=randomization_type, domain_randomization_params=randomization_params,
-    **viewer_params,
+    #**viewer_params,
 )
 env.th.to_jax()
 env = VecEnv(env)
@@ -223,10 +232,10 @@ model = env.get_model()
 
 prosthesis_metrics_handler = ProsthesisMetricsHandler(env) #(config, env)
 
-n_steps = 2000 #800 #2000 #1000 #3000 #3000 #3000 #1000 #200 #400 #1000 #00 #1000
+n_steps = 2000 #2000 #2000 #800 #2000 #1000 #3000 #3000 #3000 #1000 #200 #400 #1000 #00 #1000
 n_envs = 1 #1  # <--- Make sure this matches your training batch size
-rng = jax.random.key(0)
-train_state_seed = 0 #0 #0  # Take first seed 
+rng = jax.random.key(1) #[1-0-2]
+train_state_seed = 0 #0 #0 #0  # Take first seed 
 
 keys = jax.random.split(rng, n_envs + 1)
 rng, env_keys = keys[0], keys[1:]

@@ -37,7 +37,7 @@ config = agent_conf.config
 n_seeds = config.experiment.n_seeds  # Get total seeds from config
 
 
-subfolder_name = 'parallel_eval_pylon_socket_pos_x'
+subfolder_name = 'parallel_eval_pylon_socket_ori_z'
 
 randomization_params_names = ["prosthesis_dof_damping", "prosthesis_joint_stiffness", "prosthesis_body_position", "prosthesis_body_orientation"]
 # --- Environment Setup ---
@@ -47,12 +47,12 @@ randomization_params_eval = {
     "prosthesis_dof_damping_range": {'ankle_angle': [2, 10]},
     "randomize_prosthesis_joint_stiffness": False,
     "prosthesis_joint_stiffness_range": {'ankle_angle': [1000, 1300]},
-    "randomize_prosthesis_body_position": True,
-    "prosthesis_body_position_range": {'pylon_socket': {'x': [-0.010,0.010]}},
+    "randomize_prosthesis_body_position": False,
+    "prosthesis_body_position_range": {'pylon_socket': {'z': [-0.010,0.010]}},
     # "prosthesis_body_position_range": {'pylon_socket': {'x': [-0.010,-0.005]}},
-    "randomize_prosthesis_body_orientation": False,
+    "randomize_prosthesis_body_orientation": True,
     # "prosthesis_body_orientation_range": {'pylon_socket': {'x': [-np.deg2rad(6), -np.deg2rad(3)]}} 
-    "prosthesis_body_orientation_range": {'pylon_socket': {'x': [np.deg2rad(0), np.deg2rad(6)]}} 
+    "prosthesis_body_orientation_range": {'pylon_socket': {'z': [-np.deg2rad(6), np.deg2rad(6)]}} 
 }
 
 randomization_increments = {

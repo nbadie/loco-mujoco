@@ -4,7 +4,7 @@ defaults:
 
 wandb:
   project: deepmimic
-  run_name: SACHFoot_ProsRight_3seeds_Horizon2000_PierreRewTarPel_VelXOm10Coef07_VelZOm100Coef03_ActCoeff002_SiteHands_2BoxesNew_solref_900_300_KN-120_5_HP-30_35_AnkL-20_20_AnkR-10_10_AnkStiffL900_Gas_SlackRange002_SocketTySlack_ObsPosOriSocketTalus_LaPreStiffDamp_BothSideToeSameStiffDamp_NoSubTal
+  run_name: SACHFoot_ProsRight_seed3to6_Horizon2000_MimTorsoHandsJointRootQPos12QVel06_LatRange05Coeff02_ActPenSquare0005_2BoxesNew_solref_900_300_KN-120_5_HP-30_35_AnkL-20_20_AnkR-10_10_AnkStiffL900_Gas_SlackRange002_SocketTySlack_ObsPosOriSocketTalus_RandPosOriSocketTalus_LaPreStiffDamp_BothSideToeSameStiffDamp_NoSubTal
 experiment:
   task_factory:
     name: ImitationFactory
@@ -13,7 +13,7 @@ experiment:
         task: walk
   env_params:
     env_name: MjxSkeletonMuscleProsthesis
-    prosthesis_side: right_side #left_side
+    prosthesis_side: right_side
     prosthesis_type: transtibial
     prosthesis_subtype: SACH
     delete_joints: false
@@ -24,18 +24,40 @@ experiment:
     tibia_socket_overlap: 0.2
     amputated_tibia_length: 0.2
     limit_knee_extension: true
-    knee_extension_limit: {'ankle_angle_l': [-20,20], 'ankle_angle_r': [-10,10], 'hip_flexion_r': [-30,35],'hip_flexion_l': [-30,35], 'knee_angle_r': [-120,5], 'knee_angle_l': [-120,5]} #
-    # knee_extension_limit: {'ankle_angle_r': [-20,20], 'ankle_angle_l': [-10,10], 'hip_flexion_r': [-30,35],'hip_flexion_l': [-30,35], 'knee_angle_r': [-120,5], 'knee_angle_l': [-120,5]} #
-    # knee_extension_limit: {'ankle_angle_r': [-15,5], 'ankle_angle_l': [-7,10], 'hip_flexion_r': [-18,20],'hip_flexion_l': [-18,35], 'knee_angle_r': [-120,1]}
-    # knee_extension_limit: {'ankle_angle_r': [-13,7], 'ankle_angle_l': [-7,10], 'hip_flexion_r': [-18,25],'hip_flexion_l': [-18,35], 'knee_angle_r': [-120,0]}
+    knee_extension_limit:
+      ankle_angle_l:
+      - -20
+      - 20
+      ankle_angle_r:
+      - -10
+      - 10
+      hip_flexion_r:
+      - -30
+      - 35
+      hip_flexion_l:
+      - -30
+      - 35
+      knee_angle_r:
+      - -120
+      - 5
+      knee_angle_l:
+      - -120
+      - 5
     contact_geom_type: 2boxes_new
-    socket_ty_slack: true
-    contact_solref: [-900,-300]
+    # socket_ty_slack: false #true
+    # socket_ty_joint: false
+    contact_solref:
+    - -900
+    - -300
     add_pos_ori_to_observation: true
-    joint_stiffness: {'ankle_angle': 900}
-    # socket_ty_joint_range:  [-0.0005, 0.0005]
+    joint_stiffness:
+      ankle_angle: 900
     reattach_muscle: true
-    reattach_muscles_offset: {'med_gas': [0,0,0]}
+    reattach_muscles_offset:
+      med_gas:
+      - 0
+      - 0
+      - 0
     use_2_box_per_foot: true
     headless: true
     disable_arms: false
@@ -45,62 +67,31 @@ experiment:
       visualize_goal: true
     control_type: ${control_config.torque_control.control_type}
     control_params: ${control_config.torque_control.control_params}
-    reward_type: MimicRewardEmergenceNatural #MimicRewardVelArm #MimicRewardEmergenceNatural
+    reward_type: MimicRewardVelArm
     reward_params:
-      qpos_w_sum: 0 #1.2 #0.8 #0.4
-      qvel_w_sum: 0 #0.6 #0.4 #0.2
+      qpos_w_sum: 1.2
+      qvel_w_sum: 0.6
       rpos_w_sum: 0.5
       rquat_w_sum: 0.3
       rvel_w_sum: 0.1
-      action_coeff: 0.02 #0.02
-
-      lateral_range_coeff: 0 #0.1 #0.1
-      lateral_pos_reward_range: 0.5 #0.5
-
-      target_body: 'pelvis'
-      target_velocity: 1.2
-      vel_coeff: 0.7
-      vel_omega: 10
-
-      target_velocity_z: 0.0
-      vel_coeff_z: 0.3 #0.2 #0.25 #0.2
-      vel_omega_z: 100
-      target_body_z: 'pelvis'
-
+      action_coeff: 0.005 #0.02
+      lateral_range_coeff: 0.2 #0.1
+      lateral_pos_reward_range: 0.5
       sites_for_mimic:
-      # - upper_body_mimic
+      - upper_body_mimic
       - left_hand_mimic
-      # - left_knee_mimic
-      # - left_foot_mimic
       - right_hand_mimic
-      # - right_knee_mimic
-      # - right_foot_mimic
-      joints_for_mimic: 
-      # - root
-      # # - test
-      # - arm_flex_r
-      # - arm_flex_l
-      # - arm_add_r
-      # - arm_add_l
-      # - arm_rot_r
-      # - arm_rot_l
-      # - elbow_flex_r
-      # - elbow_flex_l
-      # - pro_sup_r
-      # - pro_sup_l
-      # - wrist_flex_r
-      # - wrist_flex_l
-      # - wrist_dev_r
-      # - wrist_dev_l
+      joints_for_mimic:
+      - root
   hidden_layers:
   - 512
   - 256
   lr: 0.0001
   num_envs: 2048
-  num_steps: 200 #200
-  total_timesteps: 500e6 #600000000.0
+  num_steps: 200
+  total_timesteps: 500000000.0
   result_dir: None
-  checkpoint_num: 5 #6
+  checkpoint_num: 5
   update_epochs: 4
   proportion_env_reward: 0.0
   num_minibatches: 32
@@ -117,7 +108,7 @@ experiment:
   weight_decay: 0.0
   normalize_env: true
   debug: false
-  n_seeds: 3 #1
+  n_seeds: 6 #3
   vmap_across_seeds: true
   validation:
     active: true
@@ -130,84 +121,76 @@ experiment:
     - RelSitePosition
     - RelSiteVelocity
     - RelSiteOrientation
-    # - VelX
-    # - VelZ
-    # - TorqueAtLimit
     measures:
     - EuclideanDistance
     - DynamicTimeWarping
     - DiscreteFrechetDistance
-    # target_body_x: pelvis
-    # target_vel_x: 1.2
-    # target_body_z: pelvis
-    # target_vel_z: 0.0
     rel_site_names:
     - upper_body_mimic
     - left_hand_mimic
-    # - left_foot_mimic
     - right_hand_mimic
-    # - right_foot_mimic
 control_config:
   torque_control:
     control_type: SkeletonMuscleControlFunction
     control_params: null
-
 randomization_config:
-    randomization_type: ProsthesisRandomizer
-    randomization_params:
-      randomize_prosthesis_dof_damping: False 
-      prosthesis_dof_damping_range: {'ankle_angle': [2, 10]} 
+  randomization_type: ProsthesisRandomizer
+  randomization_params:
+    randomize_prosthesis_dof_damping: false
+    prosthesis_dof_damping_range:
+      ankle_angle:
+      - 2
+      - 10
+    randomize_prosthesis_joint_stiffness: false
+    prosthesis_joint_stiffness_range:
+      ankle_angle:
+      - 50
+      - 100
+    randomize_prosthesis_body_position: true
+    prosthesis_body_position_range:
+      pylon_socket:
+        x:
+        - -0.02
+        - 0.02
+        z:
+        - -0.02
+        - 0.02
+      talus:
+        x:
+        - -0.01
+        - 0.01
+        z:
+        - -0.01
+        - 0.01
+    randomize_prosthesis_body_orientation: true
+    prosthesis_body_orientation_range:
+      pylon_socket:
+        x:
+        - -0.2
+        - 0.2
+        y:
+        - -0.3
+        - 0.3
+        z:
+        - -0.2
+        - 0.2
+      talus:
+        x:
+        - -0.1
+        - 0.1
+        # 'y':
+        # - -0.1
+        # - 0.1
+        z:
+        - -0.1
+        - 0.1
+    randomize_prosthesis_socket_joint: false
+    socket_joint_range:
+      socket_ty:
+      - -0.25
+      - 0.025
+    adapt_tibia_socket_parameters: false
 
-      randomize_prosthesis_joint_stiffness: False 
-
-      prosthesis_joint_stiffness_range: {'ankle_angle': [50, 100]} 
-
-      randomize_prosthesis_body_position: True
-      prosthesis_body_position_range: {'pylon_socket': {'x': [-0.01,0.01],'z': [-0.01,0.01]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
-      # prosthesis_body_position_range: {'pylon_socket': {'x': [-0.02,0.02],'z': [-0.02,0.02]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
-      
-      #,'talus': {'x': [-0.02,0.02],'z': [-0.02,0.02]}}
-
-      # prosthesis_body_position_range: {'pylon_socket': {'x': [-0.02,0.02],'z': [-0.02,0.02]}} #,'talus': {'z': [0.08726, 0.08726]}}
-
-
-      # prosthesis_body_position_range: {'pylon_socket': {'z': [-0.015,-0.015]}}
-      # prosthesis_body_position_range: {'pylon_socket': {'x': [-0.01,0.01],'z': [-0.01,0.01]},'talus': {'x': [-0.01,0.01],'z': [-0.01,0.01]}}
-
-
-      randomize_prosthesis_body_orientation: True
-      # prosthesis_body_orientation_range: {'pylon_socket': {'y': [-0.1,-0.1]}}
-      # prosthesis_body_orientation_range: {'pylon_socket': {'x': [-0.1,0.1],'y': [-0.3,0.3],'z': [-0.1,0.1]},'talus': {'x': [-0.1,0.1],'y': [-0.3,0.3],'z': [-0.1,0.1]}}
-      
-      prosthesis_body_orientation_range: {'pylon_socket': {'x': [-0.12,0.12],'y': [-0.2,0.2],'z': [-0.12,0.12]},'talus': {'x': [-0.1,0.1],'z': [-0.1,0.1]}}
-      # prosthesis_body_orientation_range: {'pylon_socket': {'x': [-0.2,0.2],'y': [-0.3,0.3],'z': [-0.2,0.2]},'talus': {'x': [-0.1,0.1],'z': [-0.1,0.1]}}
-      
-      # talus': {'x': [-0.2,0.2],'y': [-0.3,0.3],'z': [-0.2,0.2]}}
-
-
-      # prosthesis_body_orientation_range: {'pylon_socket': {'x': [-0.2,0.2],'y': [-0.3,0.3],'z': [-0.2,0.2]},'talus': {'z': [-0.08726, -0.08726]}}
-
-
-      randomize_prosthesis_socket_joint: False 
-      socket_joint_range: {
-          'socket_ty': [-0.25,0.025]  
-      }
-      adapt_tibia_socket_parameters: False
-
-# checkpoint_path: '/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2026-01-16/21-37-56/SavePPOJax_saved.pkl'
-
-checkpoint_path_1: "/media/calc_2/loco-mujoco_results/prosthesis_rand_save/outputs/2026-01-02/10-26-03/SavePPOJax_saved.pkl"
-checkpoint_path_2: "/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2026-01-16/21-37-56/SavePPOJax_saved.pkl"
-
-# "/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2026-01-16/21-37-56/checkpoints/ckpt_1497497600_seed_1.pkl"
-# '/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2026-01-07/22-13-29/SavePPOJax_saved.pkl'
-
-#'/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2026-01-02/10-26-03/SavePPOJax_saved.pkl'
-
-# '/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2026-01-06/22-51-13/SavePPOJax_saved.pkl'
-#'/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2026-01-02/10-26-03/SavePPOJax_saved.pkl'
-# '/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2025-12-16/14-56-53/SavePPOJax_saved.pkl'
-# '/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2025-12-17/00-46-16/checkpoints/ckpt_2054553600.pkl'
-# '/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2025-12-15/23-44-06/SavePPOJax_saved.pkl'
-# '/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2025-11-30/23-26-08/SavePPOJax_saved.pkl'
-# '/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2025-11-30/04-55-39/SavePPOJax_saved.pkl'
+checkpoint_path: "" #"/home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2026-01-30/19-38-21/PPOJax_saved.pkl"
+# checkpoint_path_1: /home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2026-02-01/00-53-46/SavePPOJax_saved.pkl
+# checkpoint_path_2: /home/nadinebadie/loco-mujoco/prosthesis_rand_save/outputs/2026-01-30/19-38-21/PPOJax_saved.pkl

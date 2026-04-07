@@ -35,6 +35,11 @@ os.environ["MUJOCO_GL"] = "egl"  # Use EGL for rendering, which is more compatib
 def experiment(config: DictConfig):
     try: 
 
+        # checkpoint_path = config.checkpoint_path
+
+    
+        # print(f"Loading agent from: {checkpoint_path}")
+
         # can increase the speed by ~30% on some GPUs
         # os.environ['XLA_FLAGS'] = (
         #     '--xla_gpu_triton_gemm_any=True ')
@@ -111,8 +116,8 @@ def experiment(config: DictConfig):
             # 3. Prepare RNGs (Ensure you have 1 key for each seed in the checkpoint)
             # Since your checkpoint has 2 seeds, we need 2 keys.
             # Your logic: if n_seeds=3 and skip=1, rngs=[1,2,3]. _rng=rngs[1:]=[2,3] (Size 2)
-            skip_seed = 1
-            rngs_list = [jax.random.PRNGKey(i) for i in range(skip_seed, config.experiment.n_seeds + skip_seed)]
+            skip_seed = 0 #1
+            rngs_list = [jax.random.PRNGKey(i) for i in range(skip_seed, config.experiment.n_seeds + 1)] #skip_seed)]
             _rngs = jnp.stack(rngs_list[1:]) # This gives (2, 2) which matches your (2, 510) state
             
             # 4. Run training passing BOTH rngs and the train_state

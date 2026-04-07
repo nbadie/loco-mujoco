@@ -130,8 +130,6 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             self.socket_ty_joint_range = kwargs.pop("socket_ty_joint_range")
         if "socket_type" in kwargs:
             self.socket_type = kwargs.pop("socket_type")
-        if "prosthesis_visualization" in kwargs:
-            self.prosthesis_visualization = kwargs.pop("prosthesis_visualization")
             
         if "socket_ty_joint" in kwargs: 
             self.socket_ty_joint = kwargs.pop("socket_ty_joint")
@@ -154,8 +152,9 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         if "contact_geom_type" in kwargs:
             self.contact_geom_type = kwargs.pop("contact_geom_type")
 
-        
-
+        if "set_delta_shift_slack" in kwargs:
+            self.set_delta_shift_slack = kwargs.pop("set_delta_shift_slack")
+            self.delta_shift_slack = kwargs.pop("delta_shift_slack")
         self.actuators_removed = []
         self.amputated_joint_names = []
         self.amputated_body_names = []
@@ -250,6 +249,9 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         if "joint_damping_each_joint" in kwargs:
             self.joint_damping_each_joint = kwargs.pop("joint_damping_each_joint")
             self.set_joint_damping_each_joint(spec)
+
+        if "prosthesis_visualization" in kwargs:
+            self.prosthesis_visualization = kwargs.pop("prosthesis_visualization", True)
 
         # Model option configuration
         model_option_conf = kwargs.pop("model_option_conf", {
@@ -579,7 +581,7 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
                     tibia_body.add_site(
                     name=f"new_P2_{s.name}",
                     pos = site_pos_tibia_P2[renamed_site], #new_site_pos[renamed_site],
-                    size = [0.02,0.02,0.02],
+                    size = [0.001,0.001,0.001], #[0.02,0.02,0.02],
                     rgba = [1,0,0,1],
                 )
 
@@ -597,7 +599,7 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
                 tibia_body.add_site(
                     name=f"new_P3_{s.name}",
                     pos = site_pos_tibia_P3[renamed_site], #new_site_pos[renamed_site],
-                    size = [0.02,0.02,0.02],
+                    size = [0.001,0.001,0.001], #[0.02,0.02,0.02],
                     rgba = [1,0,0,1],
                 )
 
@@ -621,7 +623,7 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             tibia_body.add_site(
                     name=f"{site_name}-P3",
                     pos = [new_x, new_y, new_z],
-                    size = [0.02,0.02,0.02],
+                    size = [0.001,0.001,0.001], #[0.02,0.02,0.02],
                     rgba = [0,1,0,1],
                 )
             
@@ -721,8 +723,8 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             muscle_names = self.remove_sites(body)
             self.remove_tendons(spec, muscle_names)
             self.remove_actuators(spec, muscle_names)
-            for g in body.geoms:
-                g.rgba = [0.0, 0.0, 1.0, 1.0]
+            # for g in body.geoms:
+            #     g.rgba = [0.0, 0.0, 1.0, 1.0]
 
     def remove_site_actuator_tendon_old(self, spec, body):
         """
@@ -854,7 +856,7 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         tibia_body.add_site(
             name=f"tibia_COM_org{self.prosthesis_side}",
             pos=tibia_body.ipos, # This site is at the "bottom" of the shank, relative to prosthetic_shank_body's origin
-            size=[0.01,0.01,0.01],
+            size=[0.001,0.001,0.001], #[0.01,0.01,0.01],
             rgba=[1, 0, 0, 1]
         )
 
@@ -893,9 +895,10 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         tibia_body.add_site(
             name=f"tibia_COM{self.prosthesis_side}",
             pos=tibia_body.ipos, # This site is at the "bottom" of the shank, relative to prosthetic_shank_body's origin
-            size=[0.01,0.01,0.01],
+            size=[0.001,0.001,0.001], #[0.01,0.01,0.01],
             rgba=[0, 1, 0, 1]
         )
+
 
         # Get original full socket mass, inertia and center of mass 
         original_socket_mass, original_socket_inertia, original_socket_relative_center_of_mass = self.set_socket_parameters(spec)
@@ -922,14 +925,14 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         # socket_center_of_mass = np.array([0,-self.tibia_socket_overlap,0]) - np.array(socket_relative_center_of_mass)
         socket_center_of_mass = np.array(socket_relative_center_of_mass)
 
-        prosthetic_shank_body = self.create_socket(tibia_body, socket_mass, socket_inertia, socket_center_of_mass,socket_pos_relative_to_tibia,socket_radius, socket_length) #,tibia_socket_overlap)
+        prosthetic_shank_body = self.create_socket(spec,tibia_body,socket_mass, socket_inertia, socket_center_of_mass,socket_pos_relative_to_tibia,socket_radius, socket_length) #,tibia_socket_overlap)
 
 
         return  prosthetic_shank_body
 
 
 
-    def create_socket(self, tibia_body, socket_mass, socket_inertia, socket_center_of_mass,socket_pos_relative_to_tibia, socket_radius,socket_length): #,tibia_socket_overlap):
+    def create_socket(self, spec,tibia_body, socket_mass, socket_inertia, socket_center_of_mass,socket_pos_relative_to_tibia, socket_radius,socket_length): #,tibia_socket_overlap):
 
         # socket_radius = 0.04
         
@@ -945,14 +948,14 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         prosthetic_shank_body.add_site(
             name=f"pylon_mimic{self.prosthesis_side}",
             pos=np.array([0,0,0]),
-            size = [0.01, 0.01,0.01],
+            size = [0.001,0.001,0.001], #[0.01, 0.01,0.01],
             rgba=[0, 1, 0, 1]
         )
 
         prosthetic_shank_body.add_site(
             name=f"pylon_0{self.prosthesis_side}",
             pos=np.array([0,0,0])+np.array([0,self.tibia_socket_overlap,0]),
-            size = [0.01, 0.01,0.01],
+            size = [0.001,0.001,0.001], #[0.01, 0.01,0.01],
             rgba=[0, 1, 0, 1]
         )
 
@@ -960,40 +963,110 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         prosthetic_shank_body.add_site(
             name=f"pylon_COM{self.prosthesis_side}",
             pos=socket_center_of_mass, # This site is at the "bottom" of the shank, relative to prosthetic_shank_body's origin
-            size=[0.01,0.01,0.01],
+            size=[0.001,0.001,0.001], #[0.01,0.01,0.01],
             rgba=[0, 1, 0, 1]
         )
 
         prosthetic_shank_body.add_site(
             name=f"talus_attachment_site_in_pylon{self.prosthesis_side}",
             pos=[0, -socket_length+self.tibia_socket_overlap,0], # This site is at the "bottom" of the shank, relative to prosthetic_shank_body's origin
-            size=[0.01,0.01,0.01],
+            size=[0.001,0.001,0.001], #[0.01,0.01,0.01],
             rgba=[1, 0, 0, 1]
         )
 
         print(f"Created new prosthetic shank body: '{prosthetic_shank_body.name}' (ID: {id(prosthetic_shank_body)}). Its parent is: '{tibia_body.name}'")
 
-        prosthetic_shank_body.add_geom(
-            name=f"pylon_socket_geom{self.prosthesis_side}",
-            type=mujoco.mjtGeom.mjGEOM_CYLINDER,
-            size=[socket_radius,socket_length/2,socket_radius],#, shank_length],
-            pos=[0, -socket_length/2+self.tibia_socket_overlap ,0], # Center of the cylinder, relative to prosthetic_shank_body's origin
-            euler=[1.571, 0, 0], # Rotate to be vertical if it's currently horizontal
-            rgba=[0.5, 0.5, 0.5, 1],
-            mass = socket_mass
-        )
-
+        # prosthetic_shank_body.add_geom(
+        #     name=f"pylon_socket_geom{self.prosthesis_side}",
+        #     type=mujoco.mjtGeom.mjGEOM_CYLINDER,
+        #     size=[socket_radius,socket_length/2,socket_radius],#, shank_length],
+        #     pos=[0, -socket_length/2+self.tibia_socket_overlap ,0], # Center of the cylinder, relative to prosthetic_shank_body's origin
+        #     euler=[1.571, 0, 0], # Rotate to be vertical if it's currently horizontal
+        #     rgba=[0.6, 0.6, 0.6, 1],
+        #     mass = socket_mass
+        # )
+        self.prosthesis_visualization = True
+        print('Prosthesis visualization: ', hasattr(self, 'prosthesis_visualization') and self.prosthesis_visualization)
         if hasattr(self, 'prosthesis_visualization') and self.prosthesis_visualization:
+            
+            # With new stl geometries 
+            spec.add_mesh(
+                name="socket",
+                file="/home/nadinebadie/loco-mujoco/loco_mujoco/models/prosthesis/socket_long.stl",
+                scale=[0.001,0.001,0.001]
+            )
+            spec.add_mesh(
+                name="pylon",
+                file="/home/nadinebadie/loco-mujoco/loco_mujoco/models/prosthesis/pylon_short.stl",
+                scale=[0.001,0.001,0.001]
+            )
+            # spec.add_mesh(
+            #     name="sach_lower", 
+            #     file="C:/Users/nadin/Downloads/foot_higher_cut.stl",
+            #     scale=[0.01, 0.01, 0.01]
+            # )
+            spec.add_mesh(
+                name="sach",
+                file="/home/nadinebadie/loco-mujoco/loco_mujoco/models/prosthesis/sach.stl",
+                scale=[0.001,0.001,0.001],
+            )
+            
+            prosthetic_shank_body.add_geom(
+                name="socket_geom",
+                type=mujoco.mjtGeom.mjGEOM_MESH,
+                meshname="socket",
+                rgba=[0.5, 0.5, 0.5, 1], #[1, 0, 0, 1], # Bright Red
+                euler=[0, 0.0, 1.571], # Rotate to be vertical if it's currently horizontal
+                pos = [0,-0.05,0],
+                group=0,            # Ensure it's in a visible group
+                mass = socket_mass
+            )
+            prosthetic_shank_body.add_geom(
+                name="pylon_geom",
+                type=mujoco.mjtGeom.mjGEOM_MESH,
+                meshname="pylon",
+                rgba=[0.5, 0.5, 0.5, 1], #[1, 0, 0, 1], # Bright Blue
+                euler=[0, 0.0, 1.571], # Rotate to be vertical if it's currently horizontal
+                pos=[0, -0.05, 0],
+                #pos=[0, 0, 0],
+                group=0            # Ensure it's in a visible group
+            )
+            talus_name = f"talus{self.prosthesis_side}"
+            talus_body = spec.find_body(talus_name)
+            calcn_body = spec.find_body(f"calcn{self.prosthesis_side}")
+            toes_body = spec.find_body(f"toes{self.prosthesis_side}")
+            
+            
+            # delete talus geoms to avoid visual overlap with pylon mesh
+            for g in talus_body.geoms:
+                g.delete()
+            for g in calcn_body.geoms:
+                g.delete()
+            for g in toes_body.geoms:
+                g.delete()
+
+            talus_body.add_geom(
+                name="sach_geom",
+                type=mujoco.mjtGeom.mjGEOM_MESH,
+                meshname="sach",
+                rgba=[0.3,0.250,0.224,1.000],#[0.247, 0.231, 0.206, 1.000],#[0.240,0.216,0.182,0.500],#[0.207,0.185,0.151,1.000],#[1, 0,
+                # quat=[0.707,0,-0.707,0],
+                quat=[0.643,0,-0.766,0],
+                pos=[0.145,-0.062,0.02],
+                group=0
+                )
+            
+            # What was used before the stl 
             prosthetic_shank_body.add_geom(
                 name=f"socket_visual_geom{self.prosthesis_side}",
                 type=mujoco.mjtGeom.mjGEOM_CYLINDER,
-                size=[socket_radius*4,self.tibia_socket_overlap/2,socket_radius*4],#, shank_length],
+                size=[socket_radius*4,self.tibia_socket_overlap/2+0.01,socket_radius*4],#, shank_length],
                 # pos=[0, self.tibia_socket_overlap ,0], # Center of the cylinder, relative to prosthetic_shank_body's origin
                 # pos=[0, -socket_length/2 ,0], # Center of the cylinder, relative to prosthetic_shank_body's origin
-                pos=[0, self.tibia_socket_overlap/2,0], # Center of the cylinder, relative to prosthetic_shank_body's origin
+                pos=[0, self.tibia_socket_overlap/2-0.01,0], # Center of the cylinder, relative to prosthetic_shank_body's origin
                 # pos=[0, -socket_length/2+self.tibia_socket_overlap/2 ,0], # Center of the cylinder, relative to prosthetic_shank_body's origin
                 euler=[1.571, 0, 0], # Rotate to be vertical if it's currently horizontal
-                rgba= [0.0, 0.0, 1.0, 1.0], #[0.5, 0.5, 0.5, 1], #[1, 0, 0, 1], #[0.5, 0.5, 0.5, 1],
+                rgba= [0.6, 0.6, 0.6, 1.0], #[0.5, 0.5, 0.5, 1], #[1, 0, 0, 1], #[0.5, 0.5, 0.5, 1],
                 # mass = socket_mass
             )
 
@@ -1015,7 +1088,7 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         prosthetic_shank_body.add_site(
             name=f"pylon_socket_joint{self.prosthesis_side}",
             pos=[0, socket_joint_offset,0], # This site is at the "bottom" of the shank, relative to prosthetic_shank_body's origin
-            size=[0.01,0.01,0.01],
+            size=[0.001,0.001,0.001], #[0.01,0.01,0.01],
             rgba=[1, 0, 0, 1]
         )
         socket_joint_damping_tz = 40 #100 #100 #400 #200 # ty/2
@@ -1951,7 +2024,7 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
                 if not site_exists:
                     b.add_site(
                         name=site_name,
-                        size=[0.015, 0.015, 0.015], # Make it noticeably big (e.g., 1.5 cm radius)
+                        size=[0.001, 0.001, 0.001], # Make it noticeably big (e.g., 1.5 cm radius)
                         rgba=[0.0, 0.0, 0.0, 1.0], # Black color, fully opaque
                         pos=b.ipos # Place the site at the body's center of mass (which is its 'pos' in its parent frame)
                     )

@@ -144,7 +144,7 @@ def experiment(config: DictConfig):
 
         # get rng keys and run training
         if config.experiment.n_seeds > 1: 
-            skip_seed = 1
+            skip_seed = 4 #0 #1
             rngs = [jax.random.PRNGKey(i) for i in range(skip_seed,config.experiment.n_seeds+1)]  # create rngs from seed
         else: 
             rngs = [jax.random.PRNGKey(i) for i in range(config.experiment.n_seeds+1)]  # create rngs from seed

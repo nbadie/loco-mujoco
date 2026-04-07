@@ -1,10 +1,11 @@
 
-# python experiment_domain_rand_continue_multiSeed_multipleInput.py --config-name conf_curr_newRew_5_multiSeed
+# python experiment_domain_rand_continue_multiSeed.py --config-name conf_curr_newRew_5_multiSeed_2 
+python experiment_domain_rand_continue_multiSeed_multipleInput.py --config-name conf_curr_newRew_5_multiSeed_2
 # python experiment_domain_rand_continue_multiSeed_multipleInput.py --config-name conf_curr_newRew_5_multiSeed_1
 # python experiment_domain_rand_continue_multiSeed_multipleInput.py --config-name conf_curr_newRew_5_multiSeed_2
-python experiment_domain_rand_continue_multiSeed_multipleInput.py --config-name conf_curr_newRew_5_multiSeed_3
-python experiment_domain_rand_continue_multiSeed_multipleInput.py --config-name conf_curr_newRew_5_multiSeed_4
-python experiment_domain_rand_continue_multiSeed_multipleInput.py --config-name conf_curr_newRew_5_multiSeed_5
+# python experiment_domain_rand_continue_multiSeed_multipleInput.py --config-name conf_curr_newRew_5_multiSeed_3
+# # python experiment_domain_rand_continue_multiSeed_multipleInput.py --config-name conf_curr_newRew_5_multiSeed_4
+# # python experiment_domain_rand_continue_multiSeed_multipleInput.py --config-name conf_curr_newRew_5_multiSeed_5
 
 
 

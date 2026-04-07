@@ -848,13 +848,13 @@ class BaseSkeleton(LocoEnv):
 
                 geom_type = mujoco.mjtGeom.mjGEOM_BOX
                 toe_l.add_geom(name="toes_box_l", type=geom_type, size=size_toes, pos=pos_toes_l,
-                        rgba=[0, 1, 0, alpha_box_feet], euler=euler_toes)
+                        rgba=[0.5, 0.5, 0.5, alpha_box_feet], euler=euler_toes)
                 toe_r.add_geom(name="toes_box_r", type=geom_type, size=size_toes, pos=pos_toes,
-                        rgba=[0, 1, 0, alpha_box_feet], euler=[a*-1 for a in euler_toes])
+                        rgba=[0.5, 0.5, 0.5, alpha_box_feet], euler=[a*-1 for a in euler_toes])
                 calcn_l.add_geom(name="foot_box_l", type=geom_type, size=size_foot, pos=pos_foot_l,
-                        rgba=[1, 0, 0, alpha_box_feet], euler=euler_foot)
+                        rgba=[0.5, 0.5, 0.5, alpha_box_feet], euler=euler_foot)
                 calcn_r.add_geom(name="foot_box_r", type=geom_type, size=size_foot, pos=pos_foot,
-                        rgba=[1, 0, 0, alpha_box_feet], euler=[a*-1 for a in euler_foot])
+                        rgba=[0.5, 0.5, 0.5, alpha_box_feet], euler=[a*-1 for a in euler_foot])
                 
 
             ########################################################

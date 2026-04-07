@@ -231,7 +231,7 @@ def rollout_with_stacked_state(stacked_train_state, agent_conf, checkpoint_files
     all_results = []
     
     # Initialize environment for ONE instance
-    seed = 2
+    seed = 5
     rng = jax.random.key(seed) #0
     keys = jax.random.split(rng, n_envs + 1)
     rng, env_keys = keys[0], keys[1:]
