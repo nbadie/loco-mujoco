@@ -9,7 +9,7 @@ from loco_mujoco.environments.base import  LocoCarry
 import jax.numpy as jnp
 from loco_mujoco.core.utils import info_property
 from collections.abc import Mapping
-# from omegaconf import OmegaConf
+
 
 
 class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
@@ -41,12 +41,6 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         Raises:
             ValueError: If required arguments are missing.
         """
-        # ############# TAKE OUT AFTER TESTING #############
-        # if "socket_ty_slack" in kwargs:
-        #     self.socket_ty_slack = kwargs.get("socket_ty_slack")
-        #     print('self.socket_ty_slack in env: ', self.socket_ty_slack)
-        # else: 
-        #     self.socket_ty_slack = False
 
         # Validate prosthesis_side
         if "prosthesis_side" not in kwargs:
@@ -338,19 +332,10 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             "socket_pos_relative_to_tibia": socket_pos_relative_to_tibia,
             "socket_radius": socket_radius}
 
-        # prosthetic_shank_body = self.create_socket(
-        #     tibia_body, socket_mass, socket_center_of_mass,
-        #     socket_pos_relative_to_tibia, socket_radius, 
-        #     socket_length, tibia_socket_overlap, 
-        #     amputated_tibia_length, side
-        # )
 
-        return socket_params #prosthetic_shank_body
+        return socket_params 
 
     def create_socket(self, spec,tibia_body, socket_params, side): 
-                # socket_pos_relative_to_tibia, socket_radius,
-                # socket_length, tibia_socket_overlap, 
-                # amputated_tibia_length, side): 
 
         if side == "_l":
             side_str = "left"
@@ -382,19 +367,6 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             rgba=[0, 1, 0, 1]
         )
 
-        # prosthetic_shank_body.add_site(
-        #     name=f"pylon_0{side}",
-        #     pos=np.array([0, 0, 0]) + np.array([0, tibia_socket_overlap, 0]),
-        #     size=[0.001, 0.001, 0.001],
-        #     rgba=[0, 1, 0, 1]
-        # )
-
-        # prosthetic_shank_body.add_site(
-        #     name=f"pylon_COM{side}",
-        #     pos=socket_center_of_mass,
-        #     size=[0.001, 0.001, 0.001],
-        #     rgba=[0, 1, 0, 1]
-        # )
 
         prosthetic_shank_body.add_site(
             name=f"talus_attachment_site_in_pylon{side}",
@@ -403,28 +375,9 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             rgba=[1, 0, 0, 1]
         )
 
-        # print(f"Created new prosthetic shank body: '{prosthetic_shank_body.name}' (ID: {id(prosthetic_shank_body)}). Its parent is: '{tibia_body.name}'")
-
-        # prosthetic_shank_body.add_geom(
-        #     name=f"pylon_socket_geom{side}",
-        #     type=mujoco.mjtGeom.mjGEOM_CYLINDER,
-        #     size=[socket_params["socket_radius"], socket_params["socket_length"] / 2, socket_params["socket_radius"]],
-        #     pos=[0, -socket_params["socket_length"] / 2 + tibia_socket_overlap, 0],
-        #     euler=[1.571, 0, 0],
-        #     rgba=[0.5, 0.5, 0.5, 0.1],
-        #     mass=socket_params["socket_mass"]
-        # )
-
+       
         if hasattr(self, 'visualize_prosthesis') and self.visualize_prosthesis:
-            # prosthetic_shank_body.add_geom(
-            # name=f"socket_visual_geom{side}",
-            # type=mujoco.mjtGeom.mjGEOM_CYLINDER,
-            # size=[socket_params["socket_radius"] * 4, tibia_socket_overlap / 2, socket_params["socket_radius"] * 4],
-            # pos=[0, tibia_socket_overlap / 2, 0],
-            # euler=[1.571, 0, 0],
-            # rgba=[0.0, 0.0, 1.0, 1.0],
-            # )
-
+           
             for g in tibia_body.geoms:
                 if g.name in {f"tibia{side}", f"fibula{side}"}:
                     g.delete()
@@ -492,12 +445,6 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
 
         socket_joint_offset = (1 / 3) * amputated_tibia_length
 
-        # prosthetic_shank_body.add_site(
-        #     name=f"pylon_socket_joint{side}",
-        #     pos=[0, socket_joint_offset, 0],
-        #     size=[0.001, 0.001, 0.001],
-        #     rgba=[1, 0, 0, 1]
-        # )
 
         for joint_type in ["tx", "ty", "tz", "flexion", "adduction", "rotation"]:
             if f"socket_{joint_type}" in self.socket_joint_dofs:
@@ -798,10 +745,7 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             spec (MjSpec): The model specification object.
             muscle_names (set): A set of muscle names to match against actuator names."""
         for a in spec.actuators:
-            # print(f"Actuator: {a.name}")
-            # print(f"Muscle names: {muscle_names}")
             if any(m in a.name for m in muscle_names):
-                # print(f"Removing actuator: {a.name}")
                 self.actuators_removed.append(a.name)
                 a.delete()
 
@@ -820,8 +764,6 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             muscle_names = self.remove_sites(body)
             self.remove_tendons(spec, muscle_names)
             self.remove_actuators(spec, muscle_names)
-            # for g in body.geoms:
-            #     g.rgba = [0.0, 0.0, 1.0, 1.0]
 
         return spec
 
@@ -840,7 +782,6 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
 
         for j in spec.joints:
             if j.name in joint_name:
-                # print(f"Increasing damping of joint: {j.name}")
                 j.damping = self.joint_damping[j.name.replace(self.prosthesis_side,'')]
 
 
@@ -855,7 +796,6 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         """    
         for j in spec.joints:
             if j.name == joint_name:
-                # print(f"Increasing stiffness of joint: {j.name}")
                 j.stiffness = self.joint_stiffness[j.name.replace(side,'')]
 
         return spec
@@ -871,7 +811,6 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         """
         for e in spec.equalities:  # Use list to avoid iteration issues during deletion
             if joint_name in e.name:
-                # print(f"Removing equality constraint: {e.name}")
                 e.delete()
 
         return spec
@@ -990,40 +929,6 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
         return spec
     
 
-    # def _get_spec_modifications(self) -> Tuple[List[str], List[str], List[str]]:
-    #     """
-    #     Function that specifies which joints, motors, and equality constraints
-    #     should be removed from the Mujoco specification.
-
-    #     Returns:
-    #         A tuple of lists consisting of names of joints to remove, names of motors to remove,
-    #         and names of equality constraints to remove.
-    #     """
-
-    #     joints_to_remove = []
-    #     motors_to_remove = []
-    #     equ_constr_to_remove = []
-    #     if self._use_box_feet:
-    #         if not self._keep_feet_joints:
-    #             joints_to_remove += ["subtalar_angle_l", "mtp_angle_l", "subtalar_angle_r", "mtp_angle_r"]
-    #             if not self._use_muscles:
-    #                 motors_to_remove += ["mot_subtalar_angle_l", "mot_mtp_angle_l", "mot_subtalar_angle_r", "mot_mtp_angle_r"]
-    #             equ_constr_to_remove += [j + "_constraint" for j in joints_to_remove]
-
-    #     if self._disable_arms:
-    #         joints_to_remove += ["arm_flex_r", "arm_add_r", "arm_rot_r", "elbow_flex_r", "pro_sup_r", "wrist_flex_r",
-    #                              "wrist_dev_r", "arm_flex_l", "arm_add_l", "arm_rot_l", "elbow_flex_l", "pro_sup_l",
-    #                              "wrist_flex_l", "wrist_dev_l"]
-    #         motors_to_remove += ["mot_shoulder_flex_r", "mot_shoulder_add_r", "mot_shoulder_rot_r", "mot_elbow_flex_r",
-    #                              "mot_pro_sup_r", "mot_wrist_flex_r", "mot_wrist_dev_r", "mot_shoulder_flex_l",
-    #                              "mot_shoulder_add_l", "mot_shoulder_rot_l", "mot_elbow_flex_l", "mot_pro_sup_l",
-    #                              "mot_wrist_flex_l", "mot_wrist_dev_l"]
-    #         equ_constr_to_remove += ["wrist_flex_r_constraint", "wrist_dev_r_constraint",
-    #                                  "wrist_flex_l_constraint", "wrist_dev_l_constraint"]
-
-    #     return joints_to_remove, motors_to_remove, equ_constr_to_remove
-    
-
     def _get_observation_specification(self, spec: mujoco.MjSpec):
         """
         Getter for the observation space specification.
@@ -1038,12 +943,8 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             if hasattr(self, 'prosthesis_body_position_range'):
                 rand_pos_body_names=[]
                 observation_spec_body_pos = []
-                # if OmegaConf.is_dict(self.prosthesis_body_position_range): # when loading with orbax
-                #     prosthesis_body_position_range_dict = OmegaConf.to_container(self.prosthesis_body_position_range, resolve=True)
-                #     rand_pos_body_names = list(prosthesis_body_position_range_dict.keys())
                 if isinstance(self.prosthesis_body_position_range, dict):
                     rand_pos_body_names = list(self.prosthesis_body_position_range.keys())
-                    # rand_pos_body_names.append(self.prosthesis_body_position_range.keys())
                 for b in rand_pos_body_names:
                     for side in self.prosthesis_side:
                         b = b + side  # Append prosthesis side to body names 
@@ -1052,9 +953,6 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             if hasattr(self, 'prosthesis_body_orientation_range'):
                 rand_ori_body_names=[]
                 observation_spec_body_quat = []
-                # if OmegaConf.is_dict(self.prosthesis_body_orientation_range): # when loading with orbax
-                #     prosthesis_body_orientation_range_dict = OmegaConf.to_container(self.prosthesis_body_orientation_range, resolve=True)
-                #     rand_ori_body_names = list(prosthesis_body_orientation_range_dict.keys())
                 if isinstance(self.prosthesis_body_orientation_range, dict):
                     rand_ori_body_names= list(self.prosthesis_body_orientation_range.keys())
                 for b in rand_ori_body_names: 
@@ -1062,18 +960,11 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
                         b = b + side  # Append prosthesis side to body names
                     observation_spec_body_quat.append(ObservationType.ModelBodyRot(f"quat_{b}", xml_name=b))
 
-            # if hasattr(self, 'amputation_height_range'):
-            #     rand_pos_amp_body_pos = []
-            #     observation_spec_amp_body_pos = []
-            #     # if 
-
 
         joint_names = []
         for j in spec.joints: 
             joint_names.append(j.name)
 
-        # print(f"Joint names: {joint_names}")
-        # print(f"Number of joints: {len(joint_names)}")
 
         if 'root' in joint_names: 
             joint_names.remove('root')
@@ -1085,18 +976,7 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             observation_spec_joint_pos.append(ObservationType.JointPos(f"q_{j}", xml_name=j))
             observation_spec_joint_vel.append(ObservationType.JointVel(f"dq_{j}", xml_name=j))
 
-        # if self.reward_type == 'TargetVelocityGoalReward': #'LocomotionReward':
-        #     info_props = {}
-        #     info_props["upper_body_xml_name"] = 'root'
-        #     info_props["root_free_joint_xml_name"] = 'root'
-        #     info_props["goal_visualization_arrow_offset"] = 0
-        #     max_x_vel = 1.2 
-        #     max_y_vel = 0 
-        #     max_yaw_vel = 0
-        #     observation_spec = [GoalRandomRootVelocity(info_props, max_x_vel, max_y_vel, max_yaw_vel), ObservationType.FreeJointPosNoXY("q_root", xml_name="root")] + observation_spec_joint_pos + observation_spec_joint_vel
-        # else: 
-        # # print(f"Observation spec joint pos: {observation_spec_joint_pos}")
-        # # print(f"Observation spec joint vel: {observation_spec_joint_vel}")
+       
         observation_spec = [  # ------------- JOINT POS -------------
                                 ObservationType.FreeJointPosNoXY("q_root", xml_name="root"),
 
@@ -1108,53 +988,6 @@ class MjxSkeletonMuscleProsthesis(MjxSkeletonMuscle):
             if hasattr(self, 'prosthesis_body_orientation_range'):
                 observation_spec += observation_spec_body_quat
         return observation_spec
-    
-    # def _get_observation_specification(self, spec: mujoco.MjSpec):
-    #     """
-    #     Getter for the observation space specification.
-
-    #     Args:
-    #         spec (MjSpec): Specification of the environment.
-    #     Returns:
-    #         List[str]: List of observation space specification.
-    #     """
-    #     observation_spec = [ObservationType.FreeJointPosNoXY("q_root", xml_name="root")]
-        
-    #     # Add joint observations
-    #     joint_names = [j.name for j in spec.joints if j.name != 'root']
-
-    #     observation_spec_joint_pos = []
-    #     observation_spec_joint_vel = []
-
-    #     for j in joint_names:
-    #         observation_spec_joint_pos.append(ObservationType.JointPos(f"q_{j}", xml_name=j))
-    #         observation_spec_joint_vel.append(ObservationType.JointVel(f"dq_{j}", xml_name=j))
-
-    #     observation_spec += observation_spec_joint_pos
-    #     observation_spec += observation_spec_joint_vel
-        
-
-    #     # Add body position observations
-    #     if self.add_pos_ori_to_observation and hasattr(self, 'prosthesis_body_position_range'):
-    #         if isinstance(self.prosthesis_body_position_range, dict):
-    #             for body_base_name in self.prosthesis_body_position_range.keys():
-    #                 for side in self.prosthesis_side:
-    #                     body_name = f"{body_base_name}{side}"
-    #                     observation_spec.append(
-    #                         ObservationType.BodyPos(f"pos_{body_name}", xml_name=body_name)
-    #                     )
-        
-    #     # Add body orientation observations
-    #     if self.add_pos_ori_to_observation and hasattr(self, 'prosthesis_body_orientation_range'):
-    #         if isinstance(self.prosthesis_body_orientation_range, dict):
-    #             for body_base_name in self.prosthesis_body_orientation_range.keys():
-    #                 for side in self.prosthesis_side:
-    #                     body_name = f"{body_base_name}{side}"
-    #                     observation_spec.append(
-    #                         ObservationType.BodyRot(f"quat_{body_name}", xml_name=body_name)
-    #                     )
-        
-    #     return observation_spec
         
         
 

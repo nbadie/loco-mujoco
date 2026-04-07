@@ -28,8 +28,6 @@ class ProsthesisRandomizerState:
     dof_damping: Union[np.ndarray, jax.Array]
     body_position: Union[np.ndarray, jax.Array]
     body_orientation: Union[np.ndarray, jax.Array]
-    # body_vel_perturb: dict 
-    # ###### Prosthesis Mass and Inertia???  ##### 
 
 
 
@@ -49,7 +47,7 @@ class ProsthesisRandomizer(DomainRandomizer):
         self._init_dof_damping = None
         self._init_body_position = None
         self._init_body_orientation = None
-        # self._init_body_vel_perturb = None
+
 
 
         self._body_pos_indices = {}
@@ -75,9 +73,6 @@ class ProsthesisRandomizer(DomainRandomizer):
                 raise ValueError(f"Joint name {full_joint_name} not found in model.")
             else: 
                 self._joint_indices[full_joint_name] = idx
-                # valid_joint_names.append(joint_name)
-                # joint_name = joint_name.replace(side,'')
-                # if joint_name in self.stiffness_dict:
                 joint_name = full_joint_name.replace(side,'')
                 valid_stiffness_dict[full_joint_name] = self.stiffness_dict[joint_name]
         self.stiffness_dict = valid_stiffness_dict
@@ -98,7 +93,6 @@ class ProsthesisRandomizer(DomainRandomizer):
                 idx =  env.model.jnt_dofadr[idx]
                 self._dof_indices[full_dof_name] = idx
                 dof_name = full_dof_name.replace(side,'')
-                # if dof_name in self.damping_dict:
                 valid_damping_dict[full_dof_name] = self.damping_dict[dof_name]
         self.damping_dict = valid_damping_dict
 
@@ -161,92 +155,6 @@ class ProsthesisRandomizer(DomainRandomizer):
             DefaultRandomizerState: The initialized randomizer state.
 
         """
-        # self._body_pos_indices = {}
-        # self._body_quat_indices = {}
-        # self._joint_indices = {}
-        # self._dof_indices = {}
-
-        # self._body_quat_indices= {}
-        # self._body_pos_indices= {}
-        # self._joint_indices= {}
-        # self._dof_indices= {}
-
-        # for side in env.prosthesis_side:
-        #     if "prosthesis_joint_stiffness_range" in self.rand_conf: 
-        #         self.stiffness_dict = self.rand_conf["prosthesis_joint_stiffness_range"]
-        #         joint_names = list(self.stiffness_dict.keys())
-
-        # Get indices for prosthesis bodies, joints, and dofs
-
-        # # Joint stiffness
-        # valid_stiffness_dict = {}
-        # if "prosthesis_joint_stiffness_range" in self.rand_conf:
-        #     self.stiffness_dict = self.rand_conf["prosthesis_joint_stiffness_range"]
-        #     joint_names = list(self.stiffness_dict.keys())
-        # for side in env.prosthesis_side: 
-        #     joint_names = [name + side for name in joint_names]
-        # for joint_name in joint_names:
-        #     idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
-        #     if idx == -1:
-        #         raise ValueError(f"Joint name {joint_name} not found in model.")
-        #     else: 
-        #         self._joint_indices[joint_name] = idx
-        #         # valid_joint_names.append(joint_name)
-        #         joint_name = joint_name.replace(side,'')
-        #         if joint_name in self.stiffness_dict:
-        #             valid_stiffness_dict[joint_name] = self.stiffness_dict[joint_name]
-        # self.stiffness_dict = valid_stiffness_dict
-
-
-        # # DOF damping
-        # valid_damping_dict = {}
-        # if "prosthesis_dof_damping_range" in self.rand_conf: 
-        #     self.damping_dict = self.rand_conf["prosthesis_dof_damping_range"]
-        #     dof_names = list(self.damping_dict.keys())
-        # for side in env.prosthesis_side: 
-        #     dof_names = [name + side for name in dof_names]
-        # for dof_name in dof_names:
-        #     idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, dof_name)
-        #     if idx == -1:
-        #         raise ValueError(f"DOF name {dof_name} not found in model.")
-        #     else: 
-        #         idx =  model.jnt_dofadr[idx]
-        #         self._dof_indices[dof_name] = idx
-        #         dof_name = dof_name.replace(side,'')
-        #         if dof_name in self.damping_dict:
-        #             valid_damping_dict[dof_name] = self.damping_dict[dof_name]
-        # self.damping_dict = valid_damping_dict
-
-
-        # # Body position 
-        # if "prosthesis_body_position_range" in self.rand_conf: 
-        #     self.body_position_dict = self.rand_conf["prosthesis_body_position_range"]
-        #     pos_body_names = list(self.body_position_dict.keys())
-        # for side in env.prosthesis_side: 
-        #     pos_body_names = [name + side for name in pos_body_names]
-        # for body_name in pos_body_names:
-        #     idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
-        #     if idx == -1:
-        #         raise ValueError(f"Body name {body_name} not found in model.")
-        #     else: 
-        #         self._body_pos_indices[body_name] = idx
-
-
-        # # Body orientation
-        # if "prosthesis_body_orientation_range" in self.rand_conf: 
-        #     self.body_orientation_dict = self.rand_conf["prosthesis_body_orientation_range"]
-        #     quat_body_names = list(self.body_orientation_dict.keys())
-        # for side in env.prosthesis_side: 
-        #     quat_body_names = [name + side for name in quat_body_names]
-        # for body_name in quat_body_names:
-        #     idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
-        #     if idx == -1:
-        #         raise ValueError(f"Body name {body_name} not found in model.")
-        #     else: 
-        #         self._body_quat_indices[body_name] = idx
-
-    
-
 
         assert_backend_is_supported(backend)
         return ProsthesisRandomizerState(
@@ -482,11 +390,9 @@ class ProsthesisRandomizer(DomainRandomizer):
         
 
         for i, (joint_name, (low, high)) in enumerate(self.stiffness_dict.items()):
-            # for side in carry.env.prosthesis_side:
-                # full_joint_name = joint_name + side
+
             if self.rand_conf["randomize_prosthesis_joint_stiffness"]:
                 stiffness_val = low + (high - low) * rand_values[i]
-                # sampled_stiffness[joint_name] = stiffness_val
             else: 
                 if joint_name not in self._joint_indices:
                     raise KeyError(f"Joint '{joint_name}' not found in joint indices.")
@@ -528,11 +434,8 @@ class ProsthesisRandomizer(DomainRandomizer):
             rand_values = np.random.uniform(size=(len(self.damping_dict),))
 
         for i, (dof_name, (low, high)) in enumerate(self.damping_dict.items()):
-            #for side in carry.env.prosthesis_side:
-                # full_dof_name = dof_name + side
             if self.rand_conf["randomize_prosthesis_dof_damping"]:  
                 damping_val = low + (high - low) * rand_values[i]
-                #sampled_damping[dof_name] = damping_val
             else: 
                 if dof_name not in self._dof_indices:
                     raise KeyError(f"DOF '{dof_name}' not found in DOF indices.")
@@ -564,11 +467,7 @@ class ProsthesisRandomizer(DomainRandomizer):
 
         sampled_positions_offset = {body_name: backend.zeros(3) for body_name in self.body_position_dict.keys()}
 
-        # self.body_position_dict is {'ankle': {x:[-0.1,0.1], y:[-0.1,0.1], z:[-0.1,0.1]}, 'knee':{x:...}}
-
         for i, (body_name, axis_ranges) in enumerate(self.body_position_dict.items()):
-            # for side in carry.env.prosthesis_side:
-            # full_body_name = body_name + side
             offset = backend.zeros(3)
             for j, axis in enumerate(['x','y','z']):
                 if axis in axis_ranges:
@@ -588,17 +487,16 @@ class ProsthesisRandomizer(DomainRandomizer):
                             offset = offset.at[j].set(0.0)  # No offset if not randomizing
                         elif backend == np:
                             offset[j] = 0.0  # No offset if not randomizing
-            # jax.debug.print("Sampled position offset for body {}: {}", body_name, offset)
+
             sampled_positions_offset[body_name] = offset
 
             body_id = self._body_pos_indices[body_name]
             if backend == jnp: 
                 original_position = model.body_pos.at[body_id].get() 
             elif backend == np:
-                original_position = model.body_pos[body_id].copy()  #self._init_body_position.copy()
+                original_position = model.body_pos[body_id].copy()  
 
             sampled_positions[body_name] = original_position + sampled_positions_offset[body_name]
-            # jax.debug.print("Sampled position for body {}: {}", body_name, sampled_positions[body_name])
 
         return sampled_positions, carry
     
@@ -620,8 +518,6 @@ class ProsthesisRandomizer(DomainRandomizer):
   
 
         for i, (body_name, axis_ranges) in enumerate(self.body_orientation_dict.items()):
-            #for side in carry.env.prosthesis_side:
-                # full_body_name = body_name + side
             euler_angles = backend.zeros(3)
             for j, axis in enumerate(['x','y','z']):
                 if axis in axis_ranges:
@@ -701,33 +597,14 @@ class ProsthesisRandomizer(DomainRandomizer):
         """
         domain_randomizer_state = carry.domain_randomizer_state 
 
-        # if self.rand_conf["randomize_prosthesis_joint_stiffness"]:
-        #     model.jnt_stiffness = np.array(domain_randomizer_state.joint_stiffness)
-        #     # jax.debug.print("model.jnt_stiffness updated to: {}", model.jnt_stiffness)
-        # if self.rand_conf["randomize_prosthesis_dof_damping"]:
-        #     model.dof_damping = np.array(domain_randomizer_state.dof_damping)
-        #     # jax.debug.print("model.dof_damping updated to: {}", model.dof_damping)
-        # if self.rand_conf["randomize_prosthesis_body_position"]:
-        #     model.body_pos = np.array(domain_randomizer_state.body_position)
-        #     # jax.debug.print("model.body_pos updated to: {}", model.body_pos)
-        # if self.rand_conf["randomize_prosthesis_body_orientation"]:
-        #     model.body_quat = np.array(domain_randomizer_state.body_orientation)
-        #     # jax.debug.print("model.body_quat updated to: {}", model.body_quat)
-
-        # return model
-
         if self.rand_conf["randomize_prosthesis_joint_stiffness"]:
             model.jnt_stiffness = self._select_env_value(domain_randomizer_state.joint_stiffness, env_idx)
-            # jax.debug.print("model.jnt_stiffness updated to: {}", model.jnt_stiffness)
         if self.rand_conf["randomize_prosthesis_dof_damping"]:
             model.dof_damping = self._select_env_value(domain_randomizer_state.dof_damping, env_idx)
-            # jax.debug.print("model.dof_damping updated to: {}", model.dof_damping)
         if self.rand_conf["randomize_prosthesis_body_position"]:
             model.body_pos = self._select_env_value(domain_randomizer_state.body_position, env_idx)
-            # jax.debug.print("model.body_pos updated to: {}", model.body_pos)
         if self.rand_conf["randomize_prosthesis_body_orientation"]:
             model.body_quat = self._select_env_value(domain_randomizer_state.body_orientation, env_idx)
-            # jax.debug.print("model.body_quat updated to: {}", model.body_quat)
 
         return model
         
