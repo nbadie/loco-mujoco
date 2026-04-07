@@ -10,30 +10,30 @@ Bridging the gap between musculoskeletal modeling and prosthetic engineering. Th
 Built as an extension of LocoMuJoCo (https://github.com/robfiras/loco-mujoco), this tool is designed for the rapid iteration of prosthetic designs and the study of human-device interaction.
 
 ### Key Features
-✅ **Virtual Innovation Lab** – Open-source platform for risk-free hardware and alignment optimization  
-✅ **Validated pipeline** – From digital surgery and socket fitting to robust, synthesized gait policies
-✅ **Precision Alignment** – Quantify the biomechanical sensitivity of prosthetic shifts beyond the resolution of clinical observation   
-✅ **Modular design** – Easily swap components, reward functions, and domain randomization parameters
-✅ **MJX-accelerated** – Harness the power of JAX for massively parallel gait synthesis and curriculum training
+✅ **Virtual Innovation Lab** – Open-source platform for risk-free hardware and alignment optimization.  
+✅ **Validated pipeline** – From digital surgery and socket fitting to robust, synthesized gait policies. 
+✅ **Precision Alignment** – Quantify the biomechanical sensitivity of prosthetic shifts beyond the resolution of clinical observation.    
+✅ **Modular design** – Easily swap components, reward functions, and domain randomization parameters. 
+✅ **MJX-accelerated** – Harness the power of JAX for massively parallel gait synthesis and curriculum training. 
 
-```
+
 ## Installation
 Follow https://github.com/robfiras/loco-mujoco: 
-1. Clone and install the core framework:
-2. (Optional) Enable GPU acceleration with JAX:
-```
+  1. Clone and install the core framework
+  2. (Optional) Enable GPU acceleration with JAX
+
 
 ## Quick Start
 We provide comprehensive tutorials in the [examples folder]{./examples} to get you running in minutes:
-* Curriculum Training: Train an RL agent to adapt to a new prosthetic configuration.
-* MJX Environments: Run massive batches of simulations in parallel.
-* Domain Randomization: Test the robustness of your prosthetic alignment across varying conditions.
+* Curriculum Training: Train an RL agent to adapt to a new prosthetic configuration. 
+* MJX Environments: Run massive batches of simulations in parallel. 
+* Domain Randomization: Test the robustness of your prosthetic alignment across varying conditions. 
 * Systematic Alignment Testing: Evaluate trained control policies across a range of prosthetic alignments. 
 
 
 
 ## Citation
-This work is part of a manuscript under review. It is open-source. But the manuscript is still under review. If you are using it to publish work please get in touch with Nadine Badie nadine.badie@imsb.uni-stuttgart.de. 
+This framework is currently part of a manuscript under review. If you use this code or the associated models in your research, please contact Nadine Badie (nadine.badie@imsb.uni-stuttgart.de) for the appropriate citation details.
 
 
 
