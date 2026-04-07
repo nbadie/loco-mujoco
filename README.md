@@ -10,11 +10,11 @@ Bridging the gap between musculoskeletal modeling and prosthetic engineering. Th
 Built as an extension of LocoMuJoCo (https://github.com/robfiras/loco-mujoco), this tool is designed for the rapid iteration of prosthetic designs and the study of human-device interaction.
 
 ### Key Features
-✅ **Virtual Innovation Lab** – Open-source platform for risk-free hardware and alignment optimization.  
-✅ **Validated pipeline** – From digital surgery and socket fitting to robust, synthesized gait policies. 
-✅ **Precision Alignment** – Quantify the biomechanical sensitivity of prosthetic shifts beyond the resolution of clinical observation.    
-✅ **Modular design** – Easily swap components, reward functions, and domain randomization parameters. 
-✅ **MJX-accelerated** – Harness the power of JAX for massively parallel gait synthesis and curriculum training. 
+✅ **Virtual Innovation Lab** – Open-source platform for risk-free hardware and alignment optimization.  <br/>
+✅ **Validated pipeline** – From digital surgery and socket fitting to robust, synthesized gait policies. <br/>
+✅ **Precision Alignment** – Quantify the biomechanical sensitivity of prosthetic shifts beyond the resolution of clinical observation. <br/>   
+✅ **Modular design** – Easily swap components, reward functions, and domain randomization parameters. <br/>
+✅ **MJX-accelerated** – Harness the power of JAX for massively parallel gait synthesis and curriculum training. <br/>
 
 
 ## Installation
